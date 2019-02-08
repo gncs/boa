@@ -39,6 +39,6 @@ To run `BOA` a `YML` configuration file needs to be specified.
 boa --config=run.yml
 ```
 
-See [this file](resources/config.yml) for an example.
+Check out the [resources](resources) for an example [configuration file](resources/config.yml) and [objective function](resources/function.py).
 
 
