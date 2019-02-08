@@ -46,9 +46,10 @@ def check_version(config: dict):
 
 
 def create_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog='boa',
-                                     description='Multi-Objective Bayesian Optimization Program'
-                                                 'for the gem5-Aladdin SoC Simulator')
+    parser = argparse.ArgumentParser(
+        prog='boa',
+        description='Multi-Objective Bayesian Optimization Program for the gem5-Aladdin SoC Simulator',
+    )
     parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + __version__)
     parser.add_argument('--config', help='configuration file', required=True)
 

@@ -57,7 +57,7 @@ def _calculate_hypervolume(points: np.ndarray, reference: np.ndarray, dim: int) 
         return max(reference[dim] - min(points[:, dim]), 0.0)
 
     # Sort to sweep from "right to left"
-    sorted_points = np.array(sorted(points, key=lambda entry: - entry[dim]))
+    sorted_points = np.array(sorted(points, key=lambda entry: -entry[dim]))
 
     total = 0
     previous = reference[dim]
