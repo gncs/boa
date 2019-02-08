@@ -17,7 +17,7 @@
 3. Get source code
 
     ```bash
-    git clone <url-to-repo>
+    git clone git@github.com:gncs/boa.git
     ```
    
 4. Install `BOA`
