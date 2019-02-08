@@ -35,20 +35,40 @@ class Data(dict):
         }
 
     @property
-    def input(self):
+    def input(self) -> np.ndarray:
         return self[self.SAMPLES_KEY][self.INPUT_KEY]
 
+    @input.setter
+    def input(self, value: np.ndarray) -> None:
+        self.validate_dimensions(value, self.input_labels)
+        self[self.SAMPLES_KEY][self.INPUT_KEY] = value
+
     @property
-    def output(self):
+    def output(self) -> np.ndarray:
         return self[self.SAMPLES_KEY][self.OUTPUT_KEY]
 
-    @property
-    def input_labels(self):
-        return self[self.LABELS_KEY][self.INPUT_KEY]
+    @output.setter
+    def output(self, value: np.ndarray) -> None:
+        self.validate_dimensions(value, self.output_labels)
+        self[self.SAMPLES_KEY][self.OUTPUT_KEY] = value
 
     @property
-    def output_labels(self):
+    def input_labels(self) -> List[str]:
+        return self[self.LABELS_KEY][self.INPUT_KEY]
+
+    @input_labels.setter
+    def input_labels(self, value: List[str]) -> None:
+        self.validate_dimensions(self.input, value)
+        self[self.LABELS_KEY][self.INPUT_KEY] = value
+
+    @property
+    def output_labels(self) -> List[str]:
         return self[self.LABELS_KEY][self.OUTPUT_KEY]
+
+    @output_labels.setter
+    def output_labels(self, value: List[str]) -> None:
+        self.validate_dimensions(self.output, value)
+        self[self.LABELS_KEY][self.OUTPUT_KEY] = value
 
     @staticmethod
     def validate_dimensions(values: np.ndarray, labels: List[str]) -> None:
@@ -56,8 +76,7 @@ class Data(dict):
         dim_labels = len(labels)
         if dim_values != dim_labels:
             raise DataError('Dimension of labels ({dim_labels}) does not match that of data ({dim_values})'.format(
-                dim_labels=dim_labels,
-                dim_values=dim_values))
+                dim_labels=dim_labels, dim_values=dim_values))
 
     @classmethod
     def from_json(cls, d: dict):
@@ -78,7 +97,6 @@ class Data(dict):
 
 
 class FileHandler:
-
     def __init__(self, path: str) -> None:
         self.path = path
 
