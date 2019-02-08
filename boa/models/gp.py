@@ -1,6 +1,5 @@
 from typing import Tuple, List
 
-# Stop
 import GPy
 import numpy as np
 
@@ -53,21 +52,18 @@ class GPModel(AbstractModel):
         self.xs = xs
         self.ys = ys
 
-        self.update_mean_std()
+        self._update_mean_std()
 
         # Pseudo and true points
         self.num_true_points = xs.shape[0]
 
-        # Update data in models
-        for i, model in enumerate(self.models):
-            model.set_XY(X=self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std),
-                         Y=self.normalize(self.ys[:, i:i + 1], mean=self.ys_mean, std=self.ys_std))
+        self._update_models()
 
     @staticmethod
     def normalize(a: np.ndarray, mean: float, std: float) -> np.ndarray:
         return (a - mean) / std
 
-    def update_mean_std(self) -> None:
+    def _update_mean_std(self) -> None:
         self.xs_mean = np.mean(self.xs, axis=0)
         self.xs_std = np.std(self.xs, axis=0) + self.NOISE
 
@@ -85,13 +81,18 @@ class GPModel(AbstractModel):
     def train(self):
         self.models.clear()
 
+        x_normalized = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
+        y_normalized = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
+
         # Build model for each output
         for i in range(self.output_dim):
             kernel = self.get_kernel()
             model = GPy.models.GPRegression(
-                X=self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std),
-                Y=self.normalize(self.ys[:, i:i + 1], mean=self.ys_mean, std=self.ys_std), kernel=kernel,
-                normalizer=True)
+                X=x_normalized,
+                Y=y_normalized[:, i:i + 1],
+                kernel=kernel,
+                normalizer=True,
+            )
 
             model.optimize_restarts(num_restarts=self.num_optimizer_restarts, robust=True)
             model.optimize(messages=False)
@@ -106,7 +107,7 @@ class GPModel(AbstractModel):
             means[:, i:i + 1], var[:, i:i + 1] = model.predict(
                 Xnew=self.normalize(test_xs, mean=self.xs_mean, std=self.xs_std), full_cov=False)
 
-        return (means * self.ys_std + self.ys_mean), (var * self.ys_std ** 2)
+        return (means * self.ys_std + self.ys_mean), (var * self.ys_std**2)
 
     def add_pseudo_point(self, x: np.ndarray) -> None:
         x = x.reshape(1, -1)
@@ -116,8 +117,10 @@ class GPModel(AbstractModel):
         for i, model in enumerate(self.models):
             y[:, i], _ = model.predict(Xnew=self.normalize(x, mean=self.xs_mean, std=self.xs_std), full_cov=False)
 
-        # Add data point to models (renormalize y)
+        # Renormalize y and add data point to models
         self._append_data_point(x, y * self.ys_std + self.ys_mean)
+
+        self._update_models()
 
         self.num_pseudo_points += 1
 
@@ -127,7 +130,9 @@ class GPModel(AbstractModel):
         self._append_data_point(x, y)
 
         # Update mean and std only when true point is added
-        self.update_mean_std()
+        self._update_mean_std()
+
+        self._update_models()
 
         self.num_true_points += 1
 
@@ -135,18 +140,17 @@ class GPModel(AbstractModel):
         self.xs = self.xs[:-self.num_pseudo_points, :]
         self.ys = self.ys[:-self.num_pseudo_points, :]
 
-        # Update data of models
-        for i, model in enumerate(self.models):
-            model.set_XY(X=self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std),
-                         Y=self.normalize(self.ys[:, i:i + 1], mean=self.ys_mean, std=self.ys_std))
-
         self.num_pseudo_points = 0
+
+        self._update_models()
 
     def _append_data_point(self, x: np.ndarray, y: np.ndarray) -> None:
         self.xs = np.vstack((self.xs, x))
         self.ys = np.vstack((self.ys, y))
 
-        # Update data in models
+    def _update_models(self) -> None:
+        x_normalized = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
+        y_normalized = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
+
         for i, model in enumerate(self.models):
-            model.set_XY(self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std),
-                         self.normalize(self.ys[:, i:i + 1], mean=self.ys_mean, std=self.ys_std))
+            model.set_XY(X=x_normalized, Y=y_normalized[:, i:i + 1])
