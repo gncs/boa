@@ -87,7 +87,7 @@ class Data(dict):
             y_labels=d[cls.LABELS_KEY][cls.OUTPUT_KEY],
         )
 
-    def to_json(self):
+    def to_json(self) -> dict:
         json_dict = dict()
 
         json_dict[self.SAMPLES_KEY] = {key: value.T.tolist() for key, value in self[self.SAMPLES_KEY].items()}
