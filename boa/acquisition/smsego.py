@@ -1,47 +1,58 @@
+from typing import List
+
 import numpy as np
 
 from boa.models.abstract import AbstractModel
 from .abstract import AbstractAcquisition
-from .util import calculate_hypervolume, normalize, get_frontier
+from .util import calculate_hypervolume, get_frontier
 
 
 class SMSEGO(AbstractAcquisition):
     NOISE = 1E-10
 
-    def __init__(self, gain: float, epsilon: float, reference_point: np.ndarray, mean: float, std: float) -> None:
+    def __init__(self, gain: float, epsilon: float, reference_point: List[float]) -> None:
         super().__init__()
 
         self.gain = gain
         self.epsilon = epsilon
-        self.reference_point = reference_point
-        self.mean = mean
-        self.std = std
-
-    def get_hypervolume(self, frontier: np.ndarray) -> float:
-        return calculate_hypervolume(normalize(frontier, self.mean, self.std), self.reference_point)
+        self.reference_point = np.array(reference_point)
 
     def evaluate(self, model: AbstractModel, xs: np.ndarray, ys: np.ndarray, candidates: np.ndarray) -> np.ndarray:
+        # Model predictions for candidates
         means, var = model.predict_batch(candidates)
-        candidate_values = means - self.gain * np.sqrt(np.maximum(var, self.NOISE))
+        candidates = means - self.gain * np.sqrt(np.maximum(var, self.NOISE))
 
-        frontier_values = get_frontier(ys)
-        current_hv = self.get_hypervolume(frontier_values)
+        # Normalize so that objectives are treated on equal footing
+        ys_mean = np.mean(ys, axis=0)
+        ys_std = np.mean(ys, axis=0)
 
-        values = np.zeros((candidates.shape[0], 1))
-        for i, candidate_value in enumerate(candidate_values):
-            penalty = 0.0
-            for frontier_value in frontier_values:
+        ys_normalized = (ys - ys_mean) / ys_std
+        reference_normalized = (self.reference_point - ys_mean) / ys_std
+
+        # Normalize
+        candidates_normalized = (candidates - ys_mean) / ys_std
+        frontier_normalized = get_frontier(ys_normalized)
+
+        current_hv = calculate_hypervolume(points=frontier_normalized, reference=reference_normalized)
+
+        values = np.zeros((candidates_normalized.shape[0], 1))
+        for i, candidate in enumerate(candidates_normalized):
+            max_penalty = 0.0
+            # Iterate over frontier values and choose maximum value
+            for frontier in frontier_normalized:
                 # If frontier value is weakly dominating
-                if np.all(frontier_value <= candidate_value + self.epsilon):
-                    p = -1 + np.prod(1 + np.maximum(candidate_value - frontier_value, np.zeros_like(candidate_value)))
-                    # TODO: Why not sum over all frontier points? penalty += p
-                    penalty = np.maximum(penalty, p)
+                if np.all(frontier <= candidate + self.epsilon):
+                    penalty = -1 + np.prod(1 + (candidate - frontier))
+                    max_penalty = np.maximum(max_penalty, penalty)
 
-            if penalty == 0.0:
-                potential_hv = self.get_hypervolume(np.vstack((candidate_value, frontier_values)))
+            if max_penalty == 0.0:
+                potential_hv = calculate_hypervolume(
+                    points=np.vstack((candidate, frontier_normalized)),
+                    reference=reference_normalized,
+                )
                 value = potential_hv - current_hv
             else:
-                value = -penalty
+                value = -max_penalty
 
             values[i] = value
 

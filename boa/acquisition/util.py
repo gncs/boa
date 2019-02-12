@@ -22,14 +22,6 @@ def get_frontier(points: np.ndarray) -> np.ndarray:
     return points[indices]
 
 
-def normalize(data: np.ndarray, mean, std) -> np.ndarray:
-    return data
-    # copy = data.copy()
-    # copy -= mean[None, :]
-    # copy /= std[None, :]
-    # return copy
-
-
 def calculate_hypervolume(points: np.ndarray, reference: np.ndarray) -> float:
     """
     Calculate hypervolume (wrt to reference) spanned by <points>.

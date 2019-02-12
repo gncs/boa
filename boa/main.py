@@ -73,13 +73,22 @@ def hook() -> None:
         objective = load_objective(config['objective'])
         candidates = objective.get_candidates()
 
-        data = get_init_data(config['data'], objective, file_handler)
+        data = get_init_data(config=config['data'], objective=objective, handler=file_handler)
         model.set_data(xs=data.input, ys=data.output)
         model.train()
 
-        # xs, ys = optimizer.optimize(f=objective, model=model, acq_fun=acq, xs=xs, ys=ys, candidates=candidates)
+        xs, ys = optimizer.optimize(
+            f=objective,
+            model=model,
+            acq_fun=acq,
+            xs=data.input,
+            ys=data.output,
+            candidates=candidates,
+        )
 
-        # file_handler.save(xs=xs, ys=ys)
+        data.input = xs
+        data.output = ys
+        file_handler.save(data)
 
     except KeyError as e:
         raise BOAException('Key ' + str(e) + ' not found')
