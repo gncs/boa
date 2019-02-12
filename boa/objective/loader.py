@@ -9,7 +9,7 @@ class ModuleLoadError(Exception):
     """ Error raised when loading the order module fails """
 
 
-def load_objective(config):
+def load_objective(config: dict):
     try:
         module = _load_order_module(config['name'])
 
@@ -24,7 +24,7 @@ def load_objective(config):
         raise ModuleLoadError('Cannot find key ' + str(e) + '.')
 
 
-def _load_order_module(module_path) -> Any:
+def _load_order_module(module_path: str) -> Any:
     module_name = os.path.splitext(module_path)[0]
     try:
         spec = importlib.util.spec_from_file_location(module_name, module_path)
