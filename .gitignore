@@ -3,7 +3,7 @@
 
 # mypy
 .mypy_cache/
-.mypy.out
+mypy.out
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
