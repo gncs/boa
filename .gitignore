@@ -5,6 +5,9 @@
 .mypy_cache/
 mypy.out
 
+# yapf
+yapf.out
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
