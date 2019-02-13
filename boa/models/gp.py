@@ -7,8 +7,6 @@ from .abstract import AbstractModel
 
 
 class GPModel(AbstractModel):
-    NOISE = 1e-10
-
     def __init__(self, kernel: str, num_optimizer_restarts: int):
         """
         Constructor of GP model.
@@ -64,11 +62,13 @@ class GPModel(AbstractModel):
         return (a - mean) / std
 
     def _update_mean_std(self) -> None:
+        min_std = 1e-10
+
         self.xs_mean = np.mean(self.xs, axis=0)
-        self.xs_std = np.std(self.xs, axis=0) + self.NOISE
+        self.xs_std = np.maximum(np.std(self.xs, axis=0), min_std)
 
         self.ys_mean = np.mean(self.ys, axis=0)
-        self.ys_std = np.std(self.ys, axis=0) + self.NOISE
+        self.ys_std = np.maximum(np.std(self.ys, axis=0), min_std)
 
     def get_kernel(self):
         if self.kernel_name == 'matern':
