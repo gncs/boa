@@ -23,6 +23,10 @@ class Optimizer:
 
             # Collect evaluation points
             for _ in range(self.batch_size):
+                # Ensure that there are candidates left
+                if candidates.size == 0:
+                    break
+
                 acquisition_values = acq_fun.evaluate(model=model, xs=xs, ys=ys, candidates=candidates)
                 max_acquisition_index = np.argmax(acquisition_values)
                 eval_point = candidates[max_acquisition_index]
@@ -34,12 +38,17 @@ class Optimizer:
 
             model.remove_pseudo_points()
 
+            # If no new evaluation points are selected, break
+            if not eval_points:
+                break
+
             # Evaluate function at chosen points
             inp, outp = f.evaluate_batch(np.array(eval_points))
+
+            # Add evaluations to data set and model
             xs = np.vstack((xs, inp))
             ys = np.vstack((ys, outp))
 
-            # Add evaluations to data set and model
             for i, o in zip(inp, outp):
                 model.add_true_point(i, o)
 
