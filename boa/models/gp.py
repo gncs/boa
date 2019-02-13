@@ -79,10 +79,11 @@ class GPModel(AbstractModel):
         raise Exception("Unknown kernel '" + str(self.kernel_name) + "'")
 
     def train(self):
-        self.models.clear()
-
+        self._update_mean_std()
         x_normalized = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
         y_normalized = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
+
+        self.models.clear()
 
         # Build model for each output
         for i in range(self.output_dim):
@@ -129,9 +130,6 @@ class GPModel(AbstractModel):
 
         self._append_data_point(x, y)
 
-        # Update mean and std only when true point is added
-        self._update_mean_std()
-
         self._update_models()
 
         self.num_true_points += 1
@@ -140,9 +138,9 @@ class GPModel(AbstractModel):
         self.xs = self.xs[:-self.num_pseudo_points, :]
         self.ys = self.ys[:-self.num_pseudo_points, :]
 
-        self.num_pseudo_points = 0
-
         self._update_models()
+
+        self.num_pseudo_points = 0
 
     def _append_data_point(self, x: np.ndarray, y: np.ndarray) -> None:
         self.xs = np.vstack((self.xs, x))
