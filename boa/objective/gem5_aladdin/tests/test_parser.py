@@ -3,7 +3,7 @@ from unittest import TestCase
 
 import pkg_resources
 
-from boa.objective.gem5_aladdin.process import parse_file, output_regexps
+from boa.objective.gem5_aladdin.process import parse_file, output_regexps, get_cycle_power_area
 
 
 class TestParser(TestCase):
@@ -18,7 +18,7 @@ class TestParser(TestCase):
         path = os.path.join(self.RESOURCES_DIR, 'gem5_aladdin.output')
 
         expected = {
-            'cycles': 51439,
+            'cycle': 51439,
             'avg_power': 39.251,
             'idle_fu_cycles': 35951,
             'avg_fu_cycles': 34.1792,
@@ -42,3 +42,12 @@ class TestParser(TestCase):
 
         for k, v in results.items():
             self.assertAlmostEqual(v, expected[k])
+
+    def test_cycle_power_area(self):
+        path = os.path.join(self.RESOURCES_DIR, 'gem5_aladdin.output')
+
+        expect = [51439, 39.251, 1.37064E06]
+        result = get_cycle_power_area(path)
+
+        for e, r in zip(expect, result):
+            self.assertAlmostEqual(e, r)

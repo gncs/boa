@@ -1,17 +1,3 @@
-import re
-
-
-def get_cycle_power_area(output_file):
-    cycle = [re.findall(r'Cycle : (.*) cycles', line) for line in open(output_file)]
-    cycle = [c for l in cycle for c in l]
-    power = [re.findall(r'Avg Power: (.*) mW', line) for line in open(output_file)]
-    power = [p for l in power for p in l]
-    area = [re.findall(r'Total Area: (.*) uM', line) for line in open(output_file)]
-    area = [a for l in area for a in l]
-
-    return [int(cycle[0]), float(power[0]), float(area[0])]
-
-
 OUTPUT_DIR_KEY = "output_dir"
 
 

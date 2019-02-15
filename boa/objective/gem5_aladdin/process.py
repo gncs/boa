@@ -1,7 +1,8 @@
 import re
+from typing import List, Dict
 
 output_regexps = {
-    'cycles': re.compile(r'Cycle : (.*) cycles'),
+    'cycle': re.compile(r'Cycle : (.*) cycles'),
     'avg_power': re.compile(r'Avg Power: (.*) mW'),
     'idle_fu_cycles': re.compile(r'Idle FU Cycles: (.*) cycles'),
     'avg_fu_cycles': re.compile(r'Avg FU Power: (.*) mW'),
@@ -43,7 +44,13 @@ header_regexps = {
 }
 
 
-def parse_file(file_path: str, regexps: dict) -> dict:
+def get_cycle_power_area(file_path: str) -> List[float]:
+    results = parse_file(file_path=file_path, regexps=output_regexps)
+
+    return [results['cycle'], results['avg_power'], results['total_area']]
+
+
+def parse_file(file_path: str, regexps: dict) -> Dict[str, float]:
     with open(file_path) as f:
         contents = f.read()
 
