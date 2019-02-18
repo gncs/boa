@@ -10,12 +10,12 @@ from .util import calculate_hypervolume, get_frontier
 class SMSEGO(AbstractAcquisition):
     NOISE = 1E-10
 
-    def __init__(self, gain: float, epsilon: float, reference_point: List[float]) -> None:
+    def __init__(self, gain: float, epsilon: float, reference: List[float]) -> None:
         super().__init__()
 
         self.gain = gain
         self.epsilon = epsilon
-        self.reference_point = np.array(reference_point)
+        self.reference = np.array(reference)
 
     def evaluate(self, model: AbstractModel, xs: np.ndarray, ys: np.ndarray, candidates: np.ndarray) -> np.ndarray:
         # Model predictions for candidates
@@ -27,7 +27,7 @@ class SMSEGO(AbstractAcquisition):
         ys_std = np.mean(ys, axis=0)
 
         ys_normalized = (ys - ys_mean) / ys_std
-        reference_normalized = (self.reference_point - ys_mean) / ys_std
+        reference_normalized = (self.reference - ys_mean) / ys_std
 
         # Normalize
         candidates_normalized = (candidates - ys_mean) / ys_std
