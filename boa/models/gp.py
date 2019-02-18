@@ -7,7 +7,7 @@ from .abstract import AbstractModel
 
 
 class GPModel(AbstractModel):
-    def __init__(self, kernel: str, num_optimizer_restarts: int):
+    def __init__(self, kernel: str, num_optimizer_restarts: int, parallel: bool = False):
         """
         Constructor of GP model.
 
@@ -21,6 +21,7 @@ class GPModel(AbstractModel):
 
         self.kernel_name = kernel
         self.num_optimizer_restarts = num_optimizer_restarts
+        self.parallel = parallel
 
         self.input_dim = 0
         self.output_dim = 0
@@ -95,8 +96,13 @@ class GPModel(AbstractModel):
                 normalizer=True,
             )
 
-            model.optimize_restarts(num_restarts=self.num_optimizer_restarts, robust=True)
-            model.optimize(messages=False)
+            model.optimize_restarts(
+                num_restarts=self.num_optimizer_restarts,
+                parallel=self.parallel,
+                robust=True,
+                verbose=False,
+                messages=False,
+            )
 
             self.models.append(model)
 

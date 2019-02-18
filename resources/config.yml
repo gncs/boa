@@ -11,6 +11,7 @@ model:
   parameters:
     kernel: "rbf"
     num_optimizer_restarts: 3
+    parallel: True
 
 # Specification of acquisition function
 acquisition:
