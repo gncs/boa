@@ -50,11 +50,9 @@ class GPModel(AbstractModel):
 
         self.xs = xs
         self.ys = ys
+        self.num_true_points = xs.shape[0]
 
         self._update_mean_std()
-
-        # Pseudo and true points
-        self.num_true_points = xs.shape[0]
 
         self._update_models()
 
@@ -126,27 +124,24 @@ class GPModel(AbstractModel):
 
         # Renormalize y and add data point to models
         self._append_data_point(x, y * self.ys_std + self.ys_mean)
+        self.num_pseudo_points += 1
 
         self._update_models()
-
-        self.num_pseudo_points += 1
 
     def add_true_point(self, x: np.ndarray, y: np.ndarray) -> None:
         assert self.num_pseudo_points == 0
 
         self._append_data_point(x, y)
+        self.num_true_points += 1
 
         self._update_models()
-
-        self.num_true_points += 1
 
     def remove_pseudo_points(self) -> None:
         self.xs = self.xs[:-self.num_pseudo_points, :]
         self.ys = self.ys[:-self.num_pseudo_points, :]
+        self.num_pseudo_points = 0
 
         self._update_models()
-
-        self.num_pseudo_points = 0
 
     def _append_data_point(self, x: np.ndarray, y: np.ndarray) -> None:
         self.xs = np.vstack((self.xs, x))
