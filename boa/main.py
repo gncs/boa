@@ -1,7 +1,5 @@
 import argparse
-import datetime
 import re
-import sys
 
 from boa.acquisition.loader import load_acquisition
 from boa.config import read as read_config
@@ -9,6 +7,7 @@ from boa.data import FileHandler, get_init_data
 from boa.models.loader import load_model
 from boa.objective.loader import load_objective
 from boa.optimization.loader import load_optimizer
+from boa.util import print_message
 from boa.version import __version__
 
 
@@ -18,13 +17,6 @@ class BOAException(Exception):
 
 class VersionException(BOAException):
     """Exception thrown if version of program and the one specified in configuration file do not match"""
-
-
-def print_message(msg: str):
-    date_format = '%Y-%m-%d %H:%M:%S'
-    date = datetime.datetime.now().strftime(date_format)
-    print('{date}  {msg}'.format(date=date, msg=msg))
-    sys.stdout.flush()
 
 
 def check_version(config: dict):

@@ -5,12 +5,14 @@ import numpy as np
 from boa.acquisition.abstract import AbstractAcquisition
 from boa.models.abstract import AbstractModel
 from boa.objective.abstract import AbstractObjective
+from boa.util import print_message
 
 
 class Optimizer:
-    def __init__(self, max_num_iterations: int, batch_size: int):
+    def __init__(self, max_num_iterations: int, batch_size: int, verbose: bool = False):
         self.max_num_iterations = max_num_iterations
         self.batch_size = batch_size
+        self.verbose = verbose
 
     def optimize(self, f: AbstractObjective, model: AbstractModel, acq_fun: AbstractAcquisition, xs: np.array,
                  ys: np.array, candidates: np.array) -> Tuple[np.ndarray, np.ndarray]:
@@ -18,7 +20,13 @@ class Optimizer:
         xs = xs.copy()
         ys = ys.copy()
 
+        if self.verbose:
+            print_message('Starting optimization')
+
         for iteration in range(self.max_num_iterations):
+            if self.verbose:
+                print_message('Iteration: {}'.format(iteration + 1))
+
             eval_points = []
 
             # Collect evaluation points
@@ -53,5 +61,8 @@ class Optimizer:
                 model.add_true_point(i, o)
 
             model.train()
+
+        if self.verbose:
+            print_message('Finished optimization')
 
         return xs, ys
