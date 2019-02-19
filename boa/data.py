@@ -109,24 +109,13 @@ class FileHandler:
             json.dump(data.to_json(), f, indent=4)
 
 
-def get_init_data(config, objective: AbstractObjective, handler: FileHandler) -> Data:
+def get_init_data(config: dict, objective: AbstractObjective, handler: FileHandler) -> Data:
     try:
         mode = config['init']
         if mode == 'random':
-            candidates = objective.get_candidates()
-            subset = get_random_choice(candidates, size=int(config['size']), seed=int(config['seed']))
-            inputs, outputs = objective.evaluate_batch(subset)
-
-            input_labels = objective.get_input_labels()
-            output_labels = objective.get_output_labels()
-
-            data = Data(xs=inputs, ys=outputs, x_labels=input_labels, y_labels=output_labels)
-            handler.save(data)
-
-            return data
-
+            return generate_data(objective=objective, size=int(config['size']), seed=int(config['seed']))
         elif mode == 'load':
-            return handler.load()
+            return load_data(handler=handler)
         else:
             raise DataError("Unknown mode '" + str(mode) + "'")
 
@@ -135,3 +124,18 @@ def get_init_data(config, objective: AbstractObjective, handler: FileHandler) ->
 
     except KeyError as e:
         raise DataError("Cannot initialize data: " + str(e))
+
+
+def generate_data(objective: AbstractObjective, size: int, seed: int) -> Data:
+    candidates = objective.get_candidates()
+    subset = get_random_choice(candidates, size=size, seed=seed)
+    inputs, outputs = objective.evaluate_batch(subset)
+
+    input_labels = objective.get_input_labels()
+    output_labels = objective.get_output_labels()
+
+    return Data(xs=inputs, ys=outputs, x_labels=input_labels, y_labels=output_labels)
+
+
+def load_data(handler: FileHandler) -> Data:
+    return handler.load()
