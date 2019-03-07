@@ -21,7 +21,7 @@ def create_header_from_template(template_path, file_path, params):
         'l2cache_size',
         'enable_l2',
         'pipelined_dma',
-        'ready_mode from',
+        'ready_mode',
         'ignore_cache_flush',
     ]
 
