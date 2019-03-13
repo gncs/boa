@@ -71,11 +71,15 @@ class GPModel(AbstractModel):
 
     def get_kernel(self):
         if self.kernel_name == 'matern':
-            return GPy.kern.Matern52(input_dim=self.input_dim, ARD=True)
+            kernel = GPy.kern.Matern52(input_dim=self.input_dim, ARD=True)
         elif self.kernel_name == 'rbf':
-            return GPy.kern.RBF(input_dim=self.input_dim, ARD=True)
+            kernel = GPy.kern.RBF(input_dim=self.input_dim, ARD=True)
+        else:
+            raise Exception("Unknown kernel '" + str(self.kernel_name) + "'")
 
-        raise Exception("Unknown kernel '" + str(self.kernel_name) + "'")
+        # Ensures that length scales do not get too large or too small (assuming normalized data)
+        kernel.lengthscale.constrain_bounded(1e-4, 1e4, warning=False)
+        return kernel
 
     def train(self):
         self._update_mean_std()
@@ -93,6 +97,9 @@ class GPModel(AbstractModel):
                 kernel=kernel,
                 normalizer=True,
             )
+
+            # Ensures that the covariance matrix stays positive semidefinite
+            model.Gaussian_noise.constrain_bounded(1e-4, 1e4, warning=False)
 
             model.optimize_restarts(
                 num_restarts=self.num_optimizer_restarts,
