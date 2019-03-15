@@ -26,11 +26,11 @@ class GPModel(AbstractModel):
         self.input_dim = 0
         self.output_dim = 0
 
-        self.xs_mean = 0
-        self.xs_std = 1
+        self.xs_mean = np.array([[]])
+        self.xs_std = np.array([[]])
 
-        self.ys_mean = 0
-        self.ys_std = 1
+        self.ys_mean = np.array([[]])
+        self.ys_std = np.array([[]])
 
         self.xs = np.array([[]])
         self.ys = np.array([[]])
@@ -57,7 +57,7 @@ class GPModel(AbstractModel):
         self._update_models()
 
     @staticmethod
-    def normalize(a: np.ndarray, mean: float, std: float) -> np.ndarray:
+    def normalize(a: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.ndarray:
         return (a - mean) / std
 
     def _update_mean_std(self) -> None:
@@ -112,6 +112,8 @@ class GPModel(AbstractModel):
             self.models.append(model)
 
     def predict_batch(self, test_xs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        assert test_xs.shape[1] == self.input_dim
+
         means = np.zeros((test_xs.shape[0], self.output_dim))
         var = np.zeros((test_xs.shape[0], self.output_dim))
 
@@ -122,6 +124,8 @@ class GPModel(AbstractModel):
         return (means * self.ys_std + self.ys_mean), (var * self.ys_std**2)
 
     def add_pseudo_point(self, x: np.ndarray) -> None:
+        assert x.shape[1] == self.input_dim
+
         x = x.reshape(1, -1)
         y = np.zeros((1, self.output_dim))
 
@@ -137,6 +141,8 @@ class GPModel(AbstractModel):
 
     def add_true_point(self, x: np.ndarray, y: np.ndarray) -> None:
         assert self.num_pseudo_points == 0
+        assert x.shape[1] == self.input_dim
+        assert y.shape[1] == self.output_dim
 
         self._append_data_point(x, y)
         self.num_true_points += 1
