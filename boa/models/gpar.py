@@ -4,7 +4,7 @@ import numpy as np
 import stheno.tf as stf
 import tensorflow as tf
 
-from .abstract import AbstractModel
+from .abstract import AbstractModel, ModelError
 
 
 class GPARModel(AbstractModel):
@@ -170,17 +170,22 @@ class GPARModel(AbstractModel):
             feed_dict[y_placeholder] = self.ys_normalized[:, i:i + 1]
 
         previous_loss = np.inf
+        converged = False
         for i in range(self.max_num_opt_steps):
             _, loss = self.session.run([self.hyper_opt, self.loss], feed_dict=feed_dict)
 
             if np.abs(loss - previous_loss) < self.loss_tol:
+                converged = True
                 break
 
             previous_loss = loss
 
-    def predict_batch(self, xs_test: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        assert xs_test.shape[1] == self.input_dim
-        xs_test_normalized = self.normalize(xs_test, mean=self.xs_mean, std=self.xs_std)
+        if not converged:
+            raise ModelError(f'Hyperparameter optimization did not converge after {self.max_num_opt_steps} iterations')
+
+    def predict_batch(self, xs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        assert xs.shape[1] == self.input_dim
+        xs_test_normalized = self.normalize(xs, mean=self.xs_mean, std=self.xs_std)
 
         mean_list = []
         var_list = []
@@ -202,7 +207,7 @@ class GPARModel(AbstractModel):
     def add_pseudo_point(self, x: np.ndarray) -> None:
         assert x.shape[1] == self.input_dim
 
-        mean, var = self.predict_batch(xs_test=self.normalize(x, mean=self.xs_mean, std=self.xs_std))
+        mean, var = self.predict_batch(xs=self.normalize(x, mean=self.xs_mean, std=self.xs_std))
 
         # Renormalize y and add data point to models
         self._append_data_point(x, mean * self.ys_std + self.ys_mean)

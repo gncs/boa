@@ -3,6 +3,10 @@ import abc
 import numpy as np
 
 
+class ModelError(Exception):
+    """Base error thrown by models"""
+
+
 class AbstractModel:
     __metaclass__ = abc.ABCMeta
 
