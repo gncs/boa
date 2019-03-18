@@ -124,17 +124,17 @@ class GPARModel(AbstractModel):
 
         # Log PDFs
         for i, model in enumerate(self.models):
-            x_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i])
-            y_placeholder = tf.placeholder(tf.float64, [None, 1])
+            x_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
+            y_placeholder = tf.placeholder(tf.float64, [None, 1], name='y_train')
 
             self.model_logpdfs.append(model(x_placeholder).logpdf(y_placeholder))
             self.model_logpdf_phs.append((x_placeholder, y_placeholder))
 
         # Posteriors
         for i, model in enumerate(self.models):
-            x_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i])
-            y_placeholder = tf.placeholder(tf.float64, [None, 1])
-            test_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i])
+            x_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
+            y_placeholder = tf.placeholder(tf.float64, [None, 1], name='y_train')
+            test_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_test')
 
             model_post = model | (model(x_placeholder), y_placeholder)
 
