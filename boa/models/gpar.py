@@ -134,13 +134,13 @@ class GPARModel(AbstractModel):
         for i, model in enumerate(self.models):
             x_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
             y_placeholder = tf.placeholder(tf.float64, [None, 1], name='y_train')
-            test_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_test')
+            x_test_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_test')
 
             model_post = model | (model(x_placeholder), y_placeholder)
 
-            self.model_post_means.append(model_post.mean(test_placeholder))
-            self.model_post_vars.append(stf.dense(model_post.kernel.elwise(test_placeholder)))
-            self.model_post_phs.append((x_placeholder, y_placeholder, test_placeholder))
+            self.model_post_means.append(model_post.mean(x_test_placeholder))
+            self.model_post_vars.append(stf.dense(model_post.kernel.elwise(x_test_placeholder)))
+            self.model_post_phs.append((x_placeholder, y_placeholder, x_test_placeholder))
 
         optimizer = tf.train.AdamOptimizer(learning_rate=0.1)
         self.hyper_opt = optimizer.minimize(-tf.add_n(self.model_logpdfs))
