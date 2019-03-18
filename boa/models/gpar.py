@@ -8,18 +8,19 @@ from .abstract import AbstractModel
 
 
 class GPARModel(AbstractModel):
-    def __init__(self, kernel: str, optimization_steps: int):
+    def __init__(self, kernel: str, max_num_opt_steps: int, loss_tol: float = 1e-6):
         """
         Constructor of GPAR model.
 
         :param kernel: name of kernel
-        :param optimization_steps: number of optimization steps
+        :param max_num_opt_steps: maximum number of optimization steps
+        :param loss_tol: minimum absolute difference required for convergence of loss function
         """
 
         super().__init__()
 
         self.kernel_name = kernel
-        self.optimization_steps = optimization_steps
+        self.max_num_opt_steps = max_num_opt_steps
 
         self.input_dim = 0
         self.output_dim = 0
@@ -39,6 +40,8 @@ class GPARModel(AbstractModel):
         self.num_pseudo_points = 0
         self.num_true_points = 0
 
+        self.loss_tol = loss_tol
+
         # TF objects
         self.session = None
 
@@ -52,6 +55,7 @@ class GPARModel(AbstractModel):
         self.model_post_phs = []
 
         self.hyper_opt = None
+        self.loss = None
 
     def set_data(self, xs: np.ndarray, ys: np.ndarray):
         """
@@ -142,8 +146,10 @@ class GPARModel(AbstractModel):
             self.model_post_vars.append(stf.dense(model_post.kernel.elwise(x_test_placeholder)))
             self.model_post_phs.append((x_placeholder, y_placeholder, x_test_placeholder))
 
+        self.loss = -tf.add_n(self.model_logpdfs)
+
         optimizer = tf.train.AdamOptimizer(learning_rate=0.1)
-        self.hyper_opt = optimizer.minimize(-tf.add_n(self.model_logpdfs))
+        self.hyper_opt = optimizer.minimize(self.loss)
 
         self.session.run(tf.global_variables_initializer())
 
@@ -163,8 +169,14 @@ class GPARModel(AbstractModel):
             feed_dict[x_placeholder] = np.concatenate((self.xs_normalized, self.ys_normalized[:, :i]), axis=1)
             feed_dict[y_placeholder] = self.ys_normalized[:, i:i + 1]
 
-        for _ in range(self.optimization_steps):
-            self.session.run(self.hyper_opt, feed_dict=feed_dict)
+        previous_loss = np.inf
+        for i in range(self.max_num_opt_steps):
+            _, loss = self.session.run([self.hyper_opt, self.loss], feed_dict=feed_dict)
+
+            if np.abs(loss - previous_loss) < self.loss_tol:
+                break
+
+            previous_loss = loss
 
     def predict_batch(self, xs_test: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         assert xs_test.shape[1] == self.input_dim
