@@ -111,15 +111,15 @@ class GPModel(AbstractModel):
 
             self.models.append(model)
 
-    def predict_batch(self, test_xs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        assert test_xs.shape[1] == self.input_dim
+    def predict_batch(self, xs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        assert xs.shape[1] == self.input_dim
 
-        means = np.zeros((test_xs.shape[0], self.output_dim))
-        var = np.zeros((test_xs.shape[0], self.output_dim))
+        means = np.zeros((xs.shape[0], self.output_dim))
+        var = np.zeros((xs.shape[0], self.output_dim))
 
         for i, model in enumerate(self.models):
             means[:, i:i + 1], var[:, i:i + 1] = model.predict(
-                Xnew=self.normalize(test_xs, mean=self.xs_mean, std=self.xs_std), full_cov=False)
+                Xnew=self.normalize(xs, mean=self.xs_mean, std=self.xs_std), full_cov=False)
 
         return (means * self.ys_std + self.ys_mean), (var * self.ys_std**2)
 
