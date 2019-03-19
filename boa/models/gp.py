@@ -13,6 +13,7 @@ class GPModel(AbstractModel):
 
         :param kernel: name of kernel
         :param num_optimizer_restarts: number of times the optimization of the hyperparameters is restarted
+        :param parallel: run optimizations in parallel
         """
 
         super().__init__()
