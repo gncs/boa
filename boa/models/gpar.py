@@ -48,18 +48,20 @@ class ParameterManager:
 class GPARModel(AbstractModel):
     VARIABLE_LOG_BOUNDS = (-8, 9)
 
-    def __init__(self, kernel: str, num_optimizer_restarts: int):
+    def __init__(self, kernel: str, num_optimizer_restarts: int, verbose: bool = False):
         """
         Constructor of GPAR model.
 
         :param kernel: name of kernel
         :param num_optimizer_restarts: number of times the optimization of the hyperparameters is restarted
+        :param verbose: log optimization of hyperparameters
         """
 
         super().__init__()
 
         self.kernel_name = kernel
         self.num_optimizer_restarts = num_optimizer_restarts
+        self.verbose = verbose
 
         self.input_dim = 0
         self.output_dim = 0
@@ -244,7 +246,7 @@ class GPARModel(AbstractModel):
 
             self.optimizer.minimize(self.session, feed_dict=feed_dict)
             loss = self.session.run(self.loss, feed_dict=feed_dict)
-            print(f'Iteration {i}\tLoss: {loss}')
+            self._print(f'Iteration {i}\tLoss: {loss}')
 
             if loss < lowest_loss:
                 lowest_loss = loss
@@ -252,7 +254,7 @@ class GPARModel(AbstractModel):
 
         self.parameter_manager.set_values(best_params)
         loss = self.session.run(self.loss, feed_dict=feed_dict)
-        print(f'Final loss: {loss}')
+        self._print(f'Final loss: {loss}')
 
     def predict_batch(self, xs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         assert xs.shape[1] == self.input_dim
@@ -307,3 +309,7 @@ class GPARModel(AbstractModel):
 
         self.xs_normalized = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
         self.ys_normalized = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
+
+    def _print(self, message: str):
+        if self.verbose:
+            print(message)
