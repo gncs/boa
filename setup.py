@@ -32,6 +32,7 @@ setup(
         'GPy',
         'matplotlib',  # required by GPy
         'pyyaml',
+        'tensorflow',
     ],
     zip_safe=False,
     test_suite='nose.collector',
