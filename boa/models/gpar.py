@@ -1,26 +1,65 @@
-from typing import Tuple
+from typing import Tuple, List
 
 import numpy as np
 import stheno.tf as stf
 import tensorflow as tf
 
-from .abstract import AbstractModel, ModelError
+from .abstract import AbstractModel
+
+
+class ParameterManager:
+    def __init__(self, session, variables: List):
+        self.session = session
+        self.variables = variables
+
+    def get_values(self) -> List:
+        return [list(self.session.run(variable) for variable in variable_tuple) for variable_tuple in self.variables]
+
+    def set_values(self, values) -> None:
+        operations = []
+        for variable_tuple, value_tuple in zip(self.variables, values):
+            for variable, value in zip(variable_tuple, value_tuple):
+                operations.append(variable.assign(value))
+
+        self.session.run(operations)
+
+    def init_values(self, random_seed=None):
+        np.random.seed(random_seed)
+
+        values = []
+        for variable_tuple in self.variables:
+            value_tuple = []
+            for variable in variable_tuple:
+                shape = variable.get_shape()
+
+                # Scalar value
+                if not shape:
+                    value = np.exp(np.random.uniform(low=0.1, high=1, size=1)[0])
+
+                # Lengthscales
+                else:
+                    value = np.exp(np.random.uniform(low=0.01, high=0.5, size=shape))
+                value_tuple.append(value)
+            values.append(value_tuple)
+
+        self.set_values(values)
 
 
 class GPARModel(AbstractModel):
-    def __init__(self, kernel: str, max_num_opt_steps: int, loss_tol: float = 1e-6):
+    VARIABLE_LOG_BOUNDS = (-8, 9)
+
+    def __init__(self, kernel: str, num_optimizer_restarts: int):
         """
         Constructor of GPAR model.
 
         :param kernel: name of kernel
-        :param max_num_opt_steps: maximum number of optimization steps
-        :param loss_tol: minimum absolute difference required for convergence of loss function
+        :param num_optimizer_restarts: number of times the optimization of the hyperparameters is restarted
         """
 
         super().__init__()
 
         self.kernel_name = kernel
-        self.max_num_opt_steps = max_num_opt_steps
+        self.num_optimizer_restarts = num_optimizer_restarts
 
         self.input_dim = 0
         self.output_dim = 0
@@ -40,12 +79,12 @@ class GPARModel(AbstractModel):
         self.num_pseudo_points = 0
         self.num_true_points = 0
 
-        self.loss_tol = loss_tol
-
         # TF objects
         self.session = None
 
         self.models = []
+        self.hyperparameters = []
+        self.parameter_manager = None
 
         self.model_logpdfs = []
         self.model_logpdf_phs = []
@@ -54,8 +93,8 @@ class GPARModel(AbstractModel):
         self.model_post_vars = []
         self.model_post_phs = []
 
-        self.hyper_opt = None
         self.loss = None
+        self.optimizer = None
 
     def set_data(self, xs: np.ndarray, ys: np.ndarray):
         """
@@ -64,8 +103,12 @@ class GPARModel(AbstractModel):
         :param xs: dimensions N x D_input
         :param ys: dimensions N x D_output
         """
-        self.input_dim = xs.shape[1]
-        self.output_dim = ys.shape[1]
+        if not self.models:
+            self.input_dim = xs.shape[1]
+            self.output_dim = ys.shape[1]
+        else:
+            assert self.input_dim == xs.shape[1]
+            assert self.output_dim == ys.shape[1]
 
         self.xs = xs
         self.ys = ys
@@ -73,7 +116,8 @@ class GPARModel(AbstractModel):
 
         self._update_mean_std()
 
-        self._setup_gps()
+        if not self.models:
+            self._setup()
 
     @staticmethod
     def normalize(a: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.ndarray:
@@ -92,31 +136,30 @@ class GPARModel(AbstractModel):
         self.ys_normalized = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
 
     def _setup_gp(self, num_dims):
-        def constraint(x):
-            return tf.clip_by_value(x, -10, 10)
-
-        variance = tf.exp(tf.Variable(
+        log_variance = tf.Variable(
             initial_value=0.0,
             dtype=tf.float64,
-            constraint=constraint,
-        ))
+            name='log_variance',
+        )
 
-        noise = tf.exp(tf.Variable(
+        log_noise = tf.Variable(
             initial_value=0.0,
             dtype=tf.float64,
-            constraint=constraint,
-        ))
+            name='log_noise',
+        )
 
-        lengthscale = tf.exp(
-            tf.Variable(
-                initial_value=tf.fill(dims=[num_dims], value=tf.dtypes.cast(x=0.0, dtype=tf.float64)),
-                constraint=constraint,
-            ))
+        log_lengthscale = tf.Variable(
+            initial_value=tf.fill(dims=[num_dims], value=tf.dtypes.cast(x=0.0, dtype=tf.float64)),
+            name='log_lengthscale',
+        )
+
+        self.hyperparameters.append((log_variance, log_noise, log_lengthscale))
 
         kernel = self._get_kernel()
-        return variance * stf.GP(kernel()).stretch(lengthscale) + noise * stf.GP(stf.Delta())
+        return tf.exp(log_variance) * stf.GP(kernel()).stretch(tf.exp(log_lengthscale)) \
+               + tf.exp(log_noise) * stf.GP(stf.Delta())
 
-    def _setup_gps(self) -> None:
+    def _setup(self) -> None:
         if self.session:
             self.session.close()
 
@@ -148,8 +191,32 @@ class GPARModel(AbstractModel):
 
         self.loss = -tf.add_n(self.model_logpdfs)
 
-        optimizer = tf.train.AdamOptimizer(learning_rate=0.1)
-        self.hyper_opt = optimizer.minimize(self.loss)
+        self.parameter_manager = ParameterManager(session=self.session, variables=self.hyperparameters)
+
+        bounds = {}
+        for variables in self.hyperparameters:
+            for variable in variables:
+                bounds[variable] = self.VARIABLE_LOG_BOUNDS
+
+        options = {
+            'disp': None,
+            'iprint': -1,
+            'maxcor': 10,
+            'ftol': 1E-10,
+            'gtol': 1e-08,
+            'eps': 1e-09,
+            'maxfun': 15000,
+            'maxiter': 15000,
+            'maxls': 30
+        }
+
+        # Optimizers supporting bounds: L-BFGS-B, TNC, SLSQP,...
+        self.optimizer = tf.contrib.opt.ScipyOptimizerInterface(
+            self.loss,
+            var_to_bounds=bounds,
+            method='L-BFGS-B',
+            options=options,
+        )
 
         self.session.run(tf.global_variables_initializer())
 
@@ -169,19 +236,23 @@ class GPARModel(AbstractModel):
             feed_dict[x_placeholder] = np.concatenate((self.xs_normalized, self.ys_normalized[:, :i]), axis=1)
             feed_dict[y_placeholder] = self.ys_normalized[:, i:i + 1]
 
-        previous_loss = np.inf
-        converged = False
-        for i in range(self.max_num_opt_steps):
-            _, loss = self.session.run([self.hyper_opt, self.loss], feed_dict=feed_dict)
+        lowest_loss = self.session.run(self.loss, feed_dict=feed_dict)
+        best_params = self.parameter_manager.get_values()
 
-            if np.abs(loss - previous_loss) < self.loss_tol:
-                converged = True
-                break
+        for i in range(self.num_optimizer_restarts):
+            self.parameter_manager.init_values(random_seed=i)
 
-            previous_loss = loss
+            self.optimizer.minimize(self.session, feed_dict=feed_dict)
+            loss = self.session.run(self.loss, feed_dict=feed_dict)
+            print(f'Iteration {i}\tLoss: {loss}')
 
-        if not converged:
-            raise ModelError(f'Hyperparameter optimization did not converge after {self.max_num_opt_steps} iterations')
+            if loss < lowest_loss:
+                lowest_loss = loss
+                best_params = self.parameter_manager.get_values()
+
+        self.parameter_manager.set_values(best_params)
+        loss = self.session.run(self.loss, feed_dict=feed_dict)
+        print(f'Final loss: {loss}')
 
     def predict_batch(self, xs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         assert xs.shape[1] == self.input_dim
