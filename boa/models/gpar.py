@@ -166,7 +166,8 @@ class GPARModel(AbstractModel):
         if self.session:
             self.session.close()
 
-        self.session = tf.Session()
+        config = tf.ConfigProto(intra_op_parallelism_threads=0, inter_op_parallelism_threads=0, allow_soft_placement=True)
+        self.session = tf.Session(config=config)
 
         # Models
         for i in range(self.output_dim):
@@ -276,7 +277,7 @@ class GPARModel(AbstractModel):
         mean = np.concatenate(mean_list, axis=1)
         variance = np.concatenate(var_list, axis=1)
 
-        return (mean * self.ys_std + self.ys_mean), (variance * self.ys_std**2)
+        return (mean * self.ys_std + self.ys_mean), (variance * self.ys_std ** 2)
 
     def add_pseudo_point(self, x: np.ndarray) -> None:
         assert x.shape[1] == self.input_dim
