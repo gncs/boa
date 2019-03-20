@@ -205,13 +205,6 @@ class GPARModel(AbstractModel):
         options = {
             'disp': None,
             'iprint': -1,
-            'maxcor': 10,
-            'ftol': 1E-10,
-            'gtol': 1e-08,
-            'eps': 1e-09,
-            'maxfun': 15000,
-            'maxiter': 15000,
-            'maxls': 30
         }
 
         # Optimizers supporting bounds: L-BFGS-B, TNC, SLSQP,...
