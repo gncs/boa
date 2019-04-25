@@ -47,7 +47,7 @@ class ParameterManager:
 
 class GPARModel(AbstractModel):
     # Ensures that covariance matrix stays positive semidefinite
-    VARIABLE_LOG_BOUNDS = (-7, 7)
+    VARIABLE_LOG_BOUNDS = (-6, 7)
 
     def __init__(self, kernel: str, num_optimizer_restarts: int, verbose: bool = False):
         """
