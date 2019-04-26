@@ -86,7 +86,7 @@ class GPARModel(AbstractModel):
         self.session = None
 
         self.models = []
-        self.hyperparameters = []
+        self.log_hyperparameters = []
         self.parameter_manager = None
 
         self.model_logpdfs = []
@@ -151,22 +151,23 @@ class GPARModel(AbstractModel):
             name='log_noise',
         )
 
-        log_lengthscale = tf.Variable(
+        log_lengthscales = tf.Variable(
             initial_value=tf.fill(dims=[num_dims], value=tf.dtypes.cast(x=0.0, dtype=tf.float64)),
-            name='log_lengthscale',
+            name='log_lengthscales',
         )
 
-        self.hyperparameters.append((log_variance, log_noise, log_lengthscale))
+        self.log_hyperparameters.append((log_variance, log_noise, log_lengthscales))
 
         kernel = self._get_kernel()
-        return tf.exp(log_variance) * stf.GP(kernel()).stretch(tf.exp(log_lengthscale)) \
+        return tf.exp(log_variance) * stf.GP(kernel()).stretch(tf.exp(log_lengthscales)) \
                + tf.exp(log_noise) * stf.GP(stf.Delta())
 
     def _setup(self) -> None:
         if self.session:
             self.session.close()
 
-        config = tf.ConfigProto(intra_op_parallelism_threads=0, inter_op_parallelism_threads=0, allow_soft_placement=True)
+        config = tf.ConfigProto(
+            intra_op_parallelism_threads=0, inter_op_parallelism_threads=0, allow_soft_placement=True)
         self.session = tf.Session(config=config)
 
         # Models
@@ -195,10 +196,10 @@ class GPARModel(AbstractModel):
 
         self.loss = -tf.add_n(self.model_logpdfs)
 
-        self.parameter_manager = ParameterManager(session=self.session, variables=self.hyperparameters)
+        self.parameter_manager = ParameterManager(session=self.session, variables=self.log_hyperparameters)
 
         bounds = {}
-        for variables in self.hyperparameters:
+        for variables in self.log_hyperparameters:
             for variable in variables:
                 bounds[variable] = self.VARIABLE_LOG_BOUNDS
 
@@ -270,7 +271,7 @@ class GPARModel(AbstractModel):
         mean = np.concatenate(mean_list, axis=1)
         variance = np.concatenate(var_list, axis=1)
 
-        return (mean * self.ys_std + self.ys_mean), (variance * self.ys_std ** 2)
+        return (mean * self.ys_std + self.ys_mean), (variance * self.ys_std**2)
 
     def add_pseudo_point(self, x: np.ndarray) -> None:
         assert x.shape[1] == self.input_dim
