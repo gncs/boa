@@ -86,8 +86,8 @@ class GPARModel(AbstractModel):
         self.session = None
 
         self.models = []
-        self.log_hyperparameters = []
-        self.parameter_manager = None
+        self.log_hps = []
+        self.log_hp_manager = None
 
         self.model_logpdfs = []
         self.model_logpdf_phs = []
@@ -156,7 +156,7 @@ class GPARModel(AbstractModel):
             name='log_lengthscales',
         )
 
-        self.log_hyperparameters.append((log_variance, log_noise, log_lengthscales))
+        self.log_hps.append((log_variance, log_noise, log_lengthscales))
 
         kernel = self._get_kernel()
         return tf.exp(log_variance) * stf.GP(kernel()).stretch(tf.exp(log_lengthscales)) \
@@ -167,7 +167,10 @@ class GPARModel(AbstractModel):
             self.session.close()
 
         config = tf.ConfigProto(
-            intra_op_parallelism_threads=0, inter_op_parallelism_threads=0, allow_soft_placement=True)
+            intra_op_parallelism_threads=0,
+            inter_op_parallelism_threads=0,
+            allow_soft_placement=True,
+        )
         self.session = tf.Session(config=config)
 
         # Models
@@ -176,30 +179,30 @@ class GPARModel(AbstractModel):
 
         # Log PDFs
         for i, model in enumerate(self.models):
-            x_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
-            y_placeholder = tf.placeholder(tf.float64, [None, 1], name='y_train')
+            x_ph = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
+            y_ph = tf.placeholder(tf.float64, [None, 1], name='y_train')
 
-            self.model_logpdfs.append(model(x_placeholder).logpdf(y_placeholder))
-            self.model_logpdf_phs.append((x_placeholder, y_placeholder))
+            self.model_logpdfs.append(model(x_ph).logpdf(y_ph))
+            self.model_logpdf_phs.append((x_ph, y_ph))
 
         # Posteriors
         for i, model in enumerate(self.models):
-            x_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
-            y_placeholder = tf.placeholder(tf.float64, [None, 1], name='y_train')
-            x_test_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_test')
+            x_ph = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
+            y_ph = tf.placeholder(tf.float64, [None, 1], name='y_train')
+            x_test_ph = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_test')
 
-            model_post = model | (model(x_placeholder), y_placeholder)
+            model_post = model | (model(x_ph), y_ph)
 
-            self.model_post_means.append(model_post.mean(x_test_placeholder))
-            self.model_post_vars.append(stf.dense(model_post.kernel.elwise(x_test_placeholder)))
-            self.model_post_phs.append((x_placeholder, y_placeholder, x_test_placeholder))
+            self.model_post_means.append(model_post.mean(x_test_ph))
+            self.model_post_vars.append(stf.dense(model_post.kernel.elwise(x_test_ph)))
+            self.model_post_phs.append((x_ph, y_ph, x_test_ph))
 
         self.loss = -tf.add_n(self.model_logpdfs)
 
-        self.parameter_manager = ParameterManager(session=self.session, variables=self.log_hyperparameters)
+        self.log_hp_manager = ParameterManager(session=self.session, variables=self.log_hps)
 
         bounds = {}
-        for variables in self.log_hyperparameters:
+        for variables in self.log_hps:
             for variable in variables:
                 bounds[variable] = self.VARIABLE_LOG_BOUNDS
 
@@ -230,15 +233,15 @@ class GPARModel(AbstractModel):
         self._update_mean_std()
 
         feed_dict = {}
-        for i, (x_placeholder, y_placeholder) in enumerate(self.model_logpdf_phs):
-            feed_dict[x_placeholder] = np.concatenate((self.xs_normalized, self.ys_normalized[:, :i]), axis=1)
-            feed_dict[y_placeholder] = self.ys_normalized[:, i:i + 1]
+        for i, (x_ph, y_ph) in enumerate(self.model_logpdf_phs):
+            feed_dict[x_ph] = np.concatenate((self.xs_normalized, self.ys_normalized[:, :i]), axis=1)
+            feed_dict[y_ph] = self.ys_normalized[:, i:i + 1]
 
         lowest_loss = self.session.run(self.loss, feed_dict=feed_dict)
-        best_params = self.parameter_manager.get_values()
+        best_params = self.log_hp_manager.get_values()
 
         for i in range(self.num_optimizer_restarts):
-            self.parameter_manager.init_values(random_seed=i)
+            self.log_hp_manager.init_values(random_seed=i)
 
             self.optimizer.minimize(self.session, feed_dict=feed_dict)
             loss = self.session.run(self.loss, feed_dict=feed_dict)
@@ -246,9 +249,9 @@ class GPARModel(AbstractModel):
 
             if loss < lowest_loss:
                 lowest_loss = loss
-                best_params = self.parameter_manager.get_values()
+                best_params = self.log_hp_manager.get_values()
 
-        self.parameter_manager.set_values(best_params)
+        self.log_hp_manager.set_values(best_params)
         loss = self.session.run(self.loss, feed_dict=feed_dict)
         self._print(f'Final loss: {loss}')
 
@@ -260,10 +263,10 @@ class GPARModel(AbstractModel):
         var_list = []
 
         feed_dict = {}
-        for i, (x_placeholder, y_placeholder, x_test_placeholder) in enumerate(self.model_post_phs):
-            feed_dict[x_placeholder] = np.concatenate((self.xs_normalized, self.ys_normalized[:, :i]), axis=1)
-            feed_dict[y_placeholder] = self.ys_normalized[:, i:i + 1]
-            feed_dict[x_test_placeholder] = np.concatenate([xs_test_normalized] + mean_list, axis=1)
+        for i, (x_ph, y_ph, x_test_ph) in enumerate(self.model_post_phs):
+            feed_dict[x_ph] = np.concatenate((self.xs_normalized, self.ys_normalized[:, :i]), axis=1)
+            feed_dict[y_ph] = self.ys_normalized[:, i:i + 1]
+            feed_dict[x_test_ph] = np.concatenate([xs_test_normalized] + mean_list, axis=1)
 
             mean_list.append(self.session.run(self.model_post_means[i], feed_dict=feed_dict))
             var_list.append(self.session.run(self.model_post_vars[i], feed_dict=feed_dict))
