@@ -89,7 +89,6 @@ class GPARModel(AbstractModel):
         self.log_hps = []
         self.log_hp_manager = None
 
-        self.model_logpdfs = []
         self.model_logpdf_phs = []
 
         self.model_post_means = []
@@ -162,7 +161,7 @@ class GPARModel(AbstractModel):
         return tf.exp(log_variance) * stf.GP(kernel()).stretch(tf.exp(log_lengthscales)) \
                + tf.exp(log_noise) * stf.GP(stf.Delta())
 
-    def _setup(self) -> None:
+    def _setup_session(self) -> None:
         if self.session:
             self.session.close()
 
@@ -173,19 +172,14 @@ class GPARModel(AbstractModel):
         )
         self.session = tf.Session(config=config)
 
+    def _setup_models(self):
         # Models
         for i in range(self.output_dim):
             self.models.append(self._setup_gp(self.input_dim + i))
 
-        # Log PDFs
-        for i, model in enumerate(self.models):
-            x_ph = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
-            y_ph = tf.placeholder(tf.float64, [None, 1], name='y_train')
+        self.log_hp_manager = ParameterManager(session=self.session, variables=self.log_hps)
 
-            self.model_logpdfs.append(model(x_ph).logpdf(y_ph))
-            self.model_logpdf_phs.append((x_ph, y_ph))
-
-        # Posteriors
+        # Model posteriors
         for i, model in enumerate(self.models):
             x_ph = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
             y_ph = tf.placeholder(tf.float64, [None, 1], name='y_train')
@@ -197,10 +191,20 @@ class GPARModel(AbstractModel):
             self.model_post_vars.append(stf.dense(model_post.kernel.elwise(x_test_ph)))
             self.model_post_phs.append((x_ph, y_ph, x_test_ph))
 
-        self.loss = -tf.add_n(self.model_logpdfs)
+    def _setup_loss(self):
+        # Log PDFs
+        model_logpdfs = []
 
-        self.log_hp_manager = ParameterManager(session=self.session, variables=self.log_hps)
+        for i, model in enumerate(self.models):
+            x_ph = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
+            y_ph = tf.placeholder(tf.float64, [None, 1], name='y_train')
 
+            model_logpdfs.append(model(x_ph).logpdf(y_ph))
+            self.model_logpdf_phs.append((x_ph, y_ph))
+
+        self.loss = -tf.add_n(model_logpdfs)
+
+    def _setup_optimizer(self):
         bounds = {}
         for variables in self.log_hps:
             for variable in variables:
@@ -219,7 +223,17 @@ class GPARModel(AbstractModel):
             options=options,
         )
 
+    def _post_tf_init(self):
+        pass
+
+    def _setup(self) -> None:
+        self._setup_session()
+        self._setup_models()
+        self._setup_loss()
+        self._setup_optimizer()
+
         self.session.run(tf.global_variables_initializer())
+        self._post_tf_init()
 
     def _get_kernel(self):
         if self.kernel_name == 'matern' or self.kernel_name == 'matern52':
