@@ -34,11 +34,11 @@ class ParameterManager:
 
                 # Scalar value
                 if not shape:
-                    value = np.log(np.random.uniform(low=0.1, high=1, size=1)[0])
+                    value = np.log(np.random.uniform(low=0.5, high=2, size=1)[0])
 
                 # Lengthscales
                 else:
-                    value = np.log(np.random.uniform(low=0.01, high=0.5, size=shape))
+                    value = np.log(np.random.uniform(low=0.5, high=2, size=shape))
                 value_tuple.append(value)
             values.append(value_tuple)
 
