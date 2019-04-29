@@ -9,16 +9,12 @@ from .gpar import GPARModel, ParameterManager
 class HyperGPARModel(GPARModel):
     INIT_STD = 2.5
 
-    def __init__(self, kernel: str, num_optimizer_restarts: int, verbose: bool = False):
+    def __init__(self, *args, **kwargs):
         """
         Constructor of HyperGPAR model.
-
-        :param kernel: name of kernel
-        :param num_optimizer_restarts: number of times the optimization of the hyperparameters is restarted
-        :param verbose: log optimization of hyperparameters
         """
 
-        super().__init__(kernel=kernel, num_optimizer_restarts=num_optimizer_restarts, verbose=verbose)
+        super().__init__(*args, **kwargs)
 
         self.reg_parameter_manager = None
         self.init_reg_params = None
@@ -28,57 +24,62 @@ class HyperGPARModel(GPARModel):
             self.session.close()
 
         config = tf.ConfigProto(
-            intra_op_parallelism_threads=0, inter_op_parallelism_threads=0, allow_soft_placement=True)
+            intra_op_parallelism_threads=0,
+            inter_op_parallelism_threads=0,
+            allow_soft_placement=True,
+        )
         self.session = tf.Session(config=config)
 
         # Models
         for i in range(self.output_dim):
             self.models.append(self._setup_gp(self.input_dim + i))
 
+        self.parameter_manager = ParameterManager(session=self.session, variables=self.log_hps)
+
         # Log PDFs
         for i, model in enumerate(self.models):
-            x_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
-            y_placeholder = tf.placeholder(tf.float64, [None, 1], name='y_train')
+            x_ph = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
+            y_ph = tf.placeholder(tf.float64, [None, 1], name='y_train')
 
-            self.model_logpdfs.append(model(x_placeholder).logpdf(y_placeholder))
-            self.model_logpdf_phs.append((x_placeholder, y_placeholder))
+            self.model_logpdfs.append(model(x_ph).logpdf(y_ph))
+            self.model_logpdf_phs.append((x_ph, y_ph))
 
         # Regularizers
         reg_params = [
             tf.Variable(
                 initial_value=1.0,
                 dtype=tf.float64,
-                name='variance_mu',
+                name='mu_variance',
             ),
             tf.Variable(
                 initial_value=self.INIT_STD,
                 dtype=tf.float64,
-                name='variance_std',
+                name='std_variance',
             ),
             tf.Variable(
                 initial_value=1.0,
                 dtype=tf.float64,
-                name='noise_mu',
+                name='mu_noise',
             ),
             tf.Variable(
                 initial_value=self.INIT_STD,
                 dtype=tf.float64,
-                name='noise_std',
+                name='std_noise',
             ),
             tf.Variable(
                 initial_value=tf.fill(dims=[self.input_dim], value=tf.dtypes.cast(x=1.0, dtype=tf.float64)),
-                name='lengthscales_mu',
+                name='mu_lengthscales',
             ),
             tf.Variable(
                 initial_value=tf.fill(dims=[self.input_dim], value=tf.dtypes.cast(x=self.INIT_STD, dtype=tf.float64)),
-                name='lengthscales_std',
+                name='std_lengthscales',
             ),
         ]
 
         self.reg_parameter_manager = ParameterManager(self.session, [reg_params])
 
         regularizers = []
-        for i, (log_variance, log_noise, log_lengthscales) in enumerate(self.log_hyperparameters):
+        for i, (log_variance, log_noise, log_lengthscales) in enumerate(self.log_hps):
             regularizers += [
                 tf.log(tfpd.Normal(loc=reg_params[0], scale=reg_params[1]).prob(tf.exp(log_variance))),
                 tf.log(tfpd.Normal(loc=reg_params[2], scale=reg_params[3]).prob(tf.exp(log_noise))),
@@ -91,22 +92,21 @@ class HyperGPARModel(GPARModel):
 
         # Posteriors
         for i, model in enumerate(self.models):
-            x_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
-            y_placeholder = tf.placeholder(tf.float64, [None, 1], name='y_train')
+            x_ph = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_train')
+            y_ph = tf.placeholder(tf.float64, [None, 1], name='y_train')
             x_test_placeholder = tf.placeholder(tf.float64, [None, self.input_dim + i], name='x_test')
 
-            model_post = model | (model(x_placeholder), y_placeholder)
+            model_post = model | (model(x_ph), y_ph)
 
             self.model_post_means.append(model_post.mean(x_test_placeholder))
             self.model_post_vars.append(stf.dense(model_post.kernel.elwise(x_test_placeholder)))
-            self.model_post_phs.append((x_placeholder, y_placeholder, x_test_placeholder))
+            self.model_post_phs.append((x_ph, y_ph, x_test_placeholder))
 
+        # Loss
         self.loss = -tf.add_n(self.model_logpdfs + regularizers)
 
-        self.parameter_manager = ParameterManager(session=self.session, variables=self.log_hyperparameters)
-
         bounds = {}
-        for variables in self.log_hyperparameters:
+        for variables in self.log_hps:
             for variable in variables:
                 bounds[variable] = self.VARIABLE_LOG_BOUNDS
 
