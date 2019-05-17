@@ -9,15 +9,14 @@ class HyperGPARModel(GPARModel):
     INIT_MU = 1.0
     INIT_STD = 2.5
 
-    def __init__(self, *args, **kwargs):
-        """
-        Constructor of HyperGPAR model.
-        """
+    def __init__(self, num_reg_ls: int = None, *args, **kwargs):
+        """Constructor of HyperGPAR model."""
 
         super().__init__(*args, **kwargs)
 
         self.reg_parameter_manager = None
         self.init_reg_params = None
+        self.num_reg_ls = num_reg_ls
 
     def _setup_loss(self) -> None:
         # Log PDFs
@@ -55,7 +54,8 @@ class HyperGPARModel(GPARModel):
         ]
 
         # Set up regularization parameters for lengthscales
-        for i in range(self.input_dim + self.output_dim - 1):
+        num_reg_ls = self.num_reg_ls if not (self.num_reg_ls is None) else (self.input_dim + self.output_dim - 1)
+        for i in range(num_reg_ls):
             reg_params += [
                 tf.Variable(
                     initial_value=self.INIT_MU,
@@ -71,6 +71,7 @@ class HyperGPARModel(GPARModel):
 
         self.reg_parameter_manager = ParameterManager(self.session, [reg_params])
 
+        # Iterate over models
         regularizers = []
         for log_variance, log_noise, log_lengthscales in self.log_hps:
             regularizers += [
@@ -78,7 +79,7 @@ class HyperGPARModel(GPARModel):
                 tf.log(tfpd.Normal(loc=reg_params[2], scale=reg_params[3]).prob(tf.exp(log_noise))),
             ]
 
-            for i in range(log_lengthscales.shape[0]):
+            for i in range(min(num_reg_ls, log_lengthscales.shape[0])):
                 regularizers.append(
                     tf.log(
                         tfpd.Normal(loc=reg_params[4 + i], scale=reg_params[4 + i + 1]).prob(
