@@ -114,6 +114,7 @@ class GPModel(AbstractModel):
 
     def predict_batch(self, xs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         assert xs.shape[1] == self.input_dim
+        self._update_models()
 
         means = np.zeros((xs.shape[0], self.output_dim))
         var = np.zeros((xs.shape[0], self.output_dim))
@@ -127,18 +128,10 @@ class GPModel(AbstractModel):
     def add_pseudo_point(self, x: np.ndarray) -> None:
         assert x.shape[1] == self.input_dim
 
-        x = x.reshape(1, -1)
-        y = np.zeros((1, self.output_dim))
+        mean, var = self.predict_batch(x)
 
-        # Make predictions for pseudo point
-        for i, model in enumerate(self.models):
-            y[:, i], _ = model.predict(Xnew=self.normalize(x, mean=self.xs_mean, std=self.xs_std), full_cov=False)
-
-        # Renormalize y and add data point to models
-        self._append_data_point(x, y * self.ys_std + self.ys_mean)
+        self._append_data_point(x, mean)
         self.num_pseudo_points += 1
-
-        self._update_models()
 
     def add_true_point(self, x: np.ndarray, y: np.ndarray) -> None:
         assert self.num_pseudo_points == 0
@@ -148,14 +141,10 @@ class GPModel(AbstractModel):
         self._append_data_point(x, y)
         self.num_true_points += 1
 
-        self._update_models()
-
     def remove_pseudo_points(self) -> None:
         self.xs = self.xs[:-self.num_pseudo_points, :]
         self.ys = self.ys[:-self.num_pseudo_points, :]
         self.num_pseudo_points = 0
-
-        self._update_models()
 
     def _append_data_point(self, x: np.ndarray, y: np.ndarray) -> None:
         self.xs = np.vstack((self.xs, x))
