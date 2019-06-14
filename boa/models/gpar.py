@@ -293,10 +293,9 @@ class GPARModel(AbstractModel):
     def add_pseudo_point(self, x: np.ndarray) -> None:
         assert x.shape[1] == self.input_dim
 
-        mean, var = self.predict_batch(xs=self.normalize(x, mean=self.xs_mean, std=self.xs_std))
+        mean, var = self.predict_batch(xs=x)
 
-        # Renormalize y and add data point to models
-        self._append_data_point(x, mean * self.ys_std + self.ys_mean)
+        self._append_data_point(x, mean)
         self.num_pseudo_points += 1
 
     def add_true_point(self, x: np.ndarray, y: np.ndarray) -> None:
