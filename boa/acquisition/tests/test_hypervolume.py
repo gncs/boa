@@ -7,7 +7,6 @@ from boa.acquisition.util import calculate_hypervolume
 
 
 class TestHyperVolume(TestCase):
-
     def test_compare_hvs(self):
         np.random.seed(42)
 
