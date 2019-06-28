@@ -8,7 +8,6 @@ import numpy as np
 class AbstractObjective:
     __metaclass__ = abc.ABCMeta
 
-    @abc.abstractmethod
     def __init__(self, pool_size: int = 1, *args, **kwargs):
         self.pool_size = pool_size
 
