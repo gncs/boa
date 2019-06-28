@@ -213,9 +213,9 @@ class GPARModel(AbstractModel):
 
                 if loss < lowest_loss:
                     lowest_loss = loss
-                    self._save_model(session)
+                    self.save_model(session)
 
-            self._load_model(session)
+            self.load_model(session)
             loss = session.run(self.loss, feed_dict=feed_dict)
             self._print(f'Final loss: {loss}')
 
@@ -228,7 +228,7 @@ class GPARModel(AbstractModel):
 
         with self._get_session() as session:
             session.run(tf.global_variables_initializer())
-            self._load_model(session)
+            self.load_model(session)
 
             feed_dict = {}
             for i, (x_ph, y_ph, x_test_ph) in enumerate(self.model_post_phs):
@@ -276,11 +276,11 @@ class GPARModel(AbstractModel):
         self.xs_normalized = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
         self.ys_normalized = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
 
-    def _save_model(self, session: tf.Session):
+    def save_model(self, session: tf.Session):
         saver = tf.train.Saver()
         saver.save(sess=session, save_path=self.CHECKPOINT_NAME)
 
-    def _load_model(self, session: tf.Session):
+    def load_model(self, session: tf.Session):
         saver = tf.train.Saver()
         saver.restore(sess=session, save_path=self.CHECKPOINT_NAME)
 
