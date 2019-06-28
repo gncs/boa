@@ -17,10 +17,10 @@ class SMSEGO(AbstractAcquisition):
         self.epsilon = epsilon
         self.reference = np.array(reference)
 
-    def evaluate(self, model: AbstractModel, xs: np.ndarray, ys: np.ndarray, candidates: np.ndarray) -> np.ndarray:
+    def evaluate(self, model: AbstractModel, xs: np.ndarray, ys: np.ndarray, candidate_xs: np.ndarray) -> np.ndarray:
         # Model predictions for candidates
-        means, var = model.predict_batch(candidates)
-        candidates = means - self.gain * np.sqrt(np.maximum(var, self.NOISE))
+        means, var = model.predict_batch(candidate_xs)
+        candidate_ys = means - self.gain * np.sqrt(np.maximum(var, self.NOISE))
 
         # Normalize so that objectives are treated on equal footing
         ys_mean = np.mean(ys, axis=0)
@@ -30,13 +30,13 @@ class SMSEGO(AbstractAcquisition):
         reference_normalized = (self.reference - ys_mean) / ys_std
 
         # Normalize
-        candidates_normalized = (candidates - ys_mean) / ys_std
+        candidate_ys_normalized = (candidate_ys - ys_mean) / ys_std
         frontier_normalized = get_frontier(ys_normalized)
 
         current_hv = calculate_hypervolume(points=frontier_normalized, reference=reference_normalized)
 
-        values = np.zeros((candidates_normalized.shape[0], 1))
-        for i, candidate in enumerate(candidates_normalized):
+        values = np.zeros((candidate_ys_normalized.shape[0], 1))
+        for i, candidate in enumerate(candidate_ys_normalized):
             max_penalty = 0.0
             # Iterate over frontier values and choose maximum value
             for frontier in frontier_normalized:
