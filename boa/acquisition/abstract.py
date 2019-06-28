@@ -13,5 +13,5 @@ class AbstractAcquisition:
         pass
 
     @abc.abstractmethod
-    def evaluate(self, model: AbstractModel, xs: np.ndarray, ys: np.ndarray, candidates: np.ndarray) -> np.ndarray:
+    def evaluate(self, model: AbstractModel, xs: np.ndarray, ys: np.ndarray, candidate_xs: np.ndarray) -> np.ndarray:
         pass

@@ -63,7 +63,7 @@ def hook() -> None:
         file_handler = FileHandler(config['task'] + '.json')
 
         objective = load_objective(config['objective'])
-        candidates = objective.get_candidates()
+        candidate_xs = objective.get_candidates()
 
         data = get_init_data(config=config['data'], objective=objective, handler=file_handler)
         model.set_data(xs=data.input, ys=data.output)
@@ -75,7 +75,7 @@ def hook() -> None:
             acq_fun=acq,
             xs=data.input,
             ys=data.output,
-            candidates=candidates,
+            candidate_xs=candidate_xs,
         )
 
         data.input = xs

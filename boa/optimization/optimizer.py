@@ -15,10 +15,11 @@ class Optimizer:
         self.verbose = verbose
 
     def optimize(self, f: AbstractObjective, model: AbstractModel, acq_fun: AbstractAcquisition, xs: np.array,
-                 ys: np.array, candidates: np.array) -> Tuple[np.ndarray, np.ndarray]:
+                 ys: np.array, candidate_xs: np.array) -> Tuple[np.ndarray, np.ndarray]:
 
         xs = xs.copy()
         ys = ys.copy()
+        candidate_xs = candidate_xs.copy()
 
         if self.verbose:
             print_message('Starting optimization')
@@ -32,17 +33,17 @@ class Optimizer:
             # Collect evaluation points
             for _ in range(self.batch_size):
                 # Ensure that there are candidates left
-                if candidates.size == 0:
+                if candidate_xs.size == 0:
                     break
 
-                acquisition_values = acq_fun.evaluate(model=model, xs=xs, ys=ys, candidates=candidates)
+                acquisition_values = acq_fun.evaluate(model=model, xs=xs, ys=ys, candidate_xs=candidate_xs)
                 max_acquisition_index = np.argmax(acquisition_values)
-                eval_point = candidates[max_acquisition_index]
+                eval_point = candidate_xs[max_acquisition_index]
 
                 eval_points.append(eval_point)
                 model.add_pseudo_point(eval_point)
 
-                candidates = np.delete(candidates, max_acquisition_index, axis=0)
+                candidate_xs = np.delete(candidate_xs, max_acquisition_index, axis=0)
 
             model.remove_pseudo_points()
 
