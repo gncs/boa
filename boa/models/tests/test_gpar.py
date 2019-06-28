@@ -1,3 +1,5 @@
+import os
+import tempfile
 from unittest import TestCase
 
 import numpy as np
@@ -8,7 +10,7 @@ from boa.models.gpar import GPARModel
 
 class TestGPAR(TestCase):
     @staticmethod
-    def f(x):
+    def f(x: np.ndarray) -> np.ndarray:
         x = x[:, 0]
         return np.sinc(3 * x).reshape(-1, 1)
 
@@ -28,10 +30,17 @@ class TestGPAR(TestCase):
 
         y_predict, var_predict = model.predict_batch(self.x_cont)
 
-        model2 = GPARModel(kernel='rbf', num_optimizer_restarts=10)
-        model2.set_data(self.X_train, self.Y_train)
-        model2.train()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cwd = os.getcwd()
+            try:
+                os.chdir(tmp_dir)
 
-        y_predict_2, var_predict_2 = model2.predict_batch(self.x_cont)
+                model2 = GPARModel(kernel='rbf', num_optimizer_restarts=10)
+                model2.set_data(self.X_train, self.Y_train)
+                model2.train()
+                y_predict_2, var_predict_2 = model2.predict_batch(self.x_cont)
+
+            finally:
+                os.chdir(cwd)
 
         np.array_equal(y_predict, y_predict_2)

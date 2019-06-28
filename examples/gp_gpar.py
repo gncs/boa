@@ -11,7 +11,7 @@ def f(x):
 
 np.random.seed(42)
 X_train = np.random.rand(8, 2) * 2 - 1
-pseudo_point = np.array([0.8, 0.3]).reshape(1, -1)
+pseudo_point = np.array([0.8, 0.3])
 X_train = np.vstack([X_train, pseudo_point])
 
 Y_train = f(X_train)
@@ -29,7 +29,7 @@ model1.add_pseudo_point(pseudo_point)
 y_pred_1, var_pred_1 = model1.predict_batch(x_cont)
 
 # GPAR
-model2 = GPARModel(kernel='rbf', num_optimizer_restarts=10)
+model2 = GPARModel(kernel='rbf', num_optimizer_restarts=10, verbose=True)
 model2.set_data(X_train, Y_train)
 model2.train()
 

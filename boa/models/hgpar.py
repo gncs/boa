@@ -1,8 +1,48 @@
+from typing import List
+
 import numpy as np
 import tensorflow as tf
 from tensorflow_probability import distributions as tfpd
 
-from .gpar import GPARModel, ParameterManager
+from boa.models.gpar import GPARModel
+
+
+class ParameterManager:
+    def __init__(self, session, variables: List):
+        self.session = session
+        self.variables = variables
+
+    def get_values(self) -> List:
+        return [list(self.session.run(variable) for variable in variable_tuple) for variable_tuple in self.variables]
+
+    def set_values(self, values) -> None:
+        operations = []
+        for variable_tuple, value_tuple in zip(self.variables, values):
+            for variable, value in zip(variable_tuple, value_tuple):
+                operations.append(variable.assign(value))
+
+        self.session.run(operations)
+
+    def init_values(self, random_seed=None):
+        np.random.seed(random_seed)
+
+        values = []
+        for variable_tuple in self.variables:
+            value_tuple = []
+            for variable in variable_tuple:
+                shape = variable.get_shape()
+
+                # Scalar value
+                if not shape:
+                    value = np.log(np.random.uniform(low=0.5, high=2, size=1)[0])
+
+                # Lengthscales
+                else:
+                    value = np.log(np.random.uniform(low=0.5, high=2, size=shape))
+                value_tuple.append(value)
+            values.append(value_tuple)
+
+        self.set_values(values)
 
 
 class HyperGPARModel(GPARModel):

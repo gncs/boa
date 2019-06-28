@@ -70,7 +70,7 @@ class GPModel(AbstractModel):
         self.ys_mean = np.mean(self.ys, axis=0)
         self.ys_std = np.maximum(np.std(self.ys, axis=0), min_std)
 
-    def get_kernel(self):
+    def get_kernel(self) -> GPy.kern.Kern:
         if self.kernel_name == 'matern':
             kernel = GPy.kern.Matern52(input_dim=self.input_dim, ARD=True)
         elif self.kernel_name == 'rbf':
@@ -82,7 +82,7 @@ class GPModel(AbstractModel):
         kernel.lengthscale.constrain_bounded(1e-4, 1e4, warning=False)
         return kernel
 
-    def train(self):
+    def train(self) -> None:
         self._update_mean_std()
         x_normalized = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
         y_normalized = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
@@ -128,7 +128,7 @@ class GPModel(AbstractModel):
     def add_pseudo_point(self, x: np.ndarray) -> None:
         assert x.shape[0] == self.input_dim
 
-        mean, var = self.predict_batch(x.reshape(-1, x.shape[0]))
+        mean, var = self.predict_batch(x.reshape(1, -1))
 
         self._append_data_point(x, mean)
         self.num_pseudo_points += 1
