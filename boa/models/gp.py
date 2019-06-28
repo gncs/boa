@@ -126,17 +126,17 @@ class GPModel(AbstractModel):
         return (means * self.ys_std + self.ys_mean), (var * self.ys_std**2)
 
     def add_pseudo_point(self, x: np.ndarray) -> None:
-        assert x.shape[1] == self.input_dim
+        assert x.shape[0] == self.input_dim
 
-        mean, var = self.predict_batch(x)
+        mean, var = self.predict_batch(x.reshape(-1, x.shape[0]))
 
         self._append_data_point(x, mean)
         self.num_pseudo_points += 1
 
     def add_true_point(self, x: np.ndarray, y: np.ndarray) -> None:
         assert self.num_pseudo_points == 0
-        assert x.shape[1] == self.input_dim
-        assert y.shape[1] == self.output_dim
+        assert x.shape[0] == self.input_dim
+        assert y.shape[0] == self.output_dim
 
         self._append_data_point(x, y)
         self.num_true_points += 1
