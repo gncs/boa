@@ -138,7 +138,8 @@ class GPARModel(AbstractModel):
     def _setup_models(self) -> None:
         # Models
         for i in range(self.output_dim):
-            self.models.append(self._setup_gp(self.input_dim + i))
+            with tf.variable_scope(str(i)):
+                self.models.append(self._setup_gp(self.input_dim + i))
 
         # Model posteriors
         for i, model in enumerate(self.models):
@@ -209,7 +210,7 @@ class GPARModel(AbstractModel):
 
                 self.optimizer.minimize(session, feed_dict=feed_dict)
                 loss = session.run(self.loss, feed_dict=feed_dict)
-                self._print(f'Iteration {i}\tLoss: {loss}')
+                self._print(f'Iteration {i},\tLoss: {loss:.4f}')
 
                 if loss < lowest_loss:
                     lowest_loss = loss
@@ -217,7 +218,7 @@ class GPARModel(AbstractModel):
 
             self.load_model(session)
             loss = session.run(self.loss, feed_dict=feed_dict)
-            self._print(f'Final loss: {loss}')
+            self._print(f'Final loss: {loss:.4f}')
 
     def predict_batch(self, xs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         assert xs.shape[1] == self.input_dim
