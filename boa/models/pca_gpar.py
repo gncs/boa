@@ -115,7 +115,6 @@ class PCAGPARModel(GPARModel):
                         session.run(self.optimizer, feed_dict=feed_dict)
                         loss = session.run(self.loss, feed_dict=feed_dict)
                     except Exception:
-                        self._print('Optimization crashed.')
                         failed = True
                         break
 
@@ -125,12 +124,15 @@ class PCAGPARModel(GPARModel):
                     else:
                         last_loss = loss
 
-                self._print(f'Iteration {i},\tLoss: {loss:.4f}')
-
-                if (not failed) and (loss < lowest_loss):
+                if not failed:
+                    self._print(f'Iteration {i},\tLoss: {loss:.4f}')
                     one_success = True
-                    lowest_loss = loss
-                    self.save_model(session)
+
+                    if loss < lowest_loss:
+                        lowest_loss = loss
+                        self.save_model(session)
+                else:
+                    self._print(f'Iteration {i} failed')
 
             if not one_success:
                 raise RuntimeError(f'Failed to optimize model with {self.num_optimizer_restarts} attempts')
