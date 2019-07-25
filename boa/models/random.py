@@ -45,7 +45,8 @@ class RandomModel(AbstractModel):
     def predict_batch(self, xs):
         return (self.random_state.normal(loc=self.ys_mean, scale=self.ys_std, size=(xs.shape[0], self.output_dim)),
                 np.var(
-                    self.random_state.normal(
-                        loc=self.ys_mean, scale=self.ys_std, size=(self.num_samples, xs.shape[0], self.output_dim)),
+                    self.random_state.normal(loc=self.ys_mean,
+                                             scale=self.ys_std,
+                                             size=(self.num_samples, xs.shape[0], self.output_dim)),
                     axis=0,
                 ))

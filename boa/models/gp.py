@@ -120,8 +120,10 @@ class GPModel(AbstractModel):
         var = np.zeros((xs.shape[0], self.output_dim))
 
         for i, model in enumerate(self.models):
-            means[:, i:i + 1], var[:, i:i + 1] = model.predict(
-                Xnew=self.normalize(xs, mean=self.xs_mean, std=self.xs_std), full_cov=False)
+            means[:, i:i + 1], var[:, i:i + 1] = model.predict(Xnew=self.normalize(xs,
+                                                                                   mean=self.xs_mean,
+                                                                                   std=self.xs_std),
+                                                               full_cov=False)
 
         return (means * self.ys_std + self.ys_mean), (var * self.ys_std**2)
 

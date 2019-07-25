@@ -123,8 +123,8 @@ class GPARModel(AbstractModel):
         self.log_hps.append((log_variance, log_noise, log_lengthscales))
 
         kernel = self._get_kernel()
-        return tf.exp(log_variance) * stf.GP(kernel()).stretch(tf.exp(log_lengthscales)) \
-               + tf.exp(log_noise) * stf.GP(stf.Delta())
+        return (tf.exp(log_variance) * stf.GP(kernel()).stretch(tf.exp(log_lengthscales)) +
+                tf.exp(log_noise) * stf.GP(stf.Delta()))
 
     @staticmethod
     def _get_session() -> tf.Session:

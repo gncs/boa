@@ -31,8 +31,8 @@ def create_header_from_template(template_path, file_path, params):
     template = template.replace('$OUTPUT_DIR', params[OUTPUT_DIR_KEY])
 
     for option in [key for key in params if key in gem5_options]:
-        template = template.replace('# Insert here', 'set {option} {value}\n# Insert here'.format(
-            option=option, value=params[option]))
+        template = template.replace('# Insert here', 'set {option} {value}\n# Insert here'.format(option=option,
+                                                                                                  value=params[option]))
 
     with open(file_path, 'w') as f:
         f.write(template)
