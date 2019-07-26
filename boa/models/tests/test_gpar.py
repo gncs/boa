@@ -6,7 +6,7 @@ import numpy as np
 
 from boa.models.gp import GPModel
 from boa.models.gpar import GPARModel
-from boa.models.pca_gpar import PCAGPARModel
+from boa.models.mf_gpar import MFGPARModel
 
 import tensorflow as tf
 
@@ -66,8 +66,11 @@ class TestGPAR(TestCase):
             try:
                 os.chdir(tmp_dir)
 
-                model2 = PCAGPARModel(kernel='rbf', num_optimizer_restarts=10, latent_size=1, learning_rate=0.01,
-                                      verbose=True)
+                model2 = MFGPARModel(kernel='rbf',
+                                     num_optimizer_restarts=10,
+                                     latent_size=1,
+                                     learning_rate=0.01,
+                                     verbose=True)
                 model2.set_data(self.X_train, self.Y_train)
                 model2.train()
                 y_predict_2, var_predict_2 = model2.predict_batch(self.x_cont)

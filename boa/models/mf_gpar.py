@@ -5,13 +5,13 @@ import tensorflow as tf
 from .gpar import GPARModel
 
 
-class PCAGPARModel(GPARModel):
+class MFGPARModel(GPARModel):
     # Ensures that covariance matrix stays positive semidefinite
     VARIABLE_LOG_BOUNDS = (-7, 7)
-    CHECKPOINT_NAME = 'pca_gpar.ckpt'
+    CHECKPOINT_NAME = 'mf_gpar.ckpt'
 
     def __init__(self, latent_size: int, max_opt_steps=1000, learning_rate=0.1, *args, **kwargs):
-        """Initializer of PCA-GPAR model."""
+        """Initializer of MatrixFactorization-GPAR model."""
         super().__init__(*args, **kwargs)
 
         self.latent_size = latent_size
@@ -20,7 +20,7 @@ class PCAGPARModel(GPARModel):
 
     def _setup_pca_gp(self, log_ls_input: tf.Tensor, outputs: int) -> tf.Tensor:
         log_variance = tf.get_variable(
-            shape=(1,),
+            shape=(1, ),
             initializer=tf.random_uniform_initializer(minval=np.log(0.5), maxval=np.log(2.0), dtype=tf.float64),
             dtype=tf.float64,
             name='log_variance',
@@ -28,7 +28,7 @@ class PCAGPARModel(GPARModel):
         )
 
         log_noise = tf.get_variable(
-            shape=(1,),
+            shape=(1, ),
             initializer=tf.random_uniform_initializer(minval=np.log(0.5), maxval=np.log(2.0), dtype=tf.float64),
             dtype=tf.float64,
             name='log_noise',
@@ -36,7 +36,7 @@ class PCAGPARModel(GPARModel):
         )
 
         output_log_lengthscales = tf.get_variable(
-            shape=(outputs,),
+            shape=(outputs, ),
             initializer=tf.random_uniform_initializer(minval=np.log(0.5), maxval=np.log(2.0), dtype=tf.float64),
             dtype=tf.float64,
             name='output_log_ls',
