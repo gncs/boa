@@ -1,9 +1,13 @@
 from .gp import GPModel
+from .gpar import GPARModel
+from .mf_gpar import MFGPARModel
 from .random import RandomModel
 
 _models = {
     'random': RandomModel,
     'gp': GPModel,
+    'gpar': GPARModel,
+    'mf-gpar': MFGPARModel,
 }
 
 
