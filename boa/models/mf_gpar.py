@@ -52,8 +52,6 @@ class MFGPARModel(GPARModel):
                 tf.exp(log_noise) * stf.GP(stf.Delta()))
 
     def _setup_models(self) -> None:
-        print('Setting up model')
-
         # Models
         self.left_log_ls = tf.get_variable(
             shape=(self.output_dim, self.latent_size),
