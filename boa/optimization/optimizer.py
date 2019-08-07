@@ -9,9 +9,10 @@ from boa.util import print_message
 
 
 class Optimizer:
-    def __init__(self, max_num_iterations: int, batch_size: int, verbose: bool = False):
+    def __init__(self, max_num_iterations: int, batch_size: int, strict=False, verbose=False):
         self.max_num_iterations = max_num_iterations
         self.batch_size = batch_size
+        self.strict = strict
         self.verbose = verbose
 
     def optimize(self, f: AbstractObjective, model: AbstractModel, acq_fun: AbstractAcquisition, xs: np.array,
@@ -61,7 +62,14 @@ class Optimizer:
             for i, o in zip(inp, outp):
                 model.add_true_point(i, o)
 
-            model.train()
+            try:
+                model.train()
+            except RuntimeError as e:
+                print_message('Error: ' + str(e))
+                if not self.strict:
+                    print_message('Failed to update model, continuing.')
+                else:
+                    raise
 
         if self.verbose:
             print_message('Finished optimization')
