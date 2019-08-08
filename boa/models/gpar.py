@@ -203,23 +203,28 @@ class GPARModel(AbstractModel):
                 feed_dict[y_ph] = self.ys_normalized[:, i:i + 1]
 
             lowest_loss = float('inf')
+            success = False
 
             for i in range(self.num_optimizer_restarts):
                 # Re-initialize variables
                 session.run(tf.global_variables_initializer())
 
-                self.optimizer.minimize(session, feed_dict=feed_dict)
                 try:
+                    self.optimizer.minimize(session, feed_dict=feed_dict)
                     loss = session.run(self.loss, feed_dict=feed_dict)
                     self._print(f'Iteration {i},\tLoss: {loss:.4f}')
+                    success = True
 
                     if loss < lowest_loss:
                         lowest_loss = loss
                         self.save_model(session)
 
-                # Thrown if Cholesky decomposition was not successful
-                except tf.errors.InvalidArgumentError as e:
+                # Exception thrown if Cholesky decomposition was not successful
+                except Exception as e:
                     self._print(f'Iteration {i} failed: ' + str(e))
+
+            if (not success) and (self.num_optimizer_restarts > 0):
+                raise RuntimeError(f'Failed to optimize model with {self.num_optimizer_restarts} attempts')
 
             self.load_model(session)
             loss = session.run(self.loss, feed_dict=feed_dict)
