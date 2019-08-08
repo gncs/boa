@@ -3,17 +3,21 @@ from typing import Tuple
 import numpy as np
 
 from boa.acquisition.abstract import AbstractAcquisition
+from boa.data import FileHandler, Data
 from boa.models.abstract import AbstractModel
 from boa.objective.abstract import AbstractObjective
 from boa.util import print_message
 
 
 class Optimizer:
-    def __init__(self, max_num_iterations: int, batch_size: int, strict=False, verbose=False):
+    LOG_FILE = 'opt_chkpt.json'
+
+    def __init__(self, max_num_iterations: int, batch_size: int, strict=False, checkpoints=True, verbose=False):
         self.max_num_iterations = max_num_iterations
         self.batch_size = batch_size
         self.strict = strict
         self.verbose = verbose
+        self.create_checkpoints = checkpoints
 
     def optimize(self, f: AbstractObjective, model: AbstractModel, acq_fun: AbstractAcquisition, xs: np.array,
                  ys: np.array, candidate_xs: np.array) -> Tuple[np.ndarray, np.ndarray]:
@@ -71,7 +75,15 @@ class Optimizer:
                 else:
                     raise
 
+            if self.create_checkpoints:
+                self.create_checkpoint(f=f, xs=xs, ys=ys)
+
         if self.verbose:
             print_message('Finished optimization')
 
         return xs, ys
+
+    def create_checkpoint(self, f: AbstractObjective, xs: np.ndarray, ys: np.ndarray):
+        handler = FileHandler(path=self.LOG_FILE)
+        progress = Data(xs=xs, ys=ys, x_labels=f.get_input_labels(), y_labels=f.get_output_labels())
+        handler.save(progress)
