@@ -99,40 +99,35 @@ class MFGPARModel(GPARModel):
                 feed_dict[y_ph] = self.ys_normalized[:, i:i + 1]
 
             lowest_loss = float('inf')
-            one_success = False
+            success = False
 
             for i in range(self.num_optimizer_restarts):
                 # Re-initialize variables
                 session.run(tf.global_variables_initializer())
 
                 loss = last_loss = float('inf')
-                failed = False
 
-                for j in range(self.max_opt_steps):
-                    try:
+                try:
+                    for j in range(self.max_opt_steps):
                         session.run(self.optimizer, feed_dict=feed_dict)
                         loss = session.run(self.loss, feed_dict=feed_dict)
-                    except Exception:
-                        failed = True
-                        break
 
-                    rel_diff = abs(last_loss - loss) / abs(last_loss)
-                    if rel_diff < 1E-6:
-                        break
-                    else:
-                        last_loss = loss
+                        if abs((last_loss - loss) / loss) < 1E-6:
+                            break
+                        else:
+                            last_loss = loss
 
-                if not failed:
                     self._print(f'Iteration {i},\tLoss: {loss:.4f}')
-                    one_success = True
+                    success = True
 
                     if loss < lowest_loss:
                         lowest_loss = loss
                         self.save_model(session)
-                else:
+
+                except Exception:
                     self._print(f'Iteration {i} failed')
 
-            if not one_success:
+            if (not success) and (self.num_optimizer_restarts > 0):
                 raise RuntimeError(f'Failed to optimize model with {self.num_optimizer_restarts} attempts')
 
             self.load_model(session)
