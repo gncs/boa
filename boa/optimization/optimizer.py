@@ -64,7 +64,7 @@ class Optimizer:
 
             try:
                 model.train()
-            except RuntimeError as e:
+            except Exception as e:
                 print_message('Error: ' + str(e))
                 if not self.strict:
                     print_message('Failed to update model, continuing.')
