@@ -30,6 +30,7 @@ setup(
         'matplotlib',  # required by GPy
         'pyyaml',
         'pandas',
+        'scikit-learn',
     ],
     zip_safe=False,
     test_suite='nose.collector',
