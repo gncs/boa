@@ -43,10 +43,16 @@ ax.plot(x_cont[:, 0], f(x_cont), color='black', linestyle='dashed', label='f', z
 
 ax.plot(x_cont[:, 0], y_pred_1, color='C0', zorder=-1, label=r'$\mathcal{GP}$')
 ax.fill_between(x_cont.T[0], (y_pred_1 + 2 * np.sqrt(var_pred_1)).T[0], (y_pred_1 - 2 * np.sqrt(var_pred_1)).T[0],
-                color='C0', alpha=0.3, zorder=-1, label=r'$\pm$2$\sigma$')
+                color='C0',
+                alpha=0.3,
+                zorder=-1,
+                label=r'$\pm$2$\sigma$')
 ax.plot(x_cont[:, 0], y_pred_2, color='C1', zorder=-1, label=r'$\mathcal{GPAR}$', linestyle='dashed')
 ax.fill_between(x_cont.T[0], (y_pred_2 + 2 * np.sqrt(var_pred_2)).T[0], (y_pred_2 - 2 * np.sqrt(var_pred_2)).T[0],
-                color='C1', alpha=0.3, zorder=-1, label=r'$\pm$2$\sigma$')
+                color='C1',
+                alpha=0.3,
+                zorder=-1,
+                label=r'$\pm$2$\sigma$')
 
 # Data points
 ax.scatter(x=X_train[:, 0], y=Y_train[:, 0], s=30, c='white', edgecolors='black', label=r'$\mathcal{D}$')

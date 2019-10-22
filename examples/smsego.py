@@ -15,11 +15,18 @@ def plot(xs, fs, preds, var, acqs, points_xs, points_ys):
     # Solid line
     ax1.plot(xs, fs, color='black', linestyle='dashed', label='f', zorder=-1)
     ax1.plot(xs, preds, color='black', zorder=-1, label=r'$\mathcal{GP}$')
-    ax1.fill_between(xs.T[0], (preds + np.sqrt(var)).T[0], (preds - np.sqrt(var)).T[0], color='blue', alpha=0.3,
-                     zorder=-1, label=r'$\pm\sigma$')
+    ax1.fill_between(xs.T[0], (preds + np.sqrt(var)).T[0], (preds - np.sqrt(var)).T[0],
+                     color='blue',
+                     alpha=0.3,
+                     zorder=-1,
+                     label=r'$\pm\sigma$')
 
     # Training set
-    ax1.scatter(x=points_xs, y=points_ys, s=30, c='white', edgecolors='black',
+    ax1.scatter(x=points_xs,
+                y=points_ys,
+                s=30,
+                c='white',
+                edgecolors='black',
                 label=r'$\{X\}_{N={' + str(points_xs.shape[0]) + '}}$')
     ax1.legend()
 
@@ -37,12 +44,16 @@ def plot(xs, fs, preds, var, acqs, points_xs, points_ys):
 
 # Target function (noise free).
 def f(X):
-    return (np.sinc(3 * X) + 0.5 * (X - 0.5) ** 2).reshape(-1, 1)
+    return (np.sinc(3 * X) + 0.5 * (X - 0.5)**2).reshape(-1, 1)
 
 
 # Generate X's and Y's for training.
 np.random.seed(42)
-X_train = np.array([-0.25, 0, 0.1, ]).reshape(-1, 1)
+X_train = np.array([
+    -0.25,
+    0,
+    0.1,
+]).reshape(-1, 1)
 Y_train = f(X_train)
 
 # Setup GP model and train.
