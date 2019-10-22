@@ -3,8 +3,8 @@ from typing import List
 
 import numpy as np
 
-from .objective.abstract import AbstractObjective
-from .objective.util import get_random_choice
+from boa.objective.abstract import AbstractObjective
+from boa.objective.util import get_random_choice
 
 
 class DataError(Exception):

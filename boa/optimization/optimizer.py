@@ -5,7 +5,7 @@ from typing import Tuple
 import numpy as np
 
 from boa.acquisition.abstract import AbstractAcquisition
-from boa.data import FileHandler, Data
+from boa.optimization.data import FileHandler, Data
 from boa.models.abstract import AbstractModel
 from boa.objective.abstract import AbstractObjective
 
