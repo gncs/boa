@@ -1,3 +1,5 @@
+import datetime
+import sys
 from typing import Tuple
 
 import numpy as np
@@ -6,7 +8,13 @@ from boa.acquisition.abstract import AbstractAcquisition
 from boa.data import FileHandler, Data
 from boa.models.abstract import AbstractModel
 from boa.objective.abstract import AbstractObjective
-from boa.util import print_message
+
+
+def print_message(msg: str):
+    date_format = '%Y-%m-%d %H:%M:%S'
+    date = datetime.datetime.now().strftime(date_format)
+    print('{date}  {msg}'.format(date=date, msg=msg))
+    sys.stdout.flush()
 
 
 class Optimizer:
