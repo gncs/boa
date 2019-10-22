@@ -29,6 +29,7 @@ setup(
         'GPy',
         'matplotlib',  # required by GPy
         'pyyaml',
+        'pandas',
     ],
     zip_safe=False,
     test_suite='nose.collector',
