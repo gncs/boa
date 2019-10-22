@@ -21,9 +21,6 @@ setup(
     classifiers=['Programming Language :: Python :: 3.6'],
     author='Marton Havasi and Gregor Simm',
     author_email='',
-    entry_points={
-        'console_scripts': ['boa = boa.main:hook'],
-    },
     python_requires='>=3.6',
     packages=find_packages(),
     include_package_data=True,
