@@ -28,7 +28,6 @@ setup(
         'numpy',
         'GPy',
         'matplotlib',  # required by GPy
-        'pyyaml',
         'pandas',
         'scikit-learn',
     ],
