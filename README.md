@@ -25,20 +25,3 @@
     ```bash
     pip install ./boa --upgrade
     ```
-    
-  
-## Usage
-
-Run `boa -h` for a quick overview of functionality.
-
-### Run
-
-To run `BOA` a `YML` configuration file needs to be specified. 
-
-```bash
-boa --config=run.yml
-```
-
-Check out the [resources](resources) for an example [configuration file](resources/config.yml) and [objective function](resources/function.py).
-
-
