@@ -30,7 +30,9 @@ setup(
         'matplotlib',  # required by GPy
         'pandas',
         'scikit-learn',
-        'tensorflow', 'stheno'
+        'tensorflow',
+        'stheno',
+        'varz'
     ],
     zip_safe=False,
 )

@@ -2,7 +2,7 @@ from typing import Tuple, List
 
 import tensorflow as tf
 from stheno.tensorflow import GP, EQ, Matern52, Delta
-import stheno as stf
+from varz.tensorflow import Vars, minimise_l_bfgs_b
 
 import numpy as np
 
@@ -10,7 +10,6 @@ from .abstract_model_v2 import AbstractModel, ModelError
 
 
 class GPModel(AbstractModel):
-
     AVAILABLE_KERNELS = {"rbf": EQ,
                          "matern52": Matern52, }
 
@@ -19,6 +18,7 @@ class GPModel(AbstractModel):
                  num_optimizer_restarts: int,
                  parallel: bool = False,
                  name: str = "gp_model",
+                 verbose=True,
                  **kwargs):
         """
         Constructor of GP model.
@@ -46,6 +46,8 @@ class GPModel(AbstractModel):
         self.input_dim = 0
         self.output_dim = 0
 
+        self.verbose = verbose
+
         self.xs_mean = tf.constant([[]])
         self.xs_std = tf.constant([[]])
 
@@ -62,7 +64,10 @@ class GPModel(AbstractModel):
         self.init_minval = tf.constant(0.5, dtype=tf.float64)
         self.init_maxval = tf.constant(2.0, dtype=tf.float64)
 
-    def __or__(self, inputs: Tuple) -> None:
+        # Create model variables container
+        self.vars = Vars(tf.float64)
+
+    def __or__(self, inputs: Tuple) -> tf.keras.Model:
         """
         This override of | is implements the inference of the posterior GP model from the inputs (xs, ys)
 
@@ -70,25 +75,13 @@ class GPModel(AbstractModel):
         :return: None
         """
 
-        if not isinstance(inputs, tuple) or len(inputs) != 2:
-            raise ModelError("Input must be a tuple of (xs, ys)!")
+        # Validate inputs
+        super(GPModel, self).__or__(inputs)
 
         xs, ys = inputs
 
-        # Reasonable test of whether the inputs are array-like
-        if not hasattr(xs, "__len__") or not hasattr(ys, "__len__"):
-            raise ModelError("xs and ys must be array-like!")
-
         xs = tf.convert_to_tensor(xs, dtype=tf.float64)
         ys = tf.convert_to_tensor(ys, dtype=tf.float64)
-
-        # Check if the shapes are correct
-        if not len(xs.shape) == 2 or not len(ys.shape) == 2:
-            raise ModelError("xs and ys must be of rank 2!")
-
-        # Ensure the user provided the same number of input and output points
-        if not xs.shape[0] == ys.shape[0]:
-            raise ModelError("The first dimension of xs and ys must be equal!")
 
         # Set stuff
         self.input_dim = xs.shape[1]
@@ -98,34 +91,36 @@ class GPModel(AbstractModel):
         self.ys = ys
         self.num_true_points = xs.shape[0]
 
-        log_init_minval = tf.math.log(self.init_minval)
-        log_init_maxval = tf.math.log(self.init_maxval)
-
         # Create GP hyperparameter variables
-        self.log_length_scales = [tf.Variable(tf.random.uniform(shape=(self.input_dim, ),
-                                                                minval=log_init_minval,
-                                                                maxval=log_init_maxval,
-                                                                dtype=tf.float64),
-                                              name="log_length_scales_dim_{}".format(i))
-                                  for i in range(self.output_dim)]
+        for i in range(self.output_dim):
+            # Length scales
+            self.vars.pos(init=tf.random.uniform(shape=(self.input_dim,),
+                                                 minval=self.init_minval,
+                                                 maxval=self.init_maxval,
+                                                 dtype=tf.float64),
+                          name="length_scales_dim_{}".format(i))
 
-        self.log_gp_variances = [tf.Variable(tf.random.uniform(shape=(1,),
-                                                               minval=log_init_minval,
-                                                               maxval=log_init_maxval,
-                                                               dtype=tf.float64),
-                                             name="log_gp_variances_dim_{}".format(i))
-                                 for i in range(self.output_dim)]
+            # GP variance
+            self.vars.pos(init=tf.random.uniform(shape=(1,),
+                                                 minval=self.init_minval,
+                                                 maxval=self.init_maxval,
+                                                 dtype=tf.float64),
+                          name="gp_variance_dim_{}".format(i))
 
-        self.log_noise_variances = [tf.Variable(tf.random.uniform(shape=(1,),
-                                                                  minval=log_init_minval,
-                                                                  maxval=log_init_maxval,
-                                                                  dtype=tf.float64),
-                                                name="log_noise_variance_dim_{}".format(i))
-                                    for i in range(self.output_dim)]
+            # Noise variance: bound between 1e-4 and 1e4
+            self.vars.bnd(init=tf.random.uniform(shape=(1,),
+                                                 minval=self.init_minval,
+                                                 maxval=self.init_maxval,
+                                                 dtype=tf.float64),
+                          lower=1e-4,
+                          upper=1e4,
+                          name="noise_variance_dim_{}".format(i))
 
         # Perform updates
         self._update_mean_std()
         self._update_models()
+
+        return self
 
     @staticmethod
     def normalize(a: tf.Tensor, mean: tf.Tensor, std: tf.Tensor) -> tf.Tensor:
@@ -144,6 +139,14 @@ class GPModel(AbstractModel):
         self.ys_mean = ys_mean
         self.ys_std = tf.maximum(ys_std, min_std)
 
+    def get_prior_gp_model(self, length_scale, gp_variance, noise_variance):
+
+        # Construct parameterized kernel
+        kernel = self.AVAILABLE_KERNELS[self.kernel_name]()
+        prior_gp = gp_variance * (GP(kernel) > length_scale) + noise_variance * GP(Delta())
+
+        return prior_gp
+
     def train(self, init_minval=0.5, init_maxval=2.0) -> None:
         self._update_mean_std()
         x_normalized = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
@@ -154,93 +157,130 @@ class GPModel(AbstractModel):
         # Build model for each output
         for i in range(self.output_dim):
 
-            kernel = self.AVAILABLE_KERNELS[self.kernel_name]()
-
-            old_loss = np.inf
+            best_loss = np.inf
+            best_model = None
 
             for j in range(self.num_optimizer_restarts):
 
+                if self.verbose:
+                    print("Optimization round: {} / {}".format(j + 1, self.num_optimizer_restarts))
+
+                ls_name = "dummy_length_scales_dim_{}".format(i)
+                gp_var_name = "dummy_gp_variance_dim_{}".format(i)
+                noise_var_name = "dummy_noise_var_dim_{}".format(i)
+
                 # Re-initialize the current GP's hyperparameters
-                log_length_scale = tf.Variable(tf.random.uniform(shape=(self.input_dim,),
-                                                                 minval=tf.math.log(self.init_minval),
-                                                                 maxval=tf.math.log(self.init_maxval),
-                                                                 dtype=tf.float64),
-                                               name="dummy_log_length_scales_dim_{}".format(i))
 
-                log_gp_variance = tf.Variable(tf.random.uniform(shape=(1,),
-                                                                minval=tf.math.log(self.init_minval),
-                                                                maxval=tf.math.log(self.init_maxval),
-                                                                dtype=tf.float64),
-                                              name="dummy_log_gp_variance_dim_{}".format(i))
+                # Length scales
+                self.vars.pos(init=tf.random.uniform(shape=(self.input_dim,),
+                                                     minval=self.init_minval,
+                                                     maxval=self.init_maxval,
+                                                     dtype=tf.float64),
+                              name=ls_name)
 
-                log_noise_variance = tf.Variable(tf.random.uniform(shape=(1,),
-                                                                   minval=tf.math.log(self.init_minval),
-                                                                   maxval=tf.math.log(self.init_maxval),
-                                                                   dtype=tf.float64),
-                                                 name="dummy_log_noise_variance_dim_{}".format(i))
+                # GP variance
+                self.vars.pos(init=tf.random.uniform(shape=(1,),
+                                                     minval=self.init_minval,
+                                                     maxval=self.init_maxval,
+                                                     dtype=tf.float64),
+                              name=gp_var_name)
 
-                trained_variables = (log_length_scale, log_gp_variance, log_noise_variance)
+                # Noise variance: bound between 1e-4 and 1e4
+                self.vars.bnd(init=tf.random.uniform(shape=(1,),
+                                                     minval=self.init_minval,
+                                                     maxval=self.init_maxval,
+                                                     dtype=tf.float64),
+                              lower=1e-4,
+                              upper=1e4,
+                              name=noise_var_name)
 
-                length_scale = tf.exp(log_length_scale)
-                gp_variance = tf.exp(log_gp_variance)
-                noise_variance = tf.exp(log_noise_variance)
+                # Training objective
+                def negative_gp_log_likelihood(gp_variance, length_scale, noise_variance):
 
-                # Construct parameterized kernel
-                kernel = gp_variance * (kernel > length_scale) + noise_variance * Delta()
+                    prior_gp = self.get_prior_gp_model(length_scale, gp_variance, noise_variance)
 
-                # Infer the model
-                model = GP(kernel) | (x_normalized, y_normalized[:, i:i + 1])
+                    # Infer the model
+                    model = prior_gp | (x_normalized, y_normalized[:, i:i + 1])
 
-                # Set up the optimizer for gradient descent
-                optimizer = tf.optimizers.Adam(1e-3)
+                    return -model(x_normalized).logpdf(y_normalized[:, i:i + 1])
 
-                # Optimize the hyperparameters using the negative log-likelihood of the GP
-                with tf.GradientTape() as tape:
+                # Perform L-BFGS-B optimization
+                loss = minimise_l_bfgs_b(lambda v: negative_gp_log_likelihood(v[gp_var_name],
+                                                                              v[ls_name],
+                                                                              v[noise_var_name]),
+                                         self.vars,
+                                         names=[ls_name,
+                                                gp_var_name,
+                                                noise_var_name])
 
-                    loss = -model(x_normalized).logpdf(y_normalized[:, i:i + 1])
+                if loss < best_loss:
+                    print("assigned")
+                    print(loss)
+                    best_loss = loss
 
-                gradients = tape.gradient(loss, trained_variables)
-                optimizer.apply_gradients(zip(gradients, trained_variables))
+                    # Construct parameterized kernel
+                    kernel = self.AVAILABLE_KERNELS[self.kernel_name]()
+                    prior_gp = self.vars[gp_var_name] * (GP(kernel) > self.vars[ls_name]) + self.vars[noise_var_name] * GP(Delta())
 
-            self.models.append(model)
+                    # Infer the model
+                    best_model = prior_gp | (x_normalized, y_normalized[:, i:i + 1])
 
-    #         model.optimize_restarts(
-    #             num_restarts=self.num_optimizer_restarts,
-    #             parallel=self.parallel,
-    #             robust=True,
-    #             verbose=False,
-    #             messages=False,
-    #         )
-    #
-    #         self.models.append(model)
+                    # Reassign variables
+                    self.vars.assign("length_scales_dim_{}".format(i), self.vars[ls_name])
+                    self.vars.assign("gp_variance_dim_{}".format(i), self.vars[gp_var_name])
+                    self.vars.assign("noise_variance_dim_{}".format(i), self.vars[noise_var_name])
 
-    def predict_batch(self, xs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        assert xs.shape[1] == self.input_dim
+            self.models.append(best_model)
+
+    def predict_batch(self, xs):
+
+        xs = tf.convert_to_tensor(xs, dtype=tf.float64)
+
+        if xs.shape[1] != self.input_dim:
+            raise ModelError("xs with shape {} must have 1st dimension (0 indexed) {}!".format(xs.shape,
+                                                                                               self.input_dim))
+
         self._update_models()
 
-        means = np.zeros((xs.shape[0], self.output_dim))
-        var = np.zeros((xs.shape[0], self.output_dim))
+        means = []
+        var = []
 
         for i, model in enumerate(self.models):
-            means[:, i:i + 1], var[:, i:i + 1] = model.predict(Xnew=self.normalize(xs,
-                                                                                   mean=self.xs_mean,
-                                                                                   std=self.xs_std),
-                                                               full_cov=False)
 
-        return (means * self.ys_std + self.ys_mean), (var * self.ys_std**2)
+            normal = model(self.normalize(xs,
+                                          mean=self.xs_mean,
+                                          std=self.xs_std))
+            means.append(normal.mean)
+            var.append(tf.reshape(tf.linalg.diag_part(normal.var), [-1, 1]))
 
-    def add_pseudo_point(self, x: np.ndarray) -> None:
-        assert x.shape[0] == self.input_dim
+        means = tf.concat(means, axis=1)
+        var = tf.concat(var, axis=1)
 
-        mean, var = self.predict_batch(x.reshape(1, -1))
+        return (means * self.ys_std + self.ys_mean), (var * self.ys_std ** 2)
+
+    def add_pseudo_point(self, x):
+
+        x = tf.convert_to_tensor(x, dtype=tf.float64)
+
+        if x.shape != (1, self.input_dim):
+            raise ModelError("point with shape {} must have shape {}!".format(x.shape, (1, self.input_dim)))
+
+        mean, var = self.predict_batch(x)
 
         self._append_data_point(x, mean)
         self.num_pseudo_points += 1
 
-    def add_true_point(self, x: np.ndarray, y: np.ndarray) -> None:
+    def add_true_point(self, x, y) -> None:
+
+        x = tf.convert_to_tensor(x, dtype=tf.float64)
+        y = tf.convert_to_tensor(y, dtype=tf.float64)
+
+        if x.shape != (1, self.input_dim):
+            raise ModelError("x with shape {} must have shape {}!".format(x.shape, (1, self.input_dim)))
+        if y.shape != (1, self.output_dim):
+            raise ModelError("y with shape {} must have shape {}!".format(y.shape, (1, self.output_dim)))
+
         assert self.num_pseudo_points == 0
-        assert x.shape[0] == self.input_dim
-        assert y.shape[0] == self.output_dim
 
         self._append_data_point(x, y)
         self.num_true_points += 1
@@ -250,13 +290,17 @@ class GPModel(AbstractModel):
         self.ys = self.ys[:-self.num_pseudo_points, :]
         self.num_pseudo_points = 0
 
-    def _append_data_point(self, x: np.ndarray, y: np.ndarray) -> None:
-        self.xs = np.vstack((self.xs, x))
-        self.ys = np.vstack((self.ys, y))
+    def _append_data_point(self, x, y) -> None:
+        self.xs = tf.concat((self.xs, x), axis=0)
+        self.ys = tf.concat((self.ys, y), axis=0)
 
     def _update_models(self) -> None:
         x_normalized = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
         y_normalized = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
 
-        for i, model in enumerate(self.models):
+        for i in range(len(self.models)):
+            model = self.get_prior_gp_model(length_scale=self.vars["length_scales_dim_{}".format(i)],
+                                            gp_variance=self.vars["gp_variance_dim_{}".format(i)],
+                                            noise_variance=self.vars["noise_variance_dim_{}".format(i)])
+
             self.models[i] = model | (x_normalized, y_normalized[:, i:i + 1])
