@@ -41,25 +41,15 @@ def plot(xs, fs, preds, var, acqs, points_xs, points_ys):
 
     return fig
 
+# Target function (noise free).
+def f(x):
+    return (np.sinc(3 * x) + 0.5 * (x - 0.5) ** 2).reshape(-1, 1)
 
-def run():
-    """
-    Main function
-    """
 
-    # Target function (noise free).
-    def f(x):
-        return (np.sinc(3 * x) + 0.5 * (x - 0.5) ** 2).reshape(-1, 1)
-
-    # Set seed for reproducibility
-    np.random.seed(42)
-
-    # Generate X's and Y's for training.
-    x_train = np.array([-0.25, 0, 0.1]).reshape(-1, 1)
-    y_train = f(x_train)
+def manual_optimization(x_train, y_train):
 
     # Infer GP
-    model = GPModel(kernel="rbf", num_optimizer_restarts=5)
+    model = GPModel(kernel="rbf", num_optimizer_restarts=5, verbose=False)
     model = model | (x_train, y_train)
 
     # Optimize the hyperparameters
@@ -108,5 +98,78 @@ def run():
         model.train()
 
 
+def automated_optimization(x_train, y_train):
+    # SMS-EGO
+    # Wrap the objective f
+
+    # Make predictions and evaluate acquisition function
+    x_cont = np.linspace(start=-1.5, stop=1.5, num=200).reshape([-1, 1])
+
+    class Objective(AbstractObjective):
+
+        def __init__(self, fun, candidates):
+            super().__init__()
+            self.f = fun
+            self.candidates = candidates
+
+        def get_candidates(self) -> np.ndarray:
+            return self.candidates
+
+        def get_input_labels(self) -> List[str]:
+            return ['X']
+
+        def get_output_labels(self) -> List[str]:
+            return ['Y']
+
+        def __call__(self, candidate: np.ndarray) -> np.ndarray:
+            return self.f(candidate)
+
+    objective = Objective(fun=f, candidates=x_cont)
+
+    # Set up GP model and train it
+    model = GPModel(kernel='rbf', num_optimizer_restarts=3, verbose=False)
+    model = model | (x_train, y_train)
+    model.train()
+
+    # Setup the acquisition fn
+    acq = SMSEGO(gain=1, epsilon=0.1, reference=[2])
+
+    # Set up the optimizer
+    optimizer = Optimizer(max_num_iterations=4, batch_size=1)
+
+    data_x, data_y = optimizer.optimize(
+        f=objective,
+        model=model,
+        acq_fun=acq,
+        xs=x_train,
+        ys=y_train,
+        candidate_xs=x_cont
+    )
+
+    y_cont, var_cont = model.predict_batch(x_cont)
+    acquisition_values = acq.evaluate(model=model, xs=data_x, ys=data_y, candidate_xs=x_cont)
+
+    fig = plot(
+        xs=x_cont,
+        fs=f(x_cont),
+        preds=y_cont.numpy(),
+        var=var_cont.numpy(),
+        acqs=acquisition_values,
+        points_xs=data_x,
+        points_ys=data_y
+    )
+
+    fig.show()
+
+
 if __name__ == "__main__":
-    run()
+    # Set seed for reproducibility
+    np.random.seed(42)
+
+    # Generate X's and Y's for training.
+    x_train = np.array([-0.25, 0, 0.1]).reshape(-1, 1)
+    y_train = f(x_train)
+
+    #manual_optimization(x_train, y_train)
+
+    automated_optimization(x_train, y_train)

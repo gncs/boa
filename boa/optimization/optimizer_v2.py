@@ -55,7 +55,7 @@ class Optimizer:
                 eval_point = candidate_xs[max_acquisition_index]
 
                 eval_points.append(eval_point)
-                model.add_pseudo_point(eval_point)
+                model.add_pseudo_point(eval_point.reshape((1, -1)))
 
                 candidate_xs = np.delete(candidate_xs, max_acquisition_index, axis=0)
 
@@ -73,7 +73,7 @@ class Optimizer:
             ys = np.vstack((ys, outp))
 
             for i, o in zip(inp, outp):
-                model.add_true_point(i, o)
+                model.add_true_point(i.reshape((1, -1)), o.reshape(1, -1))
 
             try:
                 model.train()

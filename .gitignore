@@ -18,3 +18,7 @@ __pycache__/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# JSON checkpoints
+opt_chkpt.json
+opt_ckpt.json

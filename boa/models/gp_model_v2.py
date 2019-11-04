@@ -94,10 +94,12 @@ class GPModel(AbstractModel):
         # Create GP hyperparameter variables
         for i in range(self.output_dim):
             # Length scales
-            self.vars.pos(init=tf.random.uniform(shape=(self.input_dim,),
+            self.vars.bnd(init=tf.random.uniform(shape=(self.input_dim,),
                                                  minval=self.init_minval,
                                                  maxval=self.init_maxval,
                                                  dtype=tf.float64),
+                          lower=1e-4,
+                          upper=1e4,
                           name="length_scales_dim_{}".format(i))
 
             # GP variance
@@ -126,18 +128,17 @@ class GPModel(AbstractModel):
     def normalize(a: tf.Tensor, mean: tf.Tensor, std: tf.Tensor) -> tf.Tensor:
         return (a - mean) / std
 
-    def _update_mean_std(self) -> None:
-        min_std = 1e-10
+    def _update_mean_std(self, min_std=1e-10) -> None:
 
-        xs_mean, xs_std = tf.nn.moments(self.xs, axes=[0])
+        xs_mean, xs_var = tf.nn.moments(self.xs, axes=[0])
 
         self.xs_mean = xs_mean
-        self.xs_std = tf.maximum(xs_std, min_std)
+        self.xs_std = tf.maximum(tf.sqrt(xs_var), min_std)
 
-        ys_mean, ys_std = tf.nn.moments(self.ys, axes=[0])
+        ys_mean, ys_var = tf.nn.moments(self.ys, axes=[0])
 
         self.ys_mean = ys_mean
-        self.ys_std = tf.maximum(ys_std, min_std)
+        self.ys_std = tf.maximum(tf.sqrt(ys_var), min_std)
 
     def get_prior_gp_model(self, length_scale, gp_variance, noise_variance):
 
@@ -160,79 +161,86 @@ class GPModel(AbstractModel):
             best_loss = np.inf
             best_model = None
 
+            ls_name = "length_scales_dim_{}".format(i)
+            gp_var_name = "gp_variance_dim_{}".format(i)
+            noise_var_name = "noise_variance_dim_{}".format(i)
+
+            dummy_vars = Vars(tf.float64)
+
             for j in range(self.num_optimizer_restarts):
 
                 if self.verbose:
                     print("Optimization round: {} / {}".format(j + 1, self.num_optimizer_restarts))
 
-                ls_name = "dummy_length_scales_dim_{}".format(i)
-                gp_var_name = "dummy_gp_variance_dim_{}".format(i)
-                noise_var_name = "dummy_noise_var_dim_{}".format(i)
-
                 # Re-initialize the current GP's hyperparameters
 
                 # Length scales
-                self.vars.pos(init=tf.random.uniform(shape=(self.input_dim,),
-                                                     minval=self.init_minval,
-                                                     maxval=self.init_maxval,
-                                                     dtype=tf.float64),
-                              name=ls_name)
+                dummy_vars.bnd(init=tf.random.uniform(shape=(self.input_dim,),
+                                                      minval=self.init_minval,
+                                                      maxval=self.init_maxval,
+                                                      dtype=tf.float64),
+                               lower=1e-4,
+                               upper=1e4,
+                               name=ls_name)
 
                 # GP variance
-                self.vars.pos(init=tf.random.uniform(shape=(1,),
-                                                     minval=self.init_minval,
-                                                     maxval=self.init_maxval,
-                                                     dtype=tf.float64),
-                              name=gp_var_name)
+                dummy_vars.pos(init=tf.random.uniform(shape=(1,),
+                                                      minval=self.init_minval,
+                                                      maxval=self.init_maxval,
+                                                      dtype=tf.float64),
+                               name=gp_var_name)
 
                 # Noise variance: bound between 1e-4 and 1e4
-                self.vars.bnd(init=tf.random.uniform(shape=(1,),
-                                                     minval=self.init_minval,
-                                                     maxval=self.init_maxval,
-                                                     dtype=tf.float64),
-                              lower=1e-4,
-                              upper=1e4,
-                              name=noise_var_name)
+                dummy_vars.bnd(init=tf.random.uniform(shape=(1,),
+                                                      minval=self.init_minval,
+                                                      maxval=self.init_maxval,
+                                                      dtype=tf.float64),
+                               lower=1e-4,
+                               upper=1e4,
+                               name=noise_var_name)
 
                 # Training objective
                 def negative_gp_log_likelihood(gp_variance, length_scale, noise_variance):
 
-                    prior_gp = self.get_prior_gp_model(length_scale, gp_variance, noise_variance)
+                    prior_gp_ = self.get_prior_gp_model(length_scale, gp_variance, noise_variance)
 
-                    # Infer the model
-                    model = prior_gp | (x_normalized, y_normalized[:, i:i + 1])
-
-                    return -model(x_normalized).logpdf(y_normalized[:, i:i + 1])
+                    return -prior_gp_(x_normalized).logpdf(y_normalized[:, i:i + 1])
 
                 # Perform L-BFGS-B optimization
                 loss = minimise_l_bfgs_b(lambda v: negative_gp_log_likelihood(v[gp_var_name],
                                                                               v[ls_name],
                                                                               v[noise_var_name]),
-                                         self.vars,
+                                         dummy_vars,
                                          names=[ls_name,
                                                 gp_var_name,
                                                 noise_var_name])
 
                 if loss < best_loss:
-                    print("assigned")
-                    print(loss)
+
+                    if self.verbose:
+                        print("New best objective value: {:.4f}".format(loss))
+
                     best_loss = loss
+
+                    # Reassign variables
+                    self.vars.assign(ls_name, dummy_vars[ls_name])
+                    self.vars.assign(gp_var_name, dummy_vars[gp_var_name])
+                    self.vars.assign(noise_var_name, dummy_vars[noise_var_name])
 
                     # Construct parameterized kernel
                     kernel = self.AVAILABLE_KERNELS[self.kernel_name]()
-                    prior_gp = self.vars[gp_var_name] * (GP(kernel) > self.vars[ls_name]) + self.vars[noise_var_name] * GP(Delta())
+                    prior_gp = self.vars[gp_var_name] * (GP(kernel) > self.vars[ls_name]) + self.vars[
+                        noise_var_name] * GP(Delta())
 
                     # Infer the model
                     best_model = prior_gp | (x_normalized, y_normalized[:, i:i + 1])
 
-                    # Reassign variables
-                    self.vars.assign("length_scales_dim_{}".format(i), self.vars[ls_name])
-                    self.vars.assign("gp_variance_dim_{}".format(i), self.vars[gp_var_name])
-                    self.vars.assign("noise_variance_dim_{}".format(i), self.vars[noise_var_name])
-
             self.models.append(best_model)
 
     def predict_batch(self, xs):
+
+        if len(self.models) == 0:
+            raise ModelError("The model has not been trained yet!")
 
         xs = tf.convert_to_tensor(xs, dtype=tf.float64)
 
@@ -246,7 +254,6 @@ class GPModel(AbstractModel):
         var = []
 
         for i, model in enumerate(self.models):
-
             normal = model(self.normalize(xs,
                                           mean=self.xs_mean,
                                           std=self.xs_std))
