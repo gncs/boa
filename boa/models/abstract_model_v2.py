@@ -64,11 +64,20 @@ class AbstractModel(tf.keras.Model):
         self.init_minval = tf.constant(init_minval, dtype=tf.float64)
         self.init_maxval = tf.constant(init_maxval, dtype=tf.float64)
 
-    def __index__(self, *args, **kwargs):
-        pass
-
     @abc.abstractmethod
     def __or__(self, inputs) -> tf.keras.Model:
+        """
+        Adds data to the model. The notation is supposed to imitate
+        the conditioning operation:
+
+        posterior = prior | (xs, ys)
+
+        :param inputs: Tuple of two rank-2 tensors: the first
+        N x I and the second N x O, where N is the number of training examples,
+        I is the dimension of the input and O is the dimension of the output.
+        :return: Reference to the conditioned model
+        """
+
         if not isinstance(inputs, tuple) or len(inputs) != 2:
             raise ModelError("Input must be a tuple of (xs, ys)!")
 
@@ -107,21 +116,14 @@ class AbstractModel(tf.keras.Model):
         pass
 
     @staticmethod
-    def _set_tf_config() -> None:
-        tf.config.threading.set_inter_op_parallelism_threads(0)
-        tf.config.threading.set_intra_op_parallelism_threads(0)
-        tf.config.set_soft_device_placement(True)
-
-    @staticmethod
     def normalize(a: tf.Tensor, mean: tf.Tensor, std: tf.Tensor) -> tf.Tensor:
         return (a - mean) / std
 
-    @staticmethod
-    def get_prior_gp_model(kernel, length_scale, gp_variance, noise_variance):
+    def get_prior_gp_model(self, length_scale, gp_variance, noise_variance):
 
         # Construct parameterized kernel
-        kernel = AbstractModel.AVAILABLE_KERNELS[kernel]()
-        prior_gp = gp_variance * (GP(kernel) > length_scale) + noise_variance * GP(Delta())
+        kernel = self.AVAILABLE_KERNELS[self.kernel_name]()
+        prior_gp = gp_variance * GP(kernel).stretch(length_scale) + noise_variance * GP(Delta())
 
         return prior_gp
 

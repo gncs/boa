@@ -1,20 +1,13 @@
-from typing import Tuple, List, Optional, Callable
+from typing import Tuple, List
 
 import numpy as np
 import tensorflow as tf
-from stheno.tensorflow import GP, EQ, Matern52, Delta
 from varz.tensorflow import Vars, minimise_l_bfgs_b
 
 from .abstract_model_v2 import AbstractModel, ModelError
 
 
 class GPARModel(AbstractModel):
-    AVAILABLE_KERNELS = {"rbf": EQ,
-                         "matern52": Matern52, }
-
-    # Ensures that covariance matrix stays positive semidefinite
-    VARIABLE_LOG_BOUNDS = (-6, 7)
-    CHECKPOINT_NAME = "gpar_v2.ckpt"
 
     def __init__(self,
                  kernel: str,
@@ -65,12 +58,12 @@ class GPARModel(AbstractModel):
                                                   name="length_scales_dim_{}".format(i),
                                                   trainable=False))
 
-            self.gp_variances.append(tf.Variable(1.0,
+            self.gp_variances.append(tf.Variable((1,),
                                                  dtype=tf.float64,
                                                  name="gp_variance_dim_{}".format(i),
                                                  trainable=False))
 
-            self.noise_variances.append(tf.Variable(1.0,
+            self.noise_variances.append(tf.Variable((1,),
                                                     dtype=tf.float64,
                                                     name="noise_variance_dim_{}".format(i),
                                                     trainable=False))
@@ -79,33 +72,49 @@ class GPARModel(AbstractModel):
 
         return self
 
-    def initialize_training_variables(self, vs: Vars) -> None:
+    def initialize_hyperparameters(self) -> Vars:
+
+        vs = Vars(tf.float64)
 
         for i in range(self.output_dim):
             # Note the scaling in dimension with the index
-            vs.bnd(init=tf.random.uniform(shape=(self.input_dim + i,),
-                                          minval=self.init_minval,
-                                          maxval=self.init_maxval,
-                                          dtype=tf.float64),
+            vs.bnd(init=tf.ones(self.input_dim + i, dtype=tf.float64),
                    lower=1e-4,
                    upper=1e4,
                    name="length_scales_dim_{}".format(i))
 
             # GP variance
-            vs.pos(init=tf.random.uniform(shape=(1,),
-                                          minval=self.init_minval,
-                                          maxval=self.init_maxval,
-                                          dtype=tf.float64),
+            vs.pos(init=tf.ones(1, dtype=tf.float64),
                    name="gp_variance_dim_{}".format(i))
 
             # Noise variance: bound between 1e-4 and 1e4
-            vs.bnd(init=tf.random.uniform(shape=(1,),
-                                          minval=self.init_minval,
-                                          maxval=self.init_maxval,
-                                          dtype=tf.float64),
+            vs.bnd(init=tf.ones(1, dtype=tf.float64),
                    lower=1e-4,
                    upper=1e4,
                    name="noise_variance_dim_{}".format(i))
+
+        return vs
+
+    def reinitialize_hyperparameters(self, vs) -> None:
+
+        for i in range(self.output_dim):
+            vs.assign("length_scales_dim_{}".format(i),
+                      tf.random.uniform(shape=(self.input_dim + i,),
+                                        minval=self.init_minval,
+                                        maxval=self.init_maxval,
+                                        dtype=tf.float64))
+
+            vs.assign("gp_variance_dim_{}".format(i),
+                      tf.random.uniform(shape=(1,),
+                                        minval=self.init_minval,
+                                        maxval=self.init_maxval,
+                                        dtype=tf.float64))
+
+            vs.assign("noise_variance_dim_{}".format(i),
+                      tf.random.uniform(shape=(1,),
+                                        minval=self.init_minval,
+                                        maxval=self.init_maxval,
+                                        dtype=tf.float64))
 
     def train(self) -> None:
         self._update_mean_std()
@@ -115,13 +124,12 @@ class GPARModel(AbstractModel):
         self.models.clear()
 
         # Create dummy variables for training
-        vs = Vars(tf.float64)
+        vs = self.initialize_hyperparameters()
 
         # Define i-th GP training loss
         def negative_gp_log_likelihood(idx, gp_var, length_scale, noise_var):
 
-            prior_gp_ = self.get_prior_gp_model(self.kernel_name,
-                                                length_scale,
+            prior_gp_ = self.get_prior_gp_model(length_scale,
                                                 gp_var,
                                                 noise_var)
 
@@ -149,12 +157,13 @@ class GPARModel(AbstractModel):
         for i in range(self.num_optimizer_restarts):
 
             # Re-initialize to a random configuration
-            self.initialize_training_variables(vs)
+            self.reinitialize_hyperparameters(vs)
+
+            loss = np.inf
 
             try:
                 # Perform L-BFGS-B optimization
-                loss = minimise_l_bfgs_b(negative_gpar_log_likelihood,
-                                         vs)
+                loss = minimise_l_bfgs_b(negative_gpar_log_likelihood, vs)
 
             except Exception as e:
                 print("Iteration {} failed: {}".format(i + 1, str(e)))
@@ -163,39 +172,51 @@ class GPARModel(AbstractModel):
 
                 best_loss = loss
 
-    def predict_batch(self, xs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        assert xs.shape[1] == self.input_dim
-        xs_test_normalized = self.normalize(xs, mean=self.xs_mean, std=self.xs_std)
+                self.models.clear()
 
-        mean_list: List[np.ndarray] = []
-        var_list: List[np.ndarray] = []
+                # Assign the hyperparameters for each input to the model variables
+                for j in range(self.output_dim):
 
-        with self._get_session() as session:
-            session.run(tf.global_variables_initializer())
-            self.load_model(session)
+                    self.length_scales[j].assign(vs["length_scales_dim_{}".format(j)])
+                    self.gp_variances[j].assign(vs["gp_variance_dim_{}".format(j)])
+                    self.noise_variances[j].assign(vs["noise_variance_dim_{}".format(j)])
 
-            feed_dict = {}
-            for i, (x_ph, y_ph, x_test_ph) in enumerate(self.model_post_phs):
-                feed_dict[x_ph] = np.concatenate((self.xs_normalized, self.ys_normalized[:, :i]), axis=1)
-                feed_dict[y_ph] = self.ys_normalized[:, i:i + 1]
-                feed_dict[x_test_ph] = np.concatenate([xs_test_normalized] + mean_list, axis=1)
+                    prior_gp = self.get_prior_gp_model(self.length_scales[j],
+                                                       self.gp_variances[j],
+                                                       self.noise_variances[j])
 
-                mean_list.append(session.run(self.model_post_means[i], feed_dict=feed_dict))
-                var_list.append(session.run(self.model_post_vars[i], feed_dict=feed_dict))
+                    gp_input = tf.concat((x_normalized, y_normalized[:, :j]), axis=1)
 
-        mean = np.concatenate(mean_list, axis=1)
-        variance = np.concatenate(var_list, axis=1)
+                    # Condition the model
+                    best_model = prior_gp | (gp_input, y_normalized[:, j:j + 1])
 
-        return (mean * self.ys_std + self.ys_mean), (variance * self.ys_std ** 2)
+                    self.models.append(best_model)
 
-    def save_model(self, session):
-        saver = tf.train.Saver()
-        saver.save(sess=session, save_path=self.CHECKPOINT_NAME)
+    def predict_batch(self, xs) -> Tuple[tf.Tensor, tf.Tensor]:
 
-    def load_model(self, session):
-        saver = tf.train.Saver()
-        saver.restore(sess=session, save_path=self.CHECKPOINT_NAME)
+        if len(self.models) == 0:
+            raise ModelError("The model has not been trained yet!")
 
-    def _print(self, message: str):
-        if self.verbose:
-            print(message)
+        xs = tf.convert_to_tensor(xs, dtype=tf.float64)
+
+        if xs.shape[1] != self.input_dim:
+            raise ModelError("xs with shape {} must have 1st dimension (0 indexed) {}!".format(xs.shape,
+                                                                                               self.input_dim))
+
+        xs_normalized = self.normalize(xs, mean=self.xs_mean, std=self.xs_std)
+
+        means = []
+        var = []
+
+        for i, model in enumerate(self.models):
+
+            gp_input = tf.concat([xs_normalized] + means, axis=1)
+
+            means.append(model.mean(gp_input))
+            var.append(model.kernel.elwise(gp_input))
+
+        means = tf.concat(means, axis=1)
+        var = tf.concat(var, axis=1)
+
+        return (means * self.ys_std + self.ys_mean), (var * self.ys_std ** 2)
+

@@ -9,7 +9,7 @@ import numpy as np
 from .abstract_model_v2 import AbstractModel, ModelError
 
 
-class GPModel(AbstractModel):
+class FullyFactorizedGPModel(AbstractModel):
 
     def __init__(self,
                  kernel: str,
@@ -27,12 +27,12 @@ class GPModel(AbstractModel):
         :param name: name of the GP model
         """
 
-        super(GPModel, self).__init__(kernel=kernel,
-                                      num_optimizer_restarts=num_optimizer_restarts,
-                                      parallel=parallel,
-                                      verbose=verbose,
-                                      name=name,
-                                      **kwargs)
+        super(FullyFactorizedGPModel, self).__init__(kernel=kernel,
+                                                     num_optimizer_restarts=num_optimizer_restarts,
+                                                     parallel=parallel,
+                                                     verbose=verbose,
+                                                     name=name,
+                                                     **kwargs)
 
         self.length_scales: List[tf.Variable] = []
         self.gp_variances: List[tf.Variable] = []
@@ -47,7 +47,7 @@ class GPModel(AbstractModel):
         """
 
         # Validate inputs and set data
-        super(GPModel, self).__or__(inputs)
+        super(FullyFactorizedGPModel, self).__or__(inputs)
 
         # Create GP hyperparameter variables
         for i in range(self.output_dim):
@@ -91,43 +91,47 @@ class GPModel(AbstractModel):
 
             vs = Vars(tf.float64)
 
+            # Length scales
+            vs.bnd(init=tf.ones(self.input_dim, dtype=tf.float64),
+                   lower=1e-4,
+                   upper=1e4,
+                   name=ls_name)
+
+            # GP variance
+            vs.pos(init=tf.ones(1, dtype=tf.float64),
+                   name=gp_var_name)
+
+            # Noise variance: bound between 1e-4 and 1e4
+            vs.bnd(init=tf.ones(1, dtype=tf.float64),
+                   lower=1e-4,
+                   upper=1e4,
+                   name=noise_var_name)
+
             for j in range(self.num_optimizer_restarts):
 
                 if self.verbose:
                     print("Optimization round: {} / {}".format(j + 1, self.num_optimizer_restarts))
 
                 # Re-initialize the current GP's hyperparameters
+                vs.assign(ls_name, tf.random.uniform(shape=(self.input_dim,),
+                                                     minval=self.init_minval,
+                                                     maxval=self.init_maxval,
+                                                     dtype=tf.float64))
 
-                # Length scales
-                vs.bnd(init=tf.random.uniform(shape=(self.input_dim,),
-                                              minval=self.init_minval,
-                                              maxval=self.init_maxval,
-                                              dtype=tf.float64),
-                       lower=1e-4,
-                       upper=1e4,
-                       name=ls_name)
+                vs.assign(gp_var_name, tf.random.uniform(shape=(1,),
+                                                         minval=self.init_minval,
+                                                         maxval=self.init_maxval,
+                                                         dtype=tf.float64))
 
-                # GP variance
-                vs.pos(init=tf.random.uniform(shape=(1,),
-                                              minval=self.init_minval,
-                                              maxval=self.init_maxval,
-                                              dtype=tf.float64),
-                       name=gp_var_name)
-
-                # Noise variance: bound between 1e-4 and 1e4
-                vs.bnd(init=tf.random.uniform(shape=(1,),
-                                              minval=self.init_minval,
-                                              maxval=self.init_maxval,
-                                              dtype=tf.float64),
-                       lower=1e-4,
-                       upper=1e4,
-                       name=noise_var_name)
+                vs.assign(noise_var_name, tf.random.uniform(shape=(1,),
+                                                            minval=self.init_minval,
+                                                            maxval=self.init_maxval,
+                                                            dtype=tf.float64))
 
                 # Training objective
                 def negative_gp_log_likelihood(gp_variance, length_scale, noise_variance):
 
-                    prior_gp_ = self.get_prior_gp_model(self.kernel_name,
-                                                        length_scale,
+                    prior_gp_ = self.get_prior_gp_model(length_scale,
                                                         gp_variance,
                                                         noise_variance)
 
@@ -158,11 +162,10 @@ class GPModel(AbstractModel):
                     self.gp_variances[i].assign(vs[gp_var_name])
                     self.noise_variances[i].assign(vs[noise_var_name])
 
-                    prior_gp = self.get_prior_gp_model(self.kernel_name,
-                                                       self.length_scales[i].value(),
-                                                       self.gp_variances[i].value(),
-                                                       self.noise_variances[i].value())
-                    # Infer the model
+                    prior_gp = self.get_prior_gp_model(self.length_scales[i],
+                                                       self.gp_variances[i],
+                                                       self.noise_variances[i])
+                    # Condition the model
                     best_model = prior_gp | (x_normalized, y_normalized[:, i:i + 1])
 
             self.models.append(best_model)
@@ -199,9 +202,8 @@ class GPModel(AbstractModel):
         y_normalized = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
 
         for i in range(len(self.models)):
-            model = self.get_prior_gp_model(kernel=self.kernel_name,
-                                            length_scale=self.length_scales[i].value(),
-                                            gp_variance=self.gp_variances[i].value(),
-                                            noise_variance=self.noise_variances[i].value())
+            model = self.get_prior_gp_model(length_scale=self.length_scales[i],
+                                            gp_variance=self.gp_variances[i],
+                                            noise_variance=self.noise_variances[i])
 
             self.models[i] = model | (x_normalized, y_normalized[:, i:i + 1])

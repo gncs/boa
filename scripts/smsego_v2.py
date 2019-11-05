@@ -1,6 +1,6 @@
 from typing import List
 
-from boa.models.gp_model_v2 import GPModel
+from boa.models.fully_factorized_gp_v2 import FullyFactorizedGPModel
 from boa.acquisition.smsego_v2 import SMSEGO
 from boa.objective.abstract import AbstractObjective
 from boa.optimization.optimizer_v2 import Optimizer
@@ -49,7 +49,7 @@ def f(x):
 def manual_optimization(x_train, y_train):
 
     # Infer GP
-    model = GPModel(kernel="rbf", num_optimizer_restarts=5, verbose=False)
+    model = FullyFactorizedGPModel(kernel="rbf", num_optimizer_restarts=5, verbose=False)
     model = model | (x_train, y_train)
 
     # Optimize the hyperparameters
@@ -127,7 +127,7 @@ def automated_optimization(x_train, y_train):
     objective = Objective(fun=f, candidates=x_cont)
 
     # Set up GP model and train it
-    model = GPModel(kernel='rbf', num_optimizer_restarts=3, verbose=False)
+    model = FullyFactorizedGPModel(kernel='rbf', num_optimizer_restarts=3, verbose=False)
     model = model | (x_train, y_train)
     model.train()
 
