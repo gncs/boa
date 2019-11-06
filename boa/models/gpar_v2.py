@@ -72,8 +72,17 @@ class GPARModel(AbstractModel):
 
         return self
 
-    def initialize_hyperparameters(self) -> Vars:
+    def create_hyperparameters(self) -> Vars:
+        """
+        Creates the hyperparameter container that the model uses
+        and creates the constrained hyperparameter variables in it,
+        initialized to some dummy values.
 
+        *Note*: It is not safe to use the initialized values for training,
+        always call initialize_hyperparameters first!
+
+        :return: Varz variable container
+        """
         vs = Vars(tf.float64)
 
         for i in range(self.output_dim):
@@ -95,7 +104,7 @@ class GPARModel(AbstractModel):
 
         return vs
 
-    def reinitialize_hyperparameters(self, vs) -> None:
+    def initialize_hyperparameters(self, vs) -> None:
 
         for i in range(self.output_dim):
             vs.assign("length_scales_dim_{}".format(i),
@@ -124,7 +133,7 @@ class GPARModel(AbstractModel):
         self.models.clear()
 
         # Create dummy variables for training
-        vs = self.initialize_hyperparameters()
+        vs = self.create_hyperparameters()
 
         # Define i-th GP training loss
         def negative_gp_log_likelihood(idx, gp_var, length_scale, noise_var):
@@ -157,7 +166,7 @@ class GPARModel(AbstractModel):
         for i in range(self.num_optimizer_restarts):
 
             # Re-initialize to a random configuration
-            self.reinitialize_hyperparameters(vs)
+            self.initialize_hyperparameters(vs)
 
             loss = np.inf
 
