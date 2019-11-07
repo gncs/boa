@@ -27,6 +27,7 @@ setup(
     install_requires=[
         'numpy',
         'pandas',
+        'matplotlib',
         'scikit-learn',
         'tensorflow',
         'stheno',

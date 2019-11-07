@@ -5,8 +5,7 @@ import abc
 import numpy as np
 import tensorflow as tf
 
-from varz.tensorflow import Vars
-from stheno import GP, EQ, Delta, Matern52
+from stheno.tensorflow import GP, EQ, Delta, Matern52, Graph
 
 
 class ModelError(Exception):
@@ -121,9 +120,27 @@ class AbstractModel(tf.keras.Model):
 
     def get_prior_gp_model(self, length_scale, gp_variance, noise_variance):
 
+        # Create a new Stheno graph for the GP. This step is crucial
+        g = Graph()
+
         # Construct parameterized kernel
         kernel = self.AVAILABLE_KERNELS[self.kernel_name]()
-        prior_gp = gp_variance * GP(kernel).stretch(length_scale) + noise_variance * GP(Delta())
+
+        try:
+            prior_gp = gp_variance * GP(kernel, graph=g).stretch(length_scale) + \
+                       noise_variance * GP(Delta(), graph=g)
+
+        except Exception as e:
+            print("Creating GP prior failed: {}".format(str(e)))
+
+            print(type(gp_variance))
+            print(gp_variance)
+            print("-")
+            print(length_scale)
+            print("-")
+            print(noise_variance)
+
+            raise e
 
         return prior_gp
 

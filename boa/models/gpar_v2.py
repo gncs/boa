@@ -162,8 +162,17 @@ class GPARModel(AbstractModel):
 
         best_loss = np.inf
 
+        i = 0
+
         # Train N GPAR models and select the best one
-        for i in range(self.num_optimizer_restarts):
+        while i < self.num_optimizer_restarts:
+
+            i += 1
+
+            if self.verbose:
+                print("\n-------------------------------")
+                print(f"Training iteration {i}")
+                print("-------------------------------\n")
 
             # Re-initialize to a random configuration
             self.initialize_hyperparameters(vs)
@@ -175,9 +184,12 @@ class GPARModel(AbstractModel):
                 loss = minimise_l_bfgs_b(negative_gpar_log_likelihood, vs)
 
             except Exception as e:
-                print("Iteration {} failed: {}".format(i + 1, str(e)))
+                print("Iteration {} failed: {}".format(i, str(e)))
 
             if loss < best_loss:
+
+                if self.verbose:
+                    print("New best loss: {:.3f}".format(loss))
 
                 best_loss = loss
 
@@ -200,6 +212,13 @@ class GPARModel(AbstractModel):
                     best_model = prior_gp | (gp_input, y_normalized[:, j:j + 1])
 
                     self.models.append(best_model)
+
+            elif self.verbose:
+                print("Loss: {:.3f}".format(loss))
+
+            if np.isnan(loss):
+                print("Loss was NaN, restarting training iteration!")
+                i -= 1
 
     def predict_batch(self, xs) -> Tuple[tf.Tensor, tf.Tensor]:
 

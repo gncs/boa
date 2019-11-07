@@ -139,6 +139,7 @@ class FullyFactorizedGPModel(AbstractModel):
 
                 loss = np.inf
                 try:
+                    pass
                     # Perform L-BFGS-B optimization
                     loss = minimise_l_bfgs_b(lambda v: negative_gp_log_likelihood(v[gp_var_name],
                                                                                   v[ls_name],
