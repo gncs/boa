@@ -1,6 +1,9 @@
 # Logs folder
 logs/
 
+# Scratch folder
+scratch/
+
 # IDE
 .idea/
 

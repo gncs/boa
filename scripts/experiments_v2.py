@@ -269,7 +269,7 @@ def main(args,
                                     rounds=5,
                                     verbose=args.verbose)
 
-    elif args.model in ["gpar", "mf_gpar"]:
+    elif args.model in ["gpar", "mf-gpar"]:
         df, input_labels, output_labels = prepare_gpar_data(data,
                                                             targets)
 
@@ -278,7 +278,7 @@ def main(args,
                               num_optimizer_restarts=args.num_optimizer_restarts,
                               verbose=args.verbose)
 
-        elif args.model == 'mf_gpar':
+        elif args.model == 'mf-gpar':
             model = MatrixFactorizedGPARModel(kernel=args.kernel,
                                               num_optimizer_restarts=args.num_optimizer_restarts,
                                               latent_dim=args.latent_dim,
@@ -290,6 +290,7 @@ def main(args,
                                       inputs=input_labels,
                                       outputs=output_labels,
                                       logdir=args.logdir,
+                                      matrix_factorized=args.model=="mf-gpar",
                                       experiment_file_name=experiment_json_format.format(args.model),
                                       seed=seed,
                                       rounds=5,

@@ -170,9 +170,9 @@ class GPARModel(AbstractModel):
             i += 1
 
             if self.verbose:
-                print("\n-------------------------------")
+                print("-------------------------------")
                 print(f"Training iteration {i}")
-                print("-------------------------------\n")
+                print("-------------------------------")
 
             # Re-initialize to a random configuration
             self.initialize_hyperparameters(vs)
