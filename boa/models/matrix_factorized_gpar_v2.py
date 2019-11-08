@@ -117,17 +117,18 @@ class MatrixFactorizedGPARModel(GPARModel):
                                    log_lower_bound: float = -7,
                                    log_upper_bound: float = 7 ) -> None:
 
+        # Glotrot initialization
         vs.assign(self.LLLS_MAT,
-                  tf.random.uniform(shape=(self.output_dim, self.latent_dim),
-                                    dtype=tf.float64,
-                                    minval=log_lower_bound,
-                                    maxval=log_upper_bound))
+                  tf.random.normal(shape=(self.output_dim, self.latent_dim),
+                                   dtype=tf.float64,
+                                   mean=tf.cast(np.log(0.5 / self.latent_dim), dtype=tf.float64),
+                                   stddev=tf.cast(tf.sqrt(2 / (self.output_dim + self.latent_dim)), dtype=tf.float64)))
 
         vs.assign(self.RLLS_MAT,
-                  tf.random.uniform(shape=(self.latent_dim, self.input_dim),
-                                    dtype=tf.float64,
-                                    minval=log_lower_bound,
-                                    maxval=log_upper_bound))
+                  tf.random.normal(shape=(self.latent_dim, self.input_dim),
+                                   dtype=tf.float64,
+                                   mean=tf.cast(np.log(0.5 / self.latent_dim), dtype=tf.float64),
+                                   stddev=tf.cast(tf.sqrt(2 / (self.latent_dim + self.input_dim)), dtype=tf.float64)))
 
         for i in range(self.output_dim):
 

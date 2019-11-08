@@ -169,7 +169,8 @@ def run_gpar_experiment(model,
                 model.train()
             except Exception as e:
                 print("Training failed: {}".format(str(e)))
-                continue
+                raise e
+                #continue
 
             experiment['train_time'] = time.time() - start_time
 

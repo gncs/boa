@@ -125,10 +125,12 @@ class AbstractModel(tf.keras.Model):
 
         # Construct parameterized kernel
         kernel = self.AVAILABLE_KERNELS[self.kernel_name]()
+        kernel = gp_variance * kernel.stretch(length_scale)
+
+        noise_kernel = noise_variance * Delta()
 
         try:
-            prior_gp = gp_variance * GP(kernel, graph=g).stretch(length_scale) + \
-                       noise_variance * GP(Delta(), graph=g)
+            prior_gp = GP(kernel, graph=g) + GP(noise_kernel, graph=g)
 
         except Exception as e:
             print("Creating GP prior failed: {}".format(str(e)))

@@ -93,7 +93,9 @@ class GPARModel(AbstractModel):
                    name="length_scales_dim_{}".format(i))
 
             # GP variance
-            vs.pos(init=tf.ones(1, dtype=tf.float64),
+            vs.bnd(init=tf.ones(1, dtype=tf.float64),
+                   lower=1e-4,
+                   upper=1e4,
                    name="gp_variance_dim_{}".format(i))
 
             # Noise variance: bound between 1e-4 and 1e4
@@ -218,7 +220,24 @@ class GPARModel(AbstractModel):
 
             if np.isnan(loss):
                 print("Loss was NaN, restarting training iteration!")
+
                 i -= 1
+
+            print("GP variances:")
+            for j in range(self.output_dim):
+
+                print(vs[f"gp_variance_dim_{j}"].numpy())
+                print(vs[f"noise_variance_dim_{j}"].numpy())
+
+                ls = vs[f"length_scales_dim_{j}"].numpy()
+
+                print("length scale quantiles")
+                print(np.min(ls))
+                print(np.percentile(ls, 25))
+                print(np.percentile(ls, 50))
+                print(np.percentile(ls, 75))
+                print(np.max(ls))
+                print("===========")
 
     def predict_batch(self, xs) -> Tuple[tf.Tensor, tf.Tensor]:
 
