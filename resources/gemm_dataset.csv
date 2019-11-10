@@ -1,4 +1,4 @@
-cycle_time	cache_size	cache_assoc	cache_hit_latency	tlb_hit_latency	tlb_entries	l2cache_size	cycle	avg_power (mW)	fu_power	avg_fu_dynamic_power	avg_fu_leakage_power	avg_mem_power	avg_mem_dynamic_power	avg_mem_leakage_power	total_area (uM^2)	fu_area	mem_area	num_sp_multiplier	num_sp_adder	num_dp_multiplier	num_dp_adder	num_trig_unit	num_multiplier	num_adder	num_bit_wise	num_shifter	num_register
+cycle_time	cache_size	cache_assoc	cache_hit_latency	tlb_hit_latency	tlb_entries	l2cache_size	cycle	avg_power	fu_power	avg_fu_dynamic_power	avg_fu_leakage_power	avg_mem_power	avg_mem_dynamic_power	avg_mem_leakage_power	total_area	fu_area	mem_area	num_sp_multiplier	num_sp_adder	num_dp_multiplier	num_dp_adder	num_trig_unit	num_multiplier	num_adder	num_bit_wise	num_shifter	num_register
 2	32768	2	2	4	4	262144	0	58.1232	45.7858	43.7455	2.04024	12.3374	10.0891	2.24834	659733.0	204371.0	455361.0	0	0	8	8	0	0	0	0	9	45
 2	65536	2	1	4	8	1048576	0	83.7065	58.462	56.4217	2.04024	25.2445	21.1183	4.12621	1056870.0	204371.0	852502.0	0	0	8	8	0	0	0	0	9	45
 1	131072	8	1	4	16	1048576	0	333.786	149.275	145.876	3.39839	184.511	175.724	8.78763	2261580.0	268094.0	1993480.0	0	0	8	8	0	0	0	0	9	45
