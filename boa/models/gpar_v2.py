@@ -12,6 +12,7 @@ class GPARModel(AbstractModel):
     def __init__(self,
                  kernel: str,
                  num_optimizer_restarts: int,
+                 denoising: bool = True,
                  verbose: bool = False,
                  name: str = "gpar_model",
                  **kwargs):
@@ -29,9 +30,7 @@ class GPARModel(AbstractModel):
                                         name=name,
                                         **kwargs)
 
-        self.model_post_means: List[tf.Tensor] = []
-        self.model_post_vars: List[tf.Tensor] = []
-        self.model_post_phs: List[Tuple[tf.Variable, tf.Variable, tf.Variable]] = []
+        self.denoising = denoising
 
         self.length_scales: List[tf.Variable] = []
         self.gp_variances: List[tf.Variable] = []
@@ -83,25 +82,28 @@ class GPARModel(AbstractModel):
 
         :return: Varz variable container
         """
+
+        self._update_mean_std()
+
         vs = Vars(tf.float64)
 
         for i in range(self.output_dim):
             # Note the scaling in dimension with the index
             vs.bnd(init=tf.ones(self.input_dim + i, dtype=tf.float64),
-                   lower=1e-4,
-                   upper=1e4,
+                   lower=1e-3,
+                   upper=1e3,
                    name="length_scales_dim_{}".format(i))
 
             # GP variance
             vs.bnd(init=tf.ones(1, dtype=tf.float64),
                    lower=1e-4,
-                   upper=1e4,
+                   upper=self.ys_std[i] * 1e3 + 1e2,
                    name="gp_variance_dim_{}".format(i))
 
             # Noise variance: bound between 1e-4 and 1e4
             vs.bnd(init=tf.ones(1, dtype=tf.float64),
                    lower=1e-4,
-                   upper=1e4,
+                   upper=self.ys_std[i] * 1e3 + 1e2,
                    name="noise_variance_dim_{}".format(i))
 
         return vs
@@ -132,24 +134,28 @@ class GPARModel(AbstractModel):
         x_normalized = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
         y_normalized = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
 
-        self.models.clear()
+        self.signal_gps.clear()
+        self.noise_gps.clear()
 
         # Create dummy variables for training
         vs = self.create_hyperparameters()
 
-        # Define i-th GP training loss
-        def negative_gp_log_likelihood(idx, gp_var, length_scale, noise_var):
-
-            prior_gp_ = self.get_prior_gp_model(length_scale,
-                                                gp_var,
-                                                noise_var)
-
-            gp_input = tf.concat((x_normalized, y_normalized[:, :idx]), axis=1)
-
-            return -prior_gp_(gp_input).logpdf(y_normalized[:, idx:idx + 1])
-
         # Define the GPAR training loss
         def negative_gpar_log_likelihood(vs):
+
+            posterior_predictive_means = []
+
+            # Define i-th GP training loss
+            def negative_gp_log_likelihood(idx, gp_var, length_scale, noise_var):
+                signal_gp_, noise_gp_ = self.get_prior_gp_model(length_scale,
+                                                                gp_var,
+                                                                noise_var)
+
+                prior_gp_ = signal_gp_ + noise_gp_
+
+                gp_input = tf.concat((x_normalized, y_normalized[:, :idx]), axis=1)
+
+                return -prior_gp_(gp_input).logpdf(y_normalized[:, idx:idx + 1])
 
             losses = []
 
@@ -179,14 +185,29 @@ class GPARModel(AbstractModel):
             # Re-initialize to a random configuration
             self.initialize_hyperparameters(vs)
 
+            for j in range(self.output_dim):
+
+                print(f'{j} - gv: {vs[f"gp_variance_dim_{j}"].numpy()}, nv: {vs[f"noise_variance_dim_{j}"].numpy()}')
+
             loss = np.inf
 
             try:
                 # Perform L-BFGS-B optimization
-                loss = minimise_l_bfgs_b(negative_gpar_log_likelihood, vs)
+                loss = minimise_l_bfgs_b(negative_gpar_log_likelihood, vs, trace=True, err_level="raise")
 
             except Exception as e:
+
+                for j in range(self.output_dim):
+                    ls_name = "length_scales_dim_{}".format(j)
+                    gp_var = "gp_variance_dim_{}".format(j)
+                    noise_var = "noise_variance_dim_{}".format(j)
+                    print(f"Saving: {vs[gp_var]}, --- {vs[noise_var]}")
+                    np.save("logs/" + ls_name, vs[ls_name].numpy())
+                    np.save("logs/" + gp_var, vs[gp_var].numpy())
+                    np.save("logs/" + noise_var, vs[noise_var].numpy())
+
                 print("Iteration {} failed: {}".format(i, str(e)))
+                raise e
 
             if loss < best_loss:
 
@@ -195,7 +216,8 @@ class GPARModel(AbstractModel):
 
                 best_loss = loss
 
-                self.models.clear()
+                self.signal_gps.clear()
+                self.noise_gps.clear()
 
                 # Assign the hyperparameters for each input to the model variables
                 for j in range(self.output_dim):
@@ -204,16 +226,12 @@ class GPARModel(AbstractModel):
                     self.gp_variances[j].assign(vs["gp_variance_dim_{}".format(j)])
                     self.noise_variances[j].assign(vs["noise_variance_dim_{}".format(j)])
 
-                    prior_gp = self.get_prior_gp_model(self.length_scales[j],
-                                                       self.gp_variances[j],
-                                                       self.noise_variances[j])
+                    signal_gp, noise_gp = self.get_prior_gp_model(self.length_scales[j],
+                                                                  self.gp_variances[j],
+                                                                  self.noise_variances[j])
 
-                    gp_input = tf.concat((x_normalized, y_normalized[:, :j]), axis=1)
-
-                    # Condition the model
-                    best_model = prior_gp | (gp_input, y_normalized[:, j:j + 1])
-
-                    self.models.append(best_model)
+                    self.signal_gps.append(signal_gp)
+                    self.noise_gps.append(noise_gp)
 
             elif self.verbose:
                 print("Loss: {:.3f}".format(loss))
@@ -223,25 +241,25 @@ class GPARModel(AbstractModel):
 
                 i -= 1
 
-            print("GP variances:")
-            for j in range(self.output_dim):
-
-                print(vs[f"gp_variance_dim_{j}"].numpy())
-                print(vs[f"noise_variance_dim_{j}"].numpy())
-
-                ls = vs[f"length_scales_dim_{j}"].numpy()
-
-                print("length scale quantiles")
-                print(np.min(ls))
-                print(np.percentile(ls, 25))
-                print(np.percentile(ls, 50))
-                print(np.percentile(ls, 75))
-                print(np.max(ls))
-                print("===========")
+            # print("GP variances:")
+            # for j in range(self.output_dim):
+            #
+            #     print(vs[f"gp_variance_dim_{j}"].numpy())
+            #     print(vs[f"noise_variance_dim_{j}"].numpy())
+            #
+            #     ls = vs[f"length_scales_dim_{j}"].numpy()
+            #
+            #     print("length scale quantiles")
+            #     print(np.min(ls))
+            #     print(np.percentile(ls, 25))
+            #     print(np.percentile(ls, 50))
+            #     print(np.percentile(ls, 75))
+            #     print(np.max(ls))
+            #     print("===========")
 
     def predict_batch(self, xs) -> Tuple[tf.Tensor, tf.Tensor]:
 
-        if len(self.models) == 0:
+        if len(self.signal_gps) == 0:
             raise ModelError("The model has not been trained yet!")
 
         xs = tf.convert_to_tensor(xs, dtype=tf.float64)
@@ -249,18 +267,24 @@ class GPARModel(AbstractModel):
         if xs.shape[1] != self.input_dim:
             raise ModelError("xs with shape {} must have 1st dimension (0 indexed) {}!".format(xs.shape,
                                                                                                self.input_dim))
-
         xs_normalized = self.normalize(xs, mean=self.xs_mean, std=self.xs_std)
+
+        train_xs = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
+        train_ys = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
 
         means = []
         var = []
 
-        for i, model in enumerate(self.models):
+        for i, (signal_gp, noise_gp) in enumerate(zip(self.signal_gps, self.noise_gps)):
 
             gp_input = tf.concat([xs_normalized] + means, axis=1)
 
-            means.append(model.mean(gp_input))
-            var.append(model.kernel.elwise(gp_input))
+            gp_train_input = tf.concat([train_xs, train_ys[:, :i]], axis=1)
+
+            posterior_gp = (signal_gp + noise_gp) | (gp_train_input, train_ys[:, i: i + 1])
+
+            means.append(posterior_gp.mean(gp_input))
+            var.append(posterior_gp.kernel.elwise(gp_input))
 
         means = tf.concat(means, axis=1)
         var = tf.concat(var, axis=1)

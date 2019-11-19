@@ -155,7 +155,7 @@ def run_gpar_experiment(model,
                                            random_state=seed + index)
 
             try:
-                model = model | (train[inputs].values, train[outputs].values)
+                model = model | (train[inputs].values, train[outputs].values[:, :])
             except Exception as e:
                 print(model.input_dim)
                 print(model.output_dim)
@@ -227,7 +227,7 @@ def prepare_gpar_data(data,
 
 
 def main(args,
-         seed=42,
+         seed=27,
          experiment_json_format="{}_experiments.json",
          targets=('avg_power', 'cycle', 'total_area')):
     data = load_dataset(path=args.dataset, kind=args.task)

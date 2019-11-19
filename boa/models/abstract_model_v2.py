@@ -30,8 +30,8 @@ class AbstractModel(tf.keras.Model):
 
         super(AbstractModel, self).__init__(name=name, **kwargs)
 
-        # Independent GPs for each output dimension
-        self.models: List = []
+        self.signal_gps: List = []
+        self.noise_gps: List = []
 
         # Check if the specified kernel is available
         if kernel in self.AVAILABLE_KERNELS:
@@ -129,24 +129,12 @@ class AbstractModel(tf.keras.Model):
 
         noise_kernel = noise_variance * Delta()
 
-        try:
-            prior_gp = GP(kernel, graph=g) + GP(noise_kernel, graph=g)
+        signal_gp = GP(kernel, graph=g)
+        noise_gp = GP(noise_kernel, graph=g)
 
-        except Exception as e:
-            print("Creating GP prior failed: {}".format(str(e)))
+        return signal_gp, noise_gp
 
-            print(type(gp_variance))
-            print(gp_variance)
-            print("-")
-            print(length_scale)
-            print("-")
-            print(noise_variance)
-
-            raise e
-
-        return prior_gp
-
-    def _update_mean_std(self, min_std=1e-10) -> None:
+    def _update_mean_std(self, min_std=1e-5) -> None:
 
         xs_mean, xs_var = tf.nn.moments(self.xs, axes=[0])
 
@@ -157,6 +145,10 @@ class AbstractModel(tf.keras.Model):
 
         self.ys_mean = ys_mean
         self.ys_std = tf.maximum(tf.sqrt(ys_var), min_std)
+
+        if self.verbose:
+            print("min x std: {}".format(tf.reduce_min(self.xs_std)))
+            print("min y std: {}".format(tf.reduce_min(self.ys_std)))
 
     def add_true_point(self, x, y) -> None:
 

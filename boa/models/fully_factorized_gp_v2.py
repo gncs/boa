@@ -68,7 +68,6 @@ class FullyFactorizedGPModel(AbstractModel):
 
         # Perform updates
         self._update_mean_std()
-        self._update_models()
 
         return self
 
@@ -77,13 +76,12 @@ class FullyFactorizedGPModel(AbstractModel):
         x_normalized = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
         y_normalized = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
 
-        self.models.clear()
-
         # Build model for each output
         for i in range(self.output_dim):
 
             best_loss = np.inf
-            best_model = None
+            best_signal_gp = None
+            best_noise_gp = None
 
             ls_name = "length_scales_dim_{}".format(i)
             gp_var_name = "gp_variance_dim_{}".format(i)
@@ -131,9 +129,11 @@ class FullyFactorizedGPModel(AbstractModel):
                 # Training objective
                 def negative_gp_log_likelihood(gp_variance, length_scale, noise_variance):
 
-                    prior_gp_ = self.get_prior_gp_model(length_scale,
-                                                        gp_variance,
-                                                        noise_variance)
+                    signal_gp_, noise_gp_ = self.get_prior_gp_model(length_scale,
+                                                                    gp_variance,
+                                                                    noise_variance)
+
+                    prior_gp_ = signal_gp_ + noise_gp_
 
                     return -prior_gp_(x_normalized).logpdf(y_normalized[:, i:i + 1])
 
@@ -153,6 +153,9 @@ class FullyFactorizedGPModel(AbstractModel):
 
                 if loss < best_loss:
 
+                    self.signal_gps.clear()
+                    self.noise_gps.clear()
+
                     if self.verbose:
                         print("New best objective value: {:.4f}".format(loss))
 
@@ -163,17 +166,16 @@ class FullyFactorizedGPModel(AbstractModel):
                     self.gp_variances[i].assign(vs[gp_var_name])
                     self.noise_variances[i].assign(vs[noise_var_name])
 
-                    prior_gp = self.get_prior_gp_model(self.length_scales[i],
-                                                       self.gp_variances[i],
-                                                       self.noise_variances[i])
-                    # Condition the model
-                    best_model = prior_gp | (x_normalized, y_normalized[:, i:i + 1])
+                    signal_gp, noise_gp = self.get_prior_gp_model(self.length_scales[i],
+                                                                  self.gp_variances[i],
+                                                                  self.noise_variances[i])
 
-            self.models.append(best_model)
+                    self.signal_gps.append(signal_gp)
+                    self.noise_gps.append(noise_gp)
 
     def predict_batch(self, xs):
 
-        if len(self.models) == 0:
+        if len(self.signal_gps) == 0:
             raise ModelError("The model has not been trained yet!")
 
         xs = tf.convert_to_tensor(xs, dtype=tf.float64)
@@ -182,14 +184,18 @@ class FullyFactorizedGPModel(AbstractModel):
             raise ModelError("xs with shape {} must have 1st dimension (0 indexed) {}!".format(xs.shape,
                                                                                                self.input_dim))
 
-        self._update_models()
-
         means = []
         var = []
 
         xs_normalized = self.normalize(xs, mean=self.xs_mean, std=self.xs_std)
 
-        for i, model in enumerate(self.models):
+        train_xs = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
+        train_ys = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
+
+        for i, (signal_gp, noise_gp) in enumerate(zip(self.signal_gps, self.noise_gps)):
+
+            model = (signal_gp + noise_gp) | (train_xs, train_ys[:, i:i+1])
+
             means.append(model.mean(xs_normalized))
             var.append(model.kernel.elwise(xs_normalized))
 
@@ -197,14 +203,3 @@ class FullyFactorizedGPModel(AbstractModel):
         var = tf.concat(var, axis=1)
 
         return (means * self.ys_std + self.ys_mean), (var * self.ys_std ** 2)
-
-    def _update_models(self) -> None:
-        x_normalized = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
-        y_normalized = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)
-
-        for i in range(len(self.models)):
-            model = self.get_prior_gp_model(length_scale=self.length_scales[i],
-                                            gp_variance=self.gp_variances[i],
-                                            noise_variance=self.noise_variances[i])
-
-            self.models[i] = model | (x_normalized, y_normalized[:, i:i + 1])
