@@ -118,16 +118,34 @@ class AbstractModel(tf.keras.Model):
     def normalize(a: tf.Tensor, mean: tf.Tensor, std: tf.Tensor) -> tf.Tensor:
         return (a - mean) / std
 
-    def get_prior_gp_model(self, length_scale, gp_variance, noise_variance):
+    def get_prior_gp_model(self,
+                           length_scale,
+                           signal_variance,
+                           noise_variance,
+                           relative_noise=True):
+        """
+        Create a signal and a noise Gaussian Process with given hyperparameters.
+
+
+        :param length_scale:
+        :param signal_variance:
+        :param noise_variance:
+        :param relative_noise: if true, the noise term will be scaled relative to the
+        signal variance
+        :return: (signal_gp, noise_gp) tuple of two Stheno GPs
+        """
 
         # Create a new Stheno graph for the GP. This step is crucial
         g = Graph()
 
         # Construct parameterized kernel
         kernel = self.AVAILABLE_KERNELS[self.kernel_name]()
-        kernel = gp_variance * kernel.stretch(length_scale)
+        kernel = signal_variance * kernel.stretch(length_scale)
 
-        noise_kernel = noise_variance * Delta()
+        if relative_noise:
+            noise_kernel = noise_variance * Delta()
+        else:
+            noise_kernel = signal_variance * noise_variance * Delta()
 
         signal_gp = GP(kernel, graph=g)
         noise_gp = GP(noise_kernel, graph=g)

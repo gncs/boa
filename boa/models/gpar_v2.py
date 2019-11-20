@@ -5,6 +5,7 @@ import tensorflow as tf
 from varz.tensorflow import Vars, minimise_l_bfgs_b
 
 from .abstract_model_v2 import AbstractModel, ModelError
+from boa.core.permutation import PermutationVariable
 
 
 class GPARModel(AbstractModel):
@@ -12,6 +13,7 @@ class GPARModel(AbstractModel):
     def __init__(self,
                  kernel: str,
                  num_optimizer_restarts: int,
+                 learn_permutation: bool = False,
                  denoising: bool = True,
                  verbose: bool = False,
                  name: str = "gpar_model",
@@ -36,6 +38,10 @@ class GPARModel(AbstractModel):
         self.gp_variances: List[tf.Variable] = []
         self.noise_variances: List[tf.Variable] = []
 
+        self.learn_permutation = learn_permutation
+
+        self.output_perm = None
+
     def __or__(self, inputs: Tuple) -> tf.keras.Model:
         """
         This override of | is implements the inference of the posterior GP model from the inputs (xs, ys)
@@ -46,6 +52,8 @@ class GPARModel(AbstractModel):
 
         # Validate inputs
         super(GPARModel, self).__or__(inputs)
+
+        self.output_perm = tf.eye(self.output_dim, dtype=tf.float64)
 
         # Create TF variables for each of the hyperparameters, so that
         # we can use Keras' serialization features
@@ -87,23 +95,30 @@ class GPARModel(AbstractModel):
 
         vs = Vars(tf.float64)
 
+        if self.learn_permutation:
+            self.output_perm = PermutationVariable(n_items=self.output_dim,
+                                                   vs=vs,
+                                                   temperature=0.3,
+                                                   name="output_perm")
+
         for i in range(self.output_dim):
+
             # Note the scaling in dimension with the index
             vs.bnd(init=tf.ones(self.input_dim + i, dtype=tf.float64),
-                   lower=1e-3,
-                   upper=1e3,
+                   lower=1e-4,
+                   upper=1e4,
                    name="length_scales_dim_{}".format(i))
 
             # GP variance
             vs.bnd(init=tf.ones(1, dtype=tf.float64),
                    lower=1e-4,
-                   upper=self.ys_std[i] * 1e3 + 1e2,
+                   upper=1e4,
                    name="gp_variance_dim_{}".format(i))
 
             # Noise variance: bound between 1e-4 and 1e4
             vs.bnd(init=tf.ones(1, dtype=tf.float64),
-                   lower=1e-4,
-                   upper=self.ys_std[i] * 1e3 + 1e2,
+                   lower=1e-3,
+                   upper=1e3,
                    name="noise_variance_dim_{}".format(i))
 
         return vs
@@ -139,6 +154,10 @@ class GPARModel(AbstractModel):
 
         # Create dummy variables for training
         vs = self.create_hyperparameters()
+
+        if self.learn_permutation:
+            y_normalized = self.output_perm.permute(tf.transpose(y_normalized))
+            y_normalized = tf.transpose(y_normalized)
 
         # Define the GPAR training loss
         def negative_gpar_log_likelihood(vs):
