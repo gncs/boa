@@ -28,7 +28,7 @@ def run():
     # FF-GP model
     ff_gp = FullyFactorizedGPModel(kernel='rbf', num_optimizer_restarts=10, verbose=False)
     ff_gp = ff_gp | (x_train, y_train)
-    ff_gp.train()
+    ff_gp.fit()
 
     ff_gp.add_pseudo_point(pseudo_point)
     y_pred_ff_gp, var_pred_ff_gp = ff_gp.predict_batch(x_cont)
@@ -39,7 +39,7 @@ def run():
     # GPAR model
     gpar = GPARModel(kernel='rbf', num_optimizer_restarts=10, verbose=False)
     gpar = gpar | (x_train, y_train)
-    gpar.train()
+    gpar.fit()
 
     gpar.add_pseudo_point(pseudo_point)
     y_pred_gpar, var_pred_gpar = gpar.predict_batch(x_cont)

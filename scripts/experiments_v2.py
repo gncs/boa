@@ -76,7 +76,7 @@ def run_gp_experiment(model,
 
                 start_time = time.time()
                 try:
-                    model.train()
+                    model.fit()
                 except Exception as e:
                     print("Training failed: {}".format(str(e)))
                     continue
@@ -166,7 +166,7 @@ def run_gpar_experiment(model,
 
             start_time = time.time()
             try:
-                model.train()
+                model.fit()
             except Exception as e:
                 print("Training failed: {}".format(str(e)))
                 raise e

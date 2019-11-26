@@ -19,12 +19,10 @@ class RandomModel(AbstractModel):
 
         self.ys = np.array([[]])
 
-    def __or__(self, inputs):
+    def _set_data(self, xs, ys):
 
         # Performs validation of the inputs
-        super(RandomModel, self).__or__(inputs)
-
-        xs, ys = inputs
+        super(RandomModel, self)._set_data(xs, ys)
 
         self.output_dim = ys.shape[1]
         self.ys = ys
@@ -49,7 +47,7 @@ class RandomModel(AbstractModel):
     def remove_pseudo_points(self):
         pass
 
-    def train(self):
+    def fit(self):
         self._update_mean_std()
 
     def predict_batch(self, xs):

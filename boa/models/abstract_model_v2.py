@@ -1,11 +1,9 @@
-from typing import List
-
 import abc
 
 import numpy as np
 import tensorflow as tf
 
-from stheno.tensorflow import GP, EQ, Delta, Matern52, Graph
+from boa.core.gp import GaussianProcess
 
 
 class ModelError(Exception):
@@ -13,9 +11,6 @@ class ModelError(Exception):
 
 
 class AbstractModel(tf.keras.Model):
-
-    AVAILABLE_KERNELS = {"rbf": EQ,
-                         "matern52": Matern52, }
 
     __metaclass__ = abc.ABCMeta
 
@@ -30,11 +25,10 @@ class AbstractModel(tf.keras.Model):
 
         super(AbstractModel, self).__init__(name=name, **kwargs)
 
-        self.signal_gps: List = []
-        self.noise_gps: List = []
+        self.models = []
 
         # Check if the specified kernel is available
-        if kernel in self.AVAILABLE_KERNELS:
+        if kernel in GaussianProcess.AVAILABLE_KERNELS:
             self.kernel_name = kernel
         else:
             raise ModelError("Specified kernel {} not available!".format(kernel))
@@ -47,14 +41,13 @@ class AbstractModel(tf.keras.Model):
 
         self.verbose = verbose
 
-        self.xs_mean = tf.constant([[]])
-        self.xs_std = tf.constant([[]])
+        self.xs = None
+        self.ys = None
 
-        self.ys_mean = tf.constant([[]])
-        self.ys_std = tf.constant([[]])
+        self.pairwise_distances = None
+        self.pairwise_dim_distances = None
 
-        self.xs = tf.constant([[]])
-        self.ys = tf.constant([[]])
+        self.dim_length_medians = None
 
         self.num_pseudo_points = 0
         self.num_true_points = 0
@@ -64,23 +57,20 @@ class AbstractModel(tf.keras.Model):
         self.init_maxval = tf.constant(init_maxval, dtype=tf.float64)
 
     @abc.abstractmethod
-    def __or__(self, inputs) -> tf.keras.Model:
+    def _set_data(self, xs, ys) -> tf.keras.Model:
         """
         Adds data to the model. The notation is supposed to imitate
         the conditioning operation:
 
         posterior = prior | (xs, ys)
 
-        :param inputs: Tuple of two rank-2 tensors: the first
-        N x I and the second N x O, where N is the number of training examples,
-        I is the dimension of the input and O is the dimension of the output.
+        :param xs: rank-2 tensor: N x I where N is the number of training examples,
+        I is the dimension of the input.
+        :param ys: rank-2 tensor: N x O, where N is the number of training examples,
+        O is the dimension of the output.
+
         :return: Reference to the conditioned model
         """
-
-        if not isinstance(inputs, tuple) or len(inputs) != 2:
-            raise ModelError("Input must be a tuple of (xs, ys)!")
-
-        xs, ys = inputs
 
         # Reasonable test of whether the inputs are array-like
         if not hasattr(xs, "__len__") or not hasattr(ys, "__len__"):
@@ -104,69 +94,20 @@ class AbstractModel(tf.keras.Model):
         self.ys = ys
         self.num_true_points = xs.shape[0]
 
+        # self.pairwise_distances = self.distance_matrix()
+        # self.pairwise_dim_distances = self.dim_distance_matrix()
+        # self.dim_length_medians = tfp.stats.percentile(
+        #     tf.reshape(self.pairwise_dim_distances, (self.input_dim, -1)), 50, axis=1)
+
         return self
 
     @abc.abstractmethod
-    def train(self) -> None:
+    def fit(self, xs, ys) -> None:
         pass
 
     @abc.abstractmethod
     def predict_batch(self, xs: np.ndarray) -> np.ndarray:
         pass
-
-    @staticmethod
-    def normalize(a: tf.Tensor, mean: tf.Tensor, std: tf.Tensor) -> tf.Tensor:
-        return (a - mean) / std
-
-    def get_prior_gp_model(self,
-                           length_scale,
-                           signal_variance,
-                           noise_variance,
-                           relative_noise=True):
-        """
-        Create a signal and a noise Gaussian Process with given hyperparameters.
-
-
-        :param length_scale:
-        :param signal_variance:
-        :param noise_variance:
-        :param relative_noise: if true, the noise term will be scaled relative to the
-        signal variance
-        :return: (signal_gp, noise_gp) tuple of two Stheno GPs
-        """
-
-        # Create a new Stheno graph for the GP. This step is crucial
-        g = Graph()
-
-        # Construct parameterized kernel
-        kernel = self.AVAILABLE_KERNELS[self.kernel_name]()
-        kernel = signal_variance * kernel.stretch(length_scale)
-
-        if relative_noise:
-            noise_kernel = noise_variance * Delta()
-        else:
-            noise_kernel = signal_variance * noise_variance * Delta()
-
-        signal_gp = GP(kernel, graph=g)
-        noise_gp = GP(noise_kernel, graph=g)
-
-        return signal_gp, noise_gp
-
-    def _update_mean_std(self, min_std=1e-5) -> None:
-
-        xs_mean, xs_var = tf.nn.moments(self.xs, axes=[0])
-
-        self.xs_mean = xs_mean
-        self.xs_std = tf.maximum(tf.sqrt(xs_var), min_std)
-
-        ys_mean, ys_var = tf.nn.moments(self.ys, axes=[0])
-
-        self.ys_mean = ys_mean
-        self.ys_std = tf.maximum(tf.sqrt(ys_var), min_std)
-
-        if self.verbose:
-            print("min x std: {}".format(tf.reduce_min(self.xs_std)))
-            print("min y std: {}".format(tf.reduce_min(self.ys_std)))
 
     def add_true_point(self, x, y) -> None:
 
@@ -203,3 +144,45 @@ class AbstractModel(tf.keras.Model):
     def _append_data_point(self, x, y) -> None:
         self.xs = tf.concat((self.xs, x), axis=0)
         self.ys = tf.concat((self.ys, y), axis=0)
+
+    def distance_matrix(self):
+        """
+        Calculate the pairwise distances between the rows of the input data-points and
+        return the square matrix D_ij = || X_i - X_j ||
+
+        Uses the identity that
+        D_ij^2 = (X_i - X_j)'(X_i - X_j)
+               = X_i'X_i - 2 X_i'X_j + X_j'X_j
+
+        which can be computed efficiently using some nice broadcasting.
+        """
+
+        # Calculate L2 norm of each row in the matrix
+        norms = tf.reduce_sum(self.xs * self.xs, axis=1, keepdims=True)
+
+        cross_terms = -2 * tf.matmul(self.xs, self.xs, transpose_b=True)
+
+        dist_matrix = norms + cross_terms + tf.transpose(norms)
+
+        return tf.sqrt(dist_matrix)
+
+    def dim_distance_matrix(self):
+
+        dist_mats = []
+
+        x_normalized = self.normalize(self.xs, self.xs_mean, self.xs_std)
+
+        for k in range(self.input_dim):
+
+            # Select appropriate column from the matrix
+            c = x_normalized[:, k:k + 1]
+
+            norms = c * c
+
+            cross_terms = -2 * tf.matmul(c, c, transpose_b=True)
+
+            dist_mat = norms + cross_terms + tf.transpose(norms)
+
+            dist_mats.append(dist_mat)
+
+        return tf.sqrt(tf.stack(dist_mats))

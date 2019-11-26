@@ -30,9 +30,9 @@ class MatrixFactorizedGPARModel(GPARModel):
 
         self.output_length_scales = []
 
-    def __or__(self, inputs: Tuple) -> tf.keras.Model:
+    def _set_data(self, inputs: Tuple) -> tf.keras.Model:
         # Validate and assign inputs
-        super(MatrixFactorizedGPARModel, self).__or__(inputs)
+        super(MatrixFactorizedGPARModel, self)._set_data(inputs)
 
         # Create TF variables for the hyperparameters
 
@@ -150,7 +150,7 @@ class MatrixFactorizedGPARModel(GPARModel):
                                         maxval=self.init_maxval,
                                         dtype=tf.float64))
 
-    def train(self) -> None:
+    def fit(self) -> None:
 
         self._update_mean_std()
         x_normalized = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)

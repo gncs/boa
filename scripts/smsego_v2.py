@@ -53,7 +53,7 @@ def manual_optimization(x_train, y_train):
     model = model | (x_train, y_train)
 
     # Optimize the hyperparameters
-    model.train()
+    model.fit()
 
     # Set up the acquisition function
     acq = SMSEGO(gain=1., epsilon=0.1, reference=[2])
@@ -95,7 +95,7 @@ def manual_optimization(x_train, y_train):
         data_y = np.vstack((data_y, outp))
         model.add_true_point(inp.reshape([-1, 1]), outp)
 
-        model.train()
+        model.fit()
 
 
 def automated_optimization(x_train, y_train):
@@ -129,7 +129,7 @@ def automated_optimization(x_train, y_train):
     # Set up GP model and train it
     model = FullyFactorizedGPModel(kernel='rbf', num_optimizer_restarts=3, verbose=False)
     model = model | (x_train, y_train)
-    model.train()
+    model.fit()
 
     # Setup the acquisition fn
     acq = SMSEGO(gain=1, epsilon=0.1, reference=[2])

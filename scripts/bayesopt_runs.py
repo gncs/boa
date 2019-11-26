@@ -57,8 +57,8 @@ def optimize(objective, model_config: dict, opt_config: dict, acq_config: dict, 
     candidates = objective.get_candidates()
 
     data = generate_data(objective=objective, size=init_data_size, seed=seed)
-    model.set_data(xs=data.input, ys=data.output)
-    model.train()
+    model._set_data(xs=data.input, ys=data.output)
+    model.fit()
 
     xs, ys = optimizer.optimize(
         f=objective,

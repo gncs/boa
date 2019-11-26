@@ -42,7 +42,7 @@ class GPARModel(AbstractModel):
 
         self.output_perm = None
 
-    def __or__(self, inputs: Tuple) -> tf.keras.Model:
+    def _set_data(self, inputs: Tuple) -> tf.keras.Model:
         """
         This override of | is implements the inference of the posterior GP model from the inputs (xs, ys)
 
@@ -51,7 +51,7 @@ class GPARModel(AbstractModel):
         """
 
         # Validate inputs
-        super(GPARModel, self).__or__(inputs)
+        super(GPARModel, self)._set_data(inputs)
 
         self.output_perm = tf.eye(self.output_dim, dtype=tf.float64)
 
@@ -111,14 +111,14 @@ class GPARModel(AbstractModel):
 
             # GP variance
             vs.bnd(init=tf.ones(1, dtype=tf.float64),
-                   lower=1e-4,
-                   upper=1e4,
+                   lower=1e-5,
+                   upper=1e5,
                    name="gp_variance_dim_{}".format(i))
 
             # Noise variance: bound between 1e-4 and 1e4
             vs.bnd(init=tf.ones(1, dtype=tf.float64),
-                   lower=1e-3,
-                   upper=1e3,
+                   lower=1e-5,
+                   upper=1e5,
                    name="noise_variance_dim_{}".format(i))
 
         return vs
@@ -144,7 +144,7 @@ class GPARModel(AbstractModel):
                                         maxval=self.init_maxval,
                                         dtype=tf.float64))
 
-    def train(self) -> None:
+    def fit(self) -> None:
         self._update_mean_std()
         x_normalized = self.normalize(self.xs, mean=self.xs_mean, std=self.xs_std)
         y_normalized = self.normalize(self.ys, mean=self.ys_mean, std=self.ys_std)

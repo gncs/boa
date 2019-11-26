@@ -76,7 +76,7 @@ class Optimizer:
                 model.add_true_point(i.reshape((1, -1)), o.reshape(1, -1))
 
             try:
-                model.train()
+                model.fit()
             except Exception as e:
                 print_message('Error: ' + str(e))
                 if not self.strict:
