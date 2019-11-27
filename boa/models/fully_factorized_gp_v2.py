@@ -59,17 +59,17 @@ class FullyFactorizedGPModel(AbstractModel):
         for i in range(self.output_dim):
             self.length_scales.append(tf.Variable(tf.ones(self.input_dim,
                                                           dtype=tf.float64),
-                                                  name="length_scales_dim_{}".format(i),
+                                                  name=f"{i}/length_scales",
                                                   trainable=False))
 
             self.gp_variances.append(tf.Variable((1.0,),
                                                  dtype=tf.float64,
-                                                 name="gp_variance_dim_{}".format(i),
+                                                 name=f"{i}/signal_amplitude",
                                                  trainable=False))
 
             self.noise_variances.append(tf.Variable((1.0,),
                                                     dtype=tf.float64,
-                                                    name="noise_variance_dim_{}".format(i),
+                                                    name=f"{i}/noise_amplitude",
                                                     trainable=False))
 
     def create_hyperparameters(self) -> Vars:
@@ -123,9 +123,20 @@ class FullyFactorizedGPModel(AbstractModel):
                                                     maxval=self.init_maxval,
                                                     dtype=tf.float64))
 
-    def fit(self, xs, ys, init_minval=0.5, init_maxval=2.0) -> None:
+    def fit(self, xs=None, ys=None, init_minval=0.5, init_maxval=2.0) -> None:
 
-        self._set_data(xs, ys)
+        if xs is None and ys is None:
+            logger.info("No training data supplied, retraining using data already present!")
+
+        elif xs is not None and ys is not None:
+            logger.info(f"Training data supplied with xs shape {xs.shape} and ys shape {ys.shape}, training!")
+            self._set_data(xs, ys)
+
+        else:
+            message = f"Training conditions inconsistent, xs were {type(xs)} and ys were {type(xs)}!"
+
+            logger.error(message)
+            raise ModelError(message)
 
         self.models.clear()
 
@@ -139,6 +150,16 @@ class FullyFactorizedGPModel(AbstractModel):
 
             best_loss = np.inf
 
+            # Training objective
+            def negative_gp_log_likelihood(signal_amplitude, length_scales, noise_amplitude):
+
+                gp = GaussianProcess(kernel=self.kernel_name,
+                                     signal_amplitude=signal_amplitude,
+                                     length_scales=length_scales,
+                                     noise_amplitude=noise_amplitude)
+
+                return -gp.log_pdf(self.xs, self.ys[:, i:i + 1], normalize=True)
+
             # Robust optimization
             for j in range(self.num_optimizer_restarts):
 
@@ -146,16 +167,6 @@ class FullyFactorizedGPModel(AbstractModel):
                 self.initialize_hyperparameters(vs, index=i)
 
                 logger.info("Optimization round: {} / {}".format(j + 1, self.num_optimizer_restarts))
-
-                # Training objective
-                def negative_gp_log_likelihood(signal_amplitude, length_scales, noise_amplitude):
-
-                    gp = GaussianProcess(kernel=self.kernel_name,
-                                         signal_amplitude=signal_amplitude,
-                                         length_scales=length_scales,
-                                         noise_amplitude=noise_amplitude)
-
-                    return -gp.log_pdf(self.xs, self.ys[:, i:i + 1], normalize=True)
 
                 loss = np.inf
                 try:
@@ -168,7 +179,7 @@ class FullyFactorizedGPModel(AbstractModel):
                                                     gp_var_name,
                                                     noise_var_name])
                 except Exception as e:
-                    logger.error("Iteration {} failed: {}".format(i + 1, str(e)))
+                    logger.exception("Iteration {} failed: {}".format(i + 1, str(e)))
                     raise e
 
                 if loss < best_loss:

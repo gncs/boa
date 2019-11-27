@@ -1,3 +1,5 @@
+import logging
+
 from typing import List
 
 from boa.models.fully_factorized_gp_v2 import FullyFactorizedGPModel
@@ -5,8 +7,12 @@ from boa.acquisition.smsego_v2 import SMSEGO
 from boa.objective.abstract import AbstractObjective
 from boa.optimization.optimizer_v2 import Optimizer
 
+from boa.core.utils import setup_logger
+
 import numpy as np
 import matplotlib.pyplot as plt
+
+logger = setup_logger(__name__, level=logging.INFO, to_console=True)
 
 
 def plot(xs, fs, preds, var, acqs, points_xs, points_ys):
@@ -41,8 +47,11 @@ def plot(xs, fs, preds, var, acqs, points_xs, points_ys):
 
     return fig
 
-# Target function (noise free).
+
 def f(x):
+    """
+    Target function (noise free).
+    """
     return (np.sinc(3 * x) + 0.5 * (x - 0.5) ** 2).reshape(-1, 1)
 
 
@@ -50,10 +59,9 @@ def manual_optimization(x_train, y_train):
 
     # Infer GP
     model = FullyFactorizedGPModel(kernel="rbf", num_optimizer_restarts=5, verbose=False)
-    model = model | (x_train, y_train)
 
     # Optimize the hyperparameters
-    model.fit()
+    model.fit(x_train, y_train)
 
     # Set up the acquisition function
     acq = SMSEGO(gain=1., epsilon=0.1, reference=[2])
@@ -128,8 +136,7 @@ def automated_optimization(x_train, y_train):
 
     # Set up GP model and train it
     model = FullyFactorizedGPModel(kernel='rbf', num_optimizer_restarts=3, verbose=False)
-    model = model | (x_train, y_train)
-    model.fit()
+    model.fit(x_train, y_train)
 
     # Setup the acquisition fn
     acq = SMSEGO(gain=1, epsilon=0.1, reference=[2])
@@ -170,6 +177,6 @@ if __name__ == "__main__":
     x_train = np.array([-0.25, 0, 0.1]).reshape(-1, 1)
     y_train = f(x_train)
 
-    #manual_optimization(x_train, y_train)
+    manual_optimization(x_train, y_train)
 
     automated_optimization(x_train, y_train)

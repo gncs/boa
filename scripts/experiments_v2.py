@@ -1,3 +1,4 @@
+import logging
 import argparse
 import json
 import time
@@ -13,11 +14,21 @@ from boa.models.fully_factorized_gp_v2 import FullyFactorizedGPModel
 from boa.models.gpar_v2 import GPARModel
 from boa.models.matrix_factorized_gpar_v2 import MatrixFactorizedGPARModel
 
+from boa.core import GaussianProcess, setup_logger
+
 from dataset_loader import load_dataset
 
 import tensorflow as tf
 
+logger = setup_logger(__name__, level=logging.INFO, to_console=True)
+
 AVAILABLE_DATASETS = ["fft", "stencil3d"]
+
+LOG_LEVELS = {
+    "info": logging.INFO,
+    "debug": logging.DEBUG,
+    "warn": logging.WARNING
+}
 
 
 def run_gp_experiment(model,
@@ -64,19 +75,9 @@ def run_gp_experiment(model,
                                                test_size=200,
                                                random_state=seed + index)
 
-                try:
-                    model = model | (train[inputs].values, train[[output]].values)
-                except Exception as e:
-                    print(model.input_dim)
-                    print(model.output_dim)
-                    print(train[inputs].values.shape)
-                    print(train[[output]].values.shape)
-                    print("Conditioning failed: {}".format(str(e)))
-                    continue
-
                 start_time = time.time()
                 try:
-                    model.fit()
+                    model.fit(train[inputs].values, train[[output]].values)
                 except Exception as e:
                     print("Training failed: {}".format(str(e)))
                     continue
@@ -154,23 +155,12 @@ def run_gpar_experiment(model,
                                            test_size=200,
                                            random_state=seed + index)
 
-            try:
-                model = model | (train[inputs].values, train[outputs].values[:, :])
-            except Exception as e:
-                print(model.input_dim)
-                print(model.output_dim)
-                print(train[inputs].values.shape)
-                print(train[outputs].values.shape)
-                print("Conditioning failed: {}".format(str(e)))
-                continue
-
             start_time = time.time()
             try:
-                model.fit()
+                model.fit(train[inputs].values, train[outputs].values[:, :])
             except Exception as e:
                 print("Training failed: {}".format(str(e)))
                 raise e
-                #continue
 
             experiment['train_time'] = time.time() - start_time
 
@@ -311,6 +301,8 @@ if __name__ == "__main__":
                         help="Path to the directory to which we will write the log files "
                              "for the experiment.")
 
+    parser.add_argument('--loglevel', choices=LOG_LEVELS,)
+
     parser.add_argument('--verbose', action="store_true", default=False,
                         help="Turns on verbose logging")
 
@@ -349,7 +341,7 @@ if __name__ == "__main__":
     # Add common options to models
     for mode in [ff_gp_mode, gpar_mode, mf_gpar_mode]:
         mode.add_argument("--kernel",
-                          choices=AbstractModel.AVAILABLE_KERNELS,
+                          choices=GaussianProcess.AVAILABLE_KERNELS,
                           default="matern52",
                           help="GP kernel to use.")
 

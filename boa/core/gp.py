@@ -2,15 +2,11 @@ import logging
 import tensorflow as tf
 from stheno.tensorflow import EQ, Delta, Matern52, GP, Graph
 
+from .utils import CoreError, setup_logger
+
 __all__ = ["GaussianProcess", "CoreError"]
 
-logger = logging.getLogger(__name__)
-
-
-class CoreError(Exception):
-    """
-    Base error thrown by modules in the core
-    """
+logger = setup_logger(__name__, level=logging.DEBUG, log_file="gp.log", to_console=True)
 
 
 class GaussianProcess(tf.Module):
@@ -67,7 +63,7 @@ class GaussianProcess(tf.Module):
 
         # Data stuff
         self.xs = tf.zeros((0, self.input_dim), dtype=tf.float64)
-        self.ys = tf.zeros((0, self.input_dim), dtype=tf.float64)
+        self.ys = tf.zeros((0, 1), dtype=tf.float64)
 
         self.xs_forward_transform = lambda x: x
         self.ys_forward_transform = lambda y: y
@@ -131,7 +127,7 @@ class GaussianProcess(tf.Module):
 
         return gp
 
-    def log_pdf(self, xs, ys, normalize=False):
+    def log_pdf(self, xs, ys, normalize=False, latent=False, with_jitter=True):
 
         if normalize:
             xs_forward, _ = self._create_transforms(xs)
@@ -144,7 +140,15 @@ class GaussianProcess(tf.Module):
         xs = xs_forward(xs)
         ys = ys_forward(ys)
 
-        return self.signal(xs).logpdf(ys)
+        gp = self.signal
+
+        if not latent:
+            gp = gp + self.noise
+
+        if with_jitter:
+            gp = gp + self.signal * self.jitter * GP(Delta(), graph=self.signal.graph)
+
+        return gp(xs).logpdf(ys)
 
     def sample(self, xs, num=1, latent=False):
 

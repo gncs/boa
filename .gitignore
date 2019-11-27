@@ -1,5 +1,6 @@
 # Logs folder
 logs/
+*.log
 
 # Scratch folder
 scratch/

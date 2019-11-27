@@ -106,7 +106,7 @@ class AbstractModel(tf.keras.Model):
         pass
 
     @abc.abstractmethod
-    def predict_batch(self, xs: np.ndarray) -> np.ndarray:
+    def predict_batch(self, xs):
         pass
 
     def add_true_point(self, x, y) -> None:
