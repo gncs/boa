@@ -176,7 +176,10 @@ class GaussianProcess(tf.Module):
 
         else:
             prediction = (self.signal + self.noise).mean(xs)
-            pred_var = (self.signal + self.noise).kernel.elwise(xs)
+
+            # For some reason this returns the Dense() wrapper around the TF tensor,
+            # so get the matrix from it instead
+            pred_var = (self.signal + self.noise).kernel.elwise(xs).mat
 
         prediction = tf.reshape(prediction, (-1, 1))
         prediction = self.ys_backward_transform(prediction)

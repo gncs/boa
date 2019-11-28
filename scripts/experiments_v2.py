@@ -20,7 +20,7 @@ from dataset_loader import load_dataset
 
 import tensorflow as tf
 
-logger = setup_logger(__name__, level=logging.INFO, to_console=True)
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/experiments.log")
 
 AVAILABLE_DATASETS = ["fft", "stencil3d"]
 
@@ -80,7 +80,7 @@ def run_gp_experiment(model,
                     model.fit(train[inputs].values, train[[output]].values)
                 except Exception as e:
                     print("Training failed: {}".format(str(e)))
-                    continue
+                    raise e
 
                 experiment['train_time'] = time.time() - start_time
 
@@ -90,7 +90,7 @@ def run_gp_experiment(model,
                     mean, _ = model.predict_batch(test[inputs].values)
                 except Exception as e:
                     print("Prediction failed: {}".format(str(e)))
-                    continue
+                    raise e
 
                 mean = mean.numpy()
 
@@ -170,7 +170,7 @@ def run_gpar_experiment(model,
                 mean, _ = model.predict_batch(test[inputs].values)
             except Exception as e:
                 print("Prediction failed: {}".format(str(e)))
-                continue
+                raise e
 
             mean = mean.numpy()
 

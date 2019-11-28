@@ -8,11 +8,12 @@ from varz.tensorflow import minimise_l_bfgs_b, Vars
 import numpy as np
 
 from boa.core.gp import GaussianProcess
+from boa.core.utils import setup_logger
 from .abstract_model_v2 import AbstractModel, ModelError
 
 __all__ = ["FullyFactorizedGPModel"]
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/ff_gp.log")
 
 
 class FullyFactorizedGPModel(AbstractModel):
@@ -101,17 +102,43 @@ class FullyFactorizedGPModel(AbstractModel):
 
         return vs
 
-    def initialize_hyperparameters(self, vs: Vars, index) -> None:
+    def initialize_hyperparameters(self, vs: Vars, index, length_scale_init="random") -> None:
 
         ls_name = f"{index}/length_scales"
         gp_var_name = f"{index}/signal_amplitude"
         noise_var_name = f"{index}/noise_amplitude"
 
-        # Re-initialize the current GP's hyperparameters
-        vs.assign(ls_name, tf.random.uniform(shape=(self.input_dim,),
-                                             minval=self.init_minval,
-                                             maxval=self.init_maxval,
-                                             dtype=tf.float64))
+        if length_scale_init == "median":
+
+            # Center on the median
+            ls_init = self.xs_euclidean_percentiles[2]
+
+            ls_rand_range = tf.minimum(self.xs_euclidean_percentiles[2] - self.xs_euclidean_percentiles[0],
+                                       self.xs_euclidean_percentiles[4] - self.xs_euclidean_percentiles[2])
+
+            ls_init += tf.random.uniform(shape=(self.input_dim,),
+                                         minval=-ls_rand_range,
+                                         maxval=ls_rand_range,
+                                         dtype=tf.float64)
+
+        elif length_scale_init == "dim_median":
+
+            ls_init = self.xs_per_dim_percentiles[:, 2]
+
+            ls_rand_range = tf.minimum(self.xs_per_dim_percentiles[:, 2] - self.xs_per_dim_percentiles[:, 0],
+                                       self.xs_per_dim_percentiles[:, 4] - self.xs_per_dim_percentiles[:, 2])
+
+            tf.random.uniform(shape=(self.input_dim,),
+                              minval=-ls_rand_range,
+                              maxval=ls_rand_range,
+                              dtype=tf.float64)
+
+        else:
+            ls_init = tf.random.uniform(shape=(self.input_dim,),
+                                        minval=self.init_minval,
+                                        maxval=self.init_maxval,
+                                        dtype=tf.float64)
+        vs.assign(ls_name, ls_init)
 
         vs.assign(gp_var_name, tf.random.uniform(shape=(1,),
                                                  minval=self.init_minval,
@@ -164,7 +191,9 @@ class FullyFactorizedGPModel(AbstractModel):
             for j in range(self.num_optimizer_restarts):
 
                 # Reinitialize parameters
-                self.initialize_hyperparameters(vs, index=i)
+                self.initialize_hyperparameters(vs,
+                                                index=i,
+                                                length_scale_init="dim_median")
 
                 logger.info("Optimization round: {} / {}".format(j + 1, self.num_optimizer_restarts))
 
@@ -183,7 +212,6 @@ class FullyFactorizedGPModel(AbstractModel):
                     raise e
 
                 if loss < best_loss:
-
                     logger.info(f"New best objective value for dimension {i}: {loss:.4f}")
 
                     best_loss = loss
@@ -216,7 +244,7 @@ class FullyFactorizedGPModel(AbstractModel):
         for i, model in enumerate(self.models):
             model = model | (self.xs, self.ys[:, i:i + 1])
 
-            mean, var = model.predict(xs)
+            mean, var = model.predict(xs, latent=False)
 
             means.append(mean)
             variances.append(var)

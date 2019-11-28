@@ -1,9 +1,13 @@
 import abc
+import logging
 
-import numpy as np
 import tensorflow as tf
+import tensorflow_probability as tfp
 
 from boa.core.gp import GaussianProcess
+from boa.core.utils import calculate_euclidean_distance_percentiles, calculate_per_dimension_distance_percentiles, setup_logger
+
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True)
 
 
 class ModelError(Exception):
@@ -57,7 +61,7 @@ class AbstractModel(tf.keras.Model):
         self.init_maxval = tf.constant(init_maxval, dtype=tf.float64)
 
     @abc.abstractmethod
-    def _set_data(self, xs, ys) -> tf.keras.Model:
+    def _set_data(self, xs, ys):
         """
         Adds data to the model. The notation is supposed to imitate
         the conditioning operation:
@@ -94,12 +98,19 @@ class AbstractModel(tf.keras.Model):
         self.ys = ys
         self.num_true_points = xs.shape[0]
 
-        # self.pairwise_distances = self.distance_matrix()
-        # self.pairwise_dim_distances = self.dim_distance_matrix()
-        # self.dim_length_medians = tfp.stats.percentile(
-        #     tf.reshape(self.pairwise_dim_distances, (self.input_dim, -1)), 50, axis=1)
+        # ---------------------------------------------
+        # Calculate stuff for the median heuristic
+        # ---------------------------------------------
 
-        return self
+        percentiles = [10, 30, 50, 70, 90]
+
+        self.xs_euclidean_percentiles = calculate_euclidean_distance_percentiles(self.xs, percentiles)
+        self.ys_euclidean_percentiles = calculate_euclidean_distance_percentiles(self.ys, percentiles)
+        logging.debug(f"Input Euclidean distance percentiles (10, 30, 50, 70, 90): {self.xs_euclidean_percentiles}")
+        logging.debug(f"Output Euclidean distance percentiles (10, 30, 50, 70, 90): {self.ys_euclidean_percentiles}")
+
+        self.xs_per_dim_percentiles = calculate_per_dimension_distance_percentiles(self.xs, percentiles)
+        self.ys_per_dim_percentiles = calculate_per_dimension_distance_percentiles(self.ys, percentiles)
 
     @abc.abstractmethod
     def fit(self, xs, ys) -> None:
@@ -144,45 +155,3 @@ class AbstractModel(tf.keras.Model):
     def _append_data_point(self, x, y) -> None:
         self.xs = tf.concat((self.xs, x), axis=0)
         self.ys = tf.concat((self.ys, y), axis=0)
-
-    def distance_matrix(self):
-        """
-        Calculate the pairwise distances between the rows of the input data-points and
-        return the square matrix D_ij = || X_i - X_j ||
-
-        Uses the identity that
-        D_ij^2 = (X_i - X_j)'(X_i - X_j)
-               = X_i'X_i - 2 X_i'X_j + X_j'X_j
-
-        which can be computed efficiently using some nice broadcasting.
-        """
-
-        # Calculate L2 norm of each row in the matrix
-        norms = tf.reduce_sum(self.xs * self.xs, axis=1, keepdims=True)
-
-        cross_terms = -2 * tf.matmul(self.xs, self.xs, transpose_b=True)
-
-        dist_matrix = norms + cross_terms + tf.transpose(norms)
-
-        return tf.sqrt(dist_matrix)
-
-    def dim_distance_matrix(self):
-
-        dist_mats = []
-
-        x_normalized = self.normalize(self.xs, self.xs_mean, self.xs_std)
-
-        for k in range(self.input_dim):
-
-            # Select appropriate column from the matrix
-            c = x_normalized[:, k:k + 1]
-
-            norms = c * c
-
-            cross_terms = -2 * tf.matmul(c, c, transpose_b=True)
-
-            dist_mat = norms + cross_terms + tf.transpose(norms)
-
-            dist_mats.append(dist_mat)
-
-        return tf.sqrt(tf.stack(dist_mats))

@@ -10,7 +10,7 @@ from varz.tensorflow import Vars, minimise_l_bfgs_b
 from .abstract_model_v2 import AbstractModel, ModelError
 from boa.core import GaussianProcess, PermutationVariable, setup_logger
 
-logger = setup_logger(__name__, level=logging.DEBUG, to_console=True)
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/gpar.log")
 
 
 class GPARModel(AbstractModel):
@@ -59,7 +59,6 @@ class GPARModel(AbstractModel):
         # Create TF variables for each of the hyperparameters, so that
         # we can use Keras' serialization features
         for i in range(self.output_dim):
-
             # Note the scaling in dimension
             self.length_scales.append(tf.Variable(tf.ones(self.input_dim + i,
                                                           dtype=tf.float64),
@@ -91,7 +90,6 @@ class GPARModel(AbstractModel):
         vs = Vars(tf.float64)
 
         for i in range(self.output_dim):
-
             ls_name = f"{i}/length_scales"
             gp_var_name = f"{i}/signal_amplitude"
             noise_var_name = f"{i}/noise_amplitude"
@@ -116,7 +114,7 @@ class GPARModel(AbstractModel):
 
         return vs
 
-    def initialize_hyperparameters(self, vs, index) -> None:
+    def initialize_hyperparameters(self, vs, index, length_scale_init="random") -> None:
         # for i in range(self.output_dim):
 
         i = index
@@ -125,11 +123,59 @@ class GPARModel(AbstractModel):
         gp_var_name = f"{i}/signal_amplitude"
         noise_var_name = f"{i}/noise_amplitude"
 
-        vs.assign(ls_name,
-                  tf.random.uniform(shape=(self.input_dim + i,),
-                                    minval=self.init_minval,
-                                    maxval=self.init_maxval,
-                                    dtype=tf.float64))
+        if length_scale_init == "median":
+
+            # Center on the medians, treat the inputs and the outputs separately
+            xs_ls_init = self.xs_euclidean_percentiles[2]
+            ys_ls_init = self.ys_euclidean_percentiles[2]
+
+            xs_ls_rand_range = tf.minimum(self.xs_euclidean_percentiles[2] - self.xs_euclidean_percentiles[0],
+                                          self.xs_euclidean_percentiles[4] - self.xs_euclidean_percentiles[2])
+
+            ys_ls_rand_range = tf.minimum(self.ys_euclidean_percentiles[2] - self.ys_euclidean_percentiles[0],
+                                          self.ys_euclidean_percentiles[4] - self.ys_euclidean_percentiles[2])
+
+            xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
+                                            minval=-xs_ls_rand_range,
+                                            maxval=xs_ls_rand_range,
+                                            dtype=tf.float64)
+
+            ys_ls_init += tf.random.uniform(shape=(i,),
+                                            minval=-ys_ls_rand_range,
+                                            maxval=ys_ls_rand_range,
+                                            dtype=tf.float64)
+
+            # Once the inputs and outputs have been initialized separately, concatenate them
+            ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
+
+        elif length_scale_init == "dim_median":
+            xs_ls_init = self.xs_per_dim_percentiles[:, 2]
+            xs_ls_rand_range = tf.minimum(self.xs_per_dim_percentiles[:, 2] - self.xs_per_dim_percentiles[:, 0],
+                                          self.xs_per_dim_percentiles[:, 4] - self.xs_per_dim_percentiles[:, 2])
+
+            xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
+                                            minval=-xs_ls_rand_range,
+                                            maxval=xs_ls_rand_range,
+                                            dtype=tf.float64)
+
+            ys_ls_init = self.ys_per_dim_percentiles[:, 2]
+            ys_ls_rand_range = tf.minimum(self.ys_per_dim_percentiles[:, 2] - self.ys_per_dim_percentiles[:, 0],
+                                          self.ys_per_dim_percentiles[:, 4] - self.ys_per_dim_percentiles[:, 2])
+
+            ys_ls_init += tf.random.uniform(shape=(i,),
+                                            minval=-ys_ls_rand_range,
+                                            maxval=ys_ls_rand_range,
+                                            dtype=tf.float64)
+
+            # Once the inputs and outputs have been initialized separately, concatenate them
+            ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
+
+        else:
+            ls_init = tf.random.uniform(shape=(self.input_dim + i,),
+                                        minval=self.init_minval,
+                                        maxval=self.init_maxval,
+                                        dtype=tf.float64)
+        vs.assign(ls_name, ls_init)
 
         vs.assign(gp_var_name,
                   tf.random.uniform(shape=(1,),
@@ -183,9 +229,12 @@ class GPARModel(AbstractModel):
                 return -gp.log_pdf(gp_input, self.ys[:, i:i + 1], normalize=True)
 
             # Robust optimization
-            for j in range(self.num_optimizer_restarts):
+            j = 0
 
-                self.initialize_hyperparameters(vs, index=i)
+            while j < self.num_optimizer_restarts:
+                j += 1
+
+                self.initialize_hyperparameters(vs, index=i, length_scale_init="dim_median")
 
                 loss = np.inf
 
@@ -198,12 +247,12 @@ class GPARModel(AbstractModel):
                                              names=[sig_amp_name,
                                                     length_scales_name,
                                                     noise_amp],
-                                             trace=True,
+                                             trace=False,
                                              err_level="raise")
 
                 except Exception as e:
 
-                    print(f"Saving: {vs[sig_amp_name]}, --- {vs[noise_amp]}")
+                    logger.error(f"Saving: {vs[sig_amp_name]}, --- {vs[noise_amp]}")
 
                     if not os.path.exists(os.path.dirname("logs/" + length_scales_name)):
                         os.makedirs(os.path.dirname("logs/" + length_scales_name))
@@ -212,12 +261,14 @@ class GPARModel(AbstractModel):
                     np.save("logs/" + sig_amp_name, vs[sig_amp_name].numpy())
                     np.save("logs/" + noise_amp, vs[noise_amp].numpy())
 
-                    print("Iteration {} failed: {}".format(i, str(e)))
-                    raise e
+                    logger.error("Iteration {} failed: {}".format(i, str(e)))
+
+                    j = j - 1
+                    continue
 
                 if loss < best_loss:
 
-                    logger.info(f"New best loss: {loss:.3f}")
+                    logger.info(f"Output {i}, Iteration {j}: New best loss: {loss:.3f}")
 
                     best_loss = loss
 
@@ -226,11 +277,12 @@ class GPARModel(AbstractModel):
                     self.gp_variances[i].assign(vs[sig_amp_name])
                     self.noise_variances[i].assign(vs[noise_amp])
 
-                elif self.verbose:
-                    print("Loss: {:.3f}".format(loss))
+                else:
+                    logger.info(f"Output {i}, Iteration {j}: Loss: {loss:.3f}")
 
-                if np.isnan(loss):
-                    print("Loss was NaN, restarting training iteration!")
+                if np.isnan(loss) or np.isinf(loss):
+                    logger.error(f"Output {i}, Iteration {j}: Loss was {loss}, restarting training iteration!")
+                    j = j - 1
 
             best_gp = GaussianProcess(kernel=self.kernel_name,
                                       signal_amplitude=self.gp_variances[i],
@@ -254,13 +306,12 @@ class GPARModel(AbstractModel):
         variances = []
 
         for i, model in enumerate(self.models):
-
             gp_input = tf.concat([xs] + means, axis=1)
             gp_train_input = tf.concat([self.xs, self.ys[:, :i]], axis=1)
 
             model = model | (gp_train_input, self.ys[:, i: i + 1])
 
-            mean, var = model.predict(gp_input)
+            mean, var = model.predict(gp_input, latent=False)
 
             means.append(mean)
             variances.append(var)
@@ -269,4 +320,3 @@ class GPARModel(AbstractModel):
         variances = tf.concat(variances, axis=1)
 
         return means, variances
-
