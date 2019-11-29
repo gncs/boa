@@ -1,3 +1,9 @@
+notebooks/
+
+# Logs
+logs/
+*.log
+
 # IDE
 .idea/
 
