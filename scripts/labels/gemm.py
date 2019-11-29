@@ -1,0 +1,33 @@
+input_labels = [
+    'cycle_time',
+    'cache_size',
+    'cache_assoc',
+    'cache_hit_latency',
+    'tlb_hit_latency',
+    'tlb_entries',
+    'l2cache_size',
+]
+
+output_labels = [
+    # 'cycle',
+    'avg_power',
+    'fu_power',
+    'avg_fu_dynamic_power',
+    'avg_fu_leakage_power',
+    'avg_mem_power',
+    'avg_mem_dynamic_power',
+    'avg_mem_leakage_power',
+    'total_area',
+    'fu_area',
+    'mem_area',
+    # 'num_sp_multiplier',
+    # 'num_sp_adder',
+    # 'num_dp_multiplier',
+    # 'num_dp_adder',
+    # 'num_trig_unit',
+    # 'num_multiplier',
+    # 'num_adder',
+    # 'num_bit_wise',
+    # 'num_shifter',
+    'num_register',
+]
