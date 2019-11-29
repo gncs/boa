@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 
 from typing import Tuple, List
 
@@ -17,10 +18,13 @@ class GPARModel(AbstractModel):
 
     def __init__(self,
                  kernel: str,
-                 num_optimizer_restarts: int,
+                 input_dim: int,
+                 output_dim: int,
                  learn_permutation: bool = False,
+                 initialization_heuristic: str = "median",
                  denoising: bool = True,
                  verbose: bool = False,
+                 _num_starting_data_points: int = 0,
                  name: str = "gpar_model",
                  **kwargs):
         """
@@ -32,27 +36,20 @@ class GPARModel(AbstractModel):
         """
 
         super(GPARModel, self).__init__(kernel=kernel,
-                                        num_optimizer_restarts=num_optimizer_restarts,
+                                        input_dim=input_dim,
+                                        output_dim=output_dim,
+                                        _num_starting_data_points=_num_starting_data_points,
                                         verbose=verbose,
                                         name=name,
                                         **kwargs)
 
         self.denoising = denoising
+        self.initialization_heuristic = initialization_heuristic
+        self.learn_permutation = learn_permutation
 
         self.length_scales: List[tf.Variable] = []
-        self.gp_variances: List[tf.Variable] = []
-        self.noise_variances: List[tf.Variable] = []
-
-    def _set_data(self, xs, ys) -> None:
-        """
-        This override of | is implements the inference of the posterior GP model from the inputs (xs, ys)
-
-        :param inputs: tuple of array-like xs and ys, i.e. input points and their corresponding function values
-        :return: None
-        """
-
-        # Validate inputs
-        super(GPARModel, self)._set_data(xs, ys)
+        self.signal_amplitudes: List[tf.Variable] = []
+        self.noise_amplitudes: List[tf.Variable] = []
 
         self.output_perm = tf.eye(self.output_dim, dtype=tf.float64)
 
@@ -65,15 +62,41 @@ class GPARModel(AbstractModel):
                                                   name=f"{i}/length_scales",
                                                   trainable=False))
 
-            self.gp_variances.append(tf.Variable((1,),
-                                                 dtype=tf.float64,
-                                                 name=f"{i}/signal_amplitude",
-                                                 trainable=False))
+            self.signal_amplitudes.append(tf.Variable((1,),
+                                                      dtype=tf.float64,
+                                                      name=f"{i}/signal_amplitude",
+                                                      trainable=False))
 
-            self.noise_variances.append(tf.Variable((1,),
-                                                    dtype=tf.float64,
-                                                    name=f"{i}/noise_amplitude",
-                                                    trainable=False))
+            self.noise_amplitudes.append(tf.Variable((1,),
+                                                     dtype=tf.float64,
+                                                     name=f"{i}/noise_amplitude",
+                                                     trainable=False))
+
+    def copy(self, name=None):
+
+        gpar = GPARModel(kernel=self.kernel_name,
+                         input_dim=self.input_dim,
+                         output_dim=self.output_dim,
+                         verbose=self.verbose,
+                         learn_permutation=self.learn_permutation,
+                         initialization_heuristic=self.initialization_heuristic,
+                         denoising=self.denoising,
+                         name=name if name is not None else self.name)
+
+        # Copy hyperparameters
+        for i in range(self.output_dim):
+            gpar.length_scales[i].assign(self.length_scales[i])
+            gpar.signal_amplitudes[i].assign(self.signal_amplitudes[i])
+            gpar.noise_amplitudes[i].assign(self.noise_amplitudes[i])
+
+        # Copy data
+        gpar.xs = tf.Variable(self.xs, name=self.XS_NAME, trainable=False)
+        gpar.ys = tf.Variable(self.ys, name=self.YS_NAME, trainable=False)
+
+        # Copy miscellaneous stuff
+        gpar.trained.assign(self.trained)
+
+        return gpar
 
     def create_hyperparameters(self) -> Vars:
         """
@@ -86,6 +109,8 @@ class GPARModel(AbstractModel):
 
         :return: Varz variable container
         """
+
+        logger.debug("Creating hyperparameters!")
 
         vs = Vars(tf.float64)
 
@@ -114,14 +139,18 @@ class GPARModel(AbstractModel):
 
         return vs
 
-    def initialize_hyperparameters(self, vs, index, length_scale_init="random") -> None:
-        # for i in range(self.output_dim):
+    def initialize_hyperparameters(self,
+                                   vs,
+                                   index,
+                                   length_scale_init="random",
+                                   init_minval=0.5,
+                                   init_maxval=2.0) -> None:
 
-        i = index
+        logger.debug(f"Reinitializing hyperparameters with length scale init mode: {length_scale_init}.")
 
-        ls_name = f"{i}/length_scales"
-        gp_var_name = f"{i}/signal_amplitude"
-        noise_var_name = f"{i}/noise_amplitude"
+        ls_name = f"{index}/length_scales"
+        gp_var_name = f"{index}/signal_amplitude"
+        noise_var_name = f"{index}/noise_amplitude"
 
         if length_scale_init == "median":
 
@@ -140,7 +169,7 @@ class GPARModel(AbstractModel):
                                             maxval=xs_ls_rand_range,
                                             dtype=tf.float64)
 
-            ys_ls_init += tf.random.uniform(shape=(i,),
+            ys_ls_init += tf.random.uniform(shape=(index,),
                                             minval=-ys_ls_rand_range,
                                             maxval=ys_ls_rand_range,
                                             dtype=tf.float64)
@@ -158,11 +187,11 @@ class GPARModel(AbstractModel):
                                             maxval=xs_ls_rand_range,
                                             dtype=tf.float64)
 
-            ys_ls_init = self.ys_per_dim_percentiles[:, 2]
-            ys_ls_rand_range = tf.minimum(self.ys_per_dim_percentiles[:, 2] - self.ys_per_dim_percentiles[:, 0],
-                                          self.ys_per_dim_percentiles[:, 4] - self.ys_per_dim_percentiles[:, 2])
+            ys_ls_init = self.ys_per_dim_percentiles[:index, 2]
+            ys_ls_rand_range = tf.minimum(self.ys_per_dim_percentiles[:index, 2] - self.ys_per_dim_percentiles[:index, 0],
+                                          self.ys_per_dim_percentiles[:index, 4] - self.ys_per_dim_percentiles[:index, 2])
 
-            ys_ls_init += tf.random.uniform(shape=(i,),
+            ys_ls_init += tf.random.uniform(shape=(index,),
                                             minval=-ys_ls_rand_range,
                                             maxval=ys_ls_rand_range,
                                             dtype=tf.float64)
@@ -171,40 +200,31 @@ class GPARModel(AbstractModel):
             ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
 
         else:
-            ls_init = tf.random.uniform(shape=(self.input_dim + i,),
-                                        minval=self.init_minval,
-                                        maxval=self.init_maxval,
+            ls_init = tf.random.uniform(shape=(self.input_dim + index,),
+                                        minval=init_minval,
+                                        maxval=init_maxval,
                                         dtype=tf.float64)
         vs.assign(ls_name, ls_init)
 
         vs.assign(gp_var_name,
                   tf.random.uniform(shape=(1,),
-                                    minval=self.init_minval,
-                                    maxval=self.init_maxval,
+                                    minval=init_minval,
+                                    maxval=init_maxval,
                                     dtype=tf.float64))
 
         vs.assign(noise_var_name,
                   tf.random.uniform(shape=(1,),
-                                    minval=self.init_minval,
-                                    maxval=self.init_maxval,
+                                    minval=init_minval,
+                                    maxval=init_maxval,
                                     dtype=tf.float64))
 
-    def fit(self, xs=None, ys=None, init_minval=0.5, init_maxval=2.0) -> None:
+    def fit(self, xs, ys, optimizer_restarts=1) -> None:
 
-        if xs is None and ys is None:
-            logger.info("No training data supplied, retraining using data already present!")
+        xs, ys = self._validate_and_convert_input_output(xs, ys)
 
-        elif xs is not None and ys is not None:
-            logger.info(f"Training data supplied with xs shape {xs.shape} and ys shape {ys.shape}, training!")
-            self._set_data(xs, ys)
+        logger.info(f"Training data supplied with xs shape {xs.shape} and ys shape {ys.shape}, training!")
 
-        else:
-            message = f"Training conditions inconsistent, xs were {type(xs)} and ys were {type(xs)}!"
-
-            logger.error(message)
-            raise ModelError(message)
-
-        self.models.clear()
+        self._calculate_statistics_for_median_initialization_heuristic(xs, ys)
 
         vs = self.create_hyperparameters()
 
@@ -224,17 +244,17 @@ class GPARModel(AbstractModel):
                                      length_scales=length_scales,
                                      noise_amplitude=noise_amplitude)
 
-                gp_input = tf.concat((self.xs, self.ys[:, :i]), axis=1)
+                gp_input = tf.concat((xs, ys[:, :i]), axis=1)
 
-                return -gp.log_pdf(gp_input, self.ys[:, i:i + 1], normalize=True)
+                return -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize=True)
 
             # Robust optimization
             j = 0
 
-            while j < self.num_optimizer_restarts:
+            while j < optimizer_restarts:
                 j += 1
 
-                self.initialize_hyperparameters(vs, index=i, length_scale_init="dim_median")
+                self.initialize_hyperparameters(vs, index=i, length_scale_init=self.initialization_heuristic)
 
                 loss = np.inf
 
@@ -274,8 +294,8 @@ class GPARModel(AbstractModel):
 
                     # Assign the hyperparameters for each input to the model variables
                     self.length_scales[i].assign(vs[length_scales_name])
-                    self.gp_variances[i].assign(vs[sig_amp_name])
-                    self.noise_variances[i].assign(vs[noise_amp])
+                    self.signal_amplitudes[i].assign(vs[sig_amp_name])
+                    self.noise_amplitudes[i].assign(vs[noise_amp])
 
                 else:
                     logger.info(f"Output {i}, Iteration {j}: Loss: {loss:.3f}")
@@ -284,17 +304,16 @@ class GPARModel(AbstractModel):
                     logger.error(f"Output {i}, Iteration {j}: Loss was {loss}, restarting training iteration!")
                     j = j - 1
 
-            best_gp = GaussianProcess(kernel=self.kernel_name,
-                                      signal_amplitude=self.gp_variances[i],
-                                      length_scales=self.length_scales[i],
-                                      noise_amplitude=self.noise_variances[i])
+        self.trained.assign(True)
 
-            self.models.append(best_gp)
+    def predict(self, xs) -> Tuple[tf.Tensor, tf.Tensor]:
 
-    def predict_batch(self, xs) -> Tuple[tf.Tensor, tf.Tensor]:
+        if not self.trained:
+            logger.warning("Using untrained model for prediction!")
 
-        if len(self.models) == 0:
-            raise ModelError("The model has not been trained yet!")
+        if len(self.models) < self.output_dim:
+            logger.info("GPs haven't been cached yet, creating them now.")
+            self.create_gps()
 
         xs = tf.convert_to_tensor(xs, dtype=tf.float64)
 
@@ -320,3 +339,55 @@ class GPARModel(AbstractModel):
         variances = tf.concat(variances, axis=1)
 
         return means, variances
+
+    def create_gps(self):
+        self.models.clear()
+
+        for i in range(self.output_dim):
+            gp = GaussianProcess(kernel=self.kernel_name,
+                                 signal_amplitude=self.signal_amplitudes[i],
+                                 length_scales=self.length_scales[i],
+                                 noise_amplitude=self.noise_amplitudes[i])
+
+            self.models.append(gp)
+
+    @staticmethod
+    def restore(save_path):
+
+        with open(save_path + ".json", "r") as config_file:
+            config = json.load(config_file)
+
+        model = GPARModel.from_config(config, restore_num_data_points=True)
+
+        model.load_weights(save_path)
+        model.create_gps()
+
+        return model
+
+    def get_config(self):
+
+        return {
+            "name": self.name,
+            "kernel": self.kernel_name,
+            "input_dim": self.input_dim,
+            "output_dim": self.output_dim,
+            "learn_permutation": self.learn_permutation,
+            "denoising": self.denoising,
+            "initialization_heuristic": self.initialization_heuristic,
+            "verbose": self.verbose,
+            "num_data_points": self.xs.shape[0]
+        }
+
+    @staticmethod
+    def from_config(config, restore_num_data_points=False):
+
+        return GPARModel(kernel=config["kernel"],
+                         input_dim=config["input_dim"],
+                         output_dim=config["output_dim"],
+                         learn_permutation=config["learn_permutation"],
+                         denoising=config["denoising"],
+                         initialization_heuristic=config["initialization_heuristic"],
+                         verbose=config["verbose"],
+                         _num_starting_data_points=config["num_data_points"] if restore_num_data_points else 0)
+
+

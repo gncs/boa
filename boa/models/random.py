@@ -19,10 +19,10 @@ class RandomModel(AbstractModel):
 
         self.ys = np.array([[]])
 
-    def _set_data(self, xs, ys):
+    def condition_on(self, xs, ys):
 
         # Performs validation of the inputs
-        super(RandomModel, self)._set_data(xs, ys)
+        super(RandomModel, self).condition_on(xs, ys)
 
         self.output_dim = ys.shape[1]
         self.ys = ys
@@ -50,7 +50,7 @@ class RandomModel(AbstractModel):
     def fit(self):
         self._update_mean_std()
 
-    def predict_batch(self, xs):
+    def predict(self, xs):
         return (self.random_state.normal(loc=self.ys_mean, scale=self.ys_std, size=(xs.shape[0], self.output_dim)),
                 np.var(
                     self.random_state.normal(loc=self.ys_mean,

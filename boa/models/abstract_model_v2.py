@@ -1,8 +1,9 @@
 import abc
 import logging
+import json
+import os
 
 import tensorflow as tf
-import tensorflow_probability as tfp
 
 from boa.core.gp import GaussianProcess
 from boa.core.utils import calculate_euclidean_distance_percentiles, calculate_per_dimension_distance_percentiles, setup_logger
@@ -18,14 +19,28 @@ class AbstractModel(tf.keras.Model):
 
     __metaclass__ = abc.ABCMeta
 
+    XS_NAME = "inputs"
+    YS_NAME = "outputs"
+
     def __init__(self,
                  kernel: str,
-                 num_optimizer_restarts: int,
+                 input_dim: int,
+                 output_dim: int,
                  parallel: bool = False,
                  verbose: bool = False,
-                 init_minval: float = 0.5,
-                 init_maxval: float = 2.0,
+                 _num_starting_data_points: int = 0,
                  name: str = "abstract_model", **kwargs):
+        """
+
+        :param kernel:
+        :param input_dim:
+        :param output_dim:
+        :param parallel:
+        :param verbose:
+        :param _num_starting_data_points: Should not be set by the user. Only used to restore models.
+        :param name:
+        :param kwargs:
+        """
 
         super(AbstractModel, self).__init__(name=name, **kwargs)
 
@@ -37,33 +52,33 @@ class AbstractModel(tf.keras.Model):
         else:
             raise ModelError("Specified kernel {} not available!".format(kernel))
 
-        self.num_optimizer_restarts = num_optimizer_restarts
         self.parallel = parallel
 
-        self.input_dim = 0
-        self.output_dim = 0
+        self.input_dim = input_dim
+        self.output_dim = output_dim
 
         self.verbose = verbose
 
-        self.xs = None
-        self.ys = None
-
-        self.pairwise_distances = None
-        self.pairwise_dim_distances = None
-
-        self.dim_length_medians = None
+        self.xs = tf.Variable(tf.zeros((_num_starting_data_points, input_dim), dtype=tf.float64), name=self.XS_NAME, trainable=False)
+        self.ys = tf.Variable(tf.zeros((_num_starting_data_points, output_dim), dtype=tf.float64), name=self.YS_NAME, trainable=False)
 
         self.num_pseudo_points = 0
         self.num_true_points = 0
 
-        # Range for the initialisation of GP hyperparameters
-        self.init_minval = tf.constant(init_minval, dtype=tf.float64)
-        self.init_maxval = tf.constant(init_maxval, dtype=tf.float64)
+        self.xs_per_dim_percentiles = None
+        self.ys_per_dim_percentiles = None
+
+        self.xs_euclidean_percentiles = None
+        self.ys_euclidean_percentiles = None
+
+        self.trained = tf.Variable(False, name="trained", trainable=False)
 
     @abc.abstractmethod
-    def _set_data(self, xs, ys):
+    def copy(self, name=None):
+        pass
+
+    def condition_on(self, xs, ys):
         """
-        Adds data to the model. The notation is supposed to imitate
         the conditioning operation:
 
         posterior = prior | (xs, ys)
@@ -76,6 +91,58 @@ class AbstractModel(tf.keras.Model):
         :return: Reference to the conditioned model
         """
 
+        xs, ys = self._validate_and_convert_input_output(xs, ys)
+
+        model = self.copy()
+
+        xs = tf.concat((self.xs, xs), axis=0)
+
+        model.xs = tf.Variable(xs, name=self.XS_NAME, trainable=False)
+        model.ys = tf.Variable(ys, name=self.YS_NAME, trainable=False)
+        model.num_true_points = xs.shape[0]
+
+        return model
+
+
+    @abc.abstractmethod
+    def fit(self, xs, ys, optimizer_restarts=1) -> None:
+        pass
+
+    @abc.abstractmethod
+    def predict(self, xs):
+        pass
+
+    @abc.abstractmethod
+    def get_config(self):
+        pass
+
+    @staticmethod
+    @abc.abstractmethod
+    def from_config(config, restore_num_data_points=False):
+        pass
+
+    @abc.abstractmethod
+    def create_gps(self):
+        pass
+
+    def save(self, save_path):
+
+        if not self.trained:
+            logger.warning("Saved model has not been trained yet!")
+
+        self.save_weights(save_path)
+
+        config = self.get_config()
+
+        with open(save_path + ".json", "w") as config_file:
+            json.dump(config, config_file, indent=4, sort_keys=True)
+
+    @staticmethod
+    @abc.abstractmethod
+    def restore(save_path):
+        pass
+
+    def _validate_and_convert_input_output(self, xs, ys):
         # Reasonable test of whether the inputs are array-like
         if not hasattr(xs, "__len__") or not hasattr(ys, "__len__"):
             raise ModelError("xs and ys must be array-like!")
@@ -85,73 +152,32 @@ class AbstractModel(tf.keras.Model):
 
         # Check if the shapes are correct
         if not len(xs.shape) == 2 or not len(ys.shape) == 2:
-            raise ModelError("xs and ys must be of rank 2!")
+            raise ModelError("The input and output must be of rank 2!")
 
         # Ensure the user provided the same number of input and output points
         if not xs.shape[0] == ys.shape[0]:
-            raise ModelError("The first dimension of xs and ys must be equal!")
+            raise ModelError("The first dimension of the input and the output must be equal! "
+                             "(the data needs to form valid input-output pairs)")
 
-        self.input_dim = xs.shape[1]
-        self.output_dim = ys.shape[1]
+        if not xs.shape[1] == self.input_dim:
+            raise ModelError(f"The second dimension of the input must equal the set input dimension ({self.input_dim})!")
 
-        self.xs = xs
-        self.ys = ys
-        self.num_true_points = xs.shape[0]
+        if not ys.shape[1] == self.output_dim:
+            raise ModelError(f"The second dimension of the output must equal the set output dimension ({self.output_dim})!")
+
+        return xs, ys
+
+    def _calculate_statistics_for_median_initialization_heuristic(self, xs, ys):
 
         # ---------------------------------------------
         # Calculate stuff for the median heuristic
         # ---------------------------------------------
-
         percentiles = [10, 30, 50, 70, 90]
 
-        self.xs_euclidean_percentiles = calculate_euclidean_distance_percentiles(self.xs, percentiles)
-        self.ys_euclidean_percentiles = calculate_euclidean_distance_percentiles(self.ys, percentiles)
+        self.xs_euclidean_percentiles = calculate_euclidean_distance_percentiles(xs, percentiles)
+        self.ys_euclidean_percentiles = calculate_euclidean_distance_percentiles(ys, percentiles)
         logging.debug(f"Input Euclidean distance percentiles (10, 30, 50, 70, 90): {self.xs_euclidean_percentiles}")
         logging.debug(f"Output Euclidean distance percentiles (10, 30, 50, 70, 90): {self.ys_euclidean_percentiles}")
 
-        self.xs_per_dim_percentiles = calculate_per_dimension_distance_percentiles(self.xs, percentiles)
-        self.ys_per_dim_percentiles = calculate_per_dimension_distance_percentiles(self.ys, percentiles)
-
-    @abc.abstractmethod
-    def fit(self, xs, ys) -> None:
-        pass
-
-    @abc.abstractmethod
-    def predict_batch(self, xs):
-        pass
-
-    def add_true_point(self, x, y) -> None:
-
-        x = tf.convert_to_tensor(x, dtype=tf.float64)
-        y = tf.convert_to_tensor(y, dtype=tf.float64)
-
-        if x.shape != (1, self.input_dim):
-            raise ModelError("x with shape {} must have shape {}!".format(x.shape, (1, self.input_dim)))
-        if y.shape != (1, self.output_dim):
-            raise ModelError("y with shape {} must have shape {}!".format(y.shape, (1, self.output_dim)))
-
-        assert self.num_pseudo_points == 0
-
-        self._append_data_point(x, y)
-        self.num_true_points += 1
-
-    def add_pseudo_point(self, x):
-
-        x = tf.convert_to_tensor(x, dtype=tf.float64)
-
-        if x.shape != (1, self.input_dim):
-            raise ModelError("point with shape {} must have shape {}!".format(x.shape, (1, self.input_dim)))
-
-        mean, var = self.predict_batch(x)
-
-        self._append_data_point(x, mean)
-        self.num_pseudo_points += 1
-
-    def remove_pseudo_points(self) -> None:
-        self.xs = self.xs[:-self.num_pseudo_points, :]
-        self.ys = self.ys[:-self.num_pseudo_points, :]
-        self.num_pseudo_points = 0
-
-    def _append_data_point(self, x, y) -> None:
-        self.xs = tf.concat((self.xs, x), axis=0)
-        self.ys = tf.concat((self.ys, y), axis=0)
+        self.xs_per_dim_percentiles = calculate_per_dimension_distance_percentiles(xs, percentiles)
+        self.ys_per_dim_percentiles = calculate_per_dimension_distance_percentiles(ys, percentiles)

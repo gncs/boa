@@ -87,7 +87,7 @@ def run_gp_experiment(model,
                 start_time = time.time()
 
                 try:
-                    mean, _ = model.predict_batch(test[inputs].values)
+                    mean, _ = model.predict(test[inputs].values)
                 except Exception as e:
                     print("Prediction failed: {}".format(str(e)))
                     raise e
@@ -167,10 +167,11 @@ def run_gpar_experiment(model,
             start_time = time.time()
 
             try:
-                mean, _ = model.predict_batch(test[inputs].values)
+                mean, _ = model.predict(test[inputs].values)
             except Exception as e:
                 print("Prediction failed: {}".format(str(e)))
-                raise e
+                #raise e
+                continue
 
             mean = mean.numpy()
 

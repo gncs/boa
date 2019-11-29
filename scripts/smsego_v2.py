@@ -75,7 +75,7 @@ def manual_optimization(x_train, y_train):
     # Perform optimization without the optimizer interface
     for i in range(5):
 
-        y_cont, var_cont = model.predict_batch(x_cont)
+        y_cont, var_cont = model.predict(x_cont)
 
         print(data_x.shape, data_y.shape, x_cont.shape, y_cont.shape, var_cont.shape)
 
@@ -153,7 +153,7 @@ def automated_optimization(x_train, y_train):
         candidate_xs=x_cont
     )
 
-    y_cont, var_cont = model.predict_batch(x_cont)
+    y_cont, var_cont = model.predict(x_cont)
     acquisition_values = acq.evaluate(model=model, xs=data_x, ys=data_y, candidate_xs=x_cont)
 
     fig = plot(

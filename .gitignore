@@ -2,6 +2,9 @@
 logs/
 *.log
 
+# Temporary model files
+notebooks/models/
+
 # Scratch folder
 scratch/
 

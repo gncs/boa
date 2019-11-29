@@ -1,5 +1,7 @@
 import logging
 
+import json
+
 from typing import Tuple, List
 
 import tensorflow as tf
@@ -20,41 +22,30 @@ class FullyFactorizedGPModel(AbstractModel):
 
     def __init__(self,
                  kernel: str,
-                 num_optimizer_restarts: int,
+                 input_dim: int,
+                 output_dim: int,
+                 initialization_heuristic: str = "median",
                  parallel: bool = False,
                  name: str = "gp_model",
                  verbose=True,
+                 _num_starting_data_points: int = 0,
                  **kwargs):
-        """
-        Constructor of GP model.
 
-        :param kernel: name of kernel
-        :param num_optimizer_restarts: number of times the optimization of the hyperparameters is restarted
-        :param parallel: run optimizations in parallel
-        :param name: name of the GP model
-        """
 
         super(FullyFactorizedGPModel, self).__init__(kernel=kernel,
-                                                     num_optimizer_restarts=num_optimizer_restarts,
+                                                     input_dim=input_dim,
+                                                     output_dim=output_dim,
                                                      parallel=parallel,
                                                      verbose=verbose,
+                                                     _num_starting_data_points=_num_starting_data_points,
                                                      name=name,
                                                      **kwargs)
 
+        self.initialization_heuristic = initialization_heuristic
+
         self.length_scales: List[tf.Variable] = []
-        self.gp_variances: List[tf.Variable] = []
-        self.noise_variances: List[tf.Variable] = []
-
-    def _set_data(self, xs, ys) -> None:
-        """
-        This override of | is implements the inference of the posterior GP model from the inputs (xs, ys)
-
-        :param inputs: tuple of array-like xs and ys, i.e. input points and their corresponding function values
-        :return: None
-        """
-
-        # Validate inputs and set data
-        super(FullyFactorizedGPModel, self)._set_data(xs, ys)
+        self.signal_amplitudes: List[tf.Variable] = []
+        self.noise_amplitudes: List[tf.Variable] = []
 
         # Create GP hyperparameter variables
         for i in range(self.output_dim):
@@ -63,15 +54,38 @@ class FullyFactorizedGPModel(AbstractModel):
                                                   name=f"{i}/length_scales",
                                                   trainable=False))
 
-            self.gp_variances.append(tf.Variable((1.0,),
-                                                 dtype=tf.float64,
-                                                 name=f"{i}/signal_amplitude",
-                                                 trainable=False))
+            self.signal_amplitudes.append(tf.Variable((1.0,),
+                                                      dtype=tf.float64,
+                                                      name=f"{i}/signal_amplitude",
+                                                      trainable=False))
 
-            self.noise_variances.append(tf.Variable((1.0,),
-                                                    dtype=tf.float64,
-                                                    name=f"{i}/noise_amplitude",
-                                                    trainable=False))
+            self.noise_amplitudes.append(tf.Variable((1.0,),
+                                                     dtype=tf.float64,
+                                                     name=f"{i}/noise_amplitude",
+                                                     trainable=False))
+
+    def copy(self, name=None):
+        ff_gp = FullyFactorizedGPModel(kernel=self.kernel_name,
+                                       input_dim=self.input_dim,
+                                       output_dim=self.output_dim,
+                                       initialization_heuristic=self.initialization_heuristic,
+                                       parallel=self.parallel,
+                                       name=name if name is not None else self.name)
+
+        # Copy stored hyperparameter values
+        for i in range(self.output_dim):
+            ff_gp.length_scales[i].assign(self.length_scales[i])
+            ff_gp.signal_amplitudes[i].assign(self.signal_amplitudes[i])
+            ff_gp.noise_amplitudes[i].assign(self.noise_amplitudes[i])
+
+        # Copy data
+        ff_gp.xs = tf.Variable(self.xs, name=self.XS_NAME, trainable=False)
+        ff_gp.ys = tf.Variable(self.ys, name=self.YS_NAME, trainable=False)
+
+        # Copy miscellaneous stuff
+        ff_gp.trained.assign(self.trained)
+
+        return ff_gp
 
     def create_hyperparameters(self) -> Vars:
 
@@ -102,7 +116,12 @@ class FullyFactorizedGPModel(AbstractModel):
 
         return vs
 
-    def initialize_hyperparameters(self, vs: Vars, index, length_scale_init="random") -> None:
+    def initialize_hyperparameters(self,
+                                   vs: Vars,
+                                   index,
+                                   length_scale_init="random",
+                                   init_minval=0.5,
+                                   init_maxval=2.0) -> None:
 
         ls_name = f"{index}/length_scales"
         gp_var_name = f"{index}/signal_amplitude"
@@ -135,37 +154,28 @@ class FullyFactorizedGPModel(AbstractModel):
 
         else:
             ls_init = tf.random.uniform(shape=(self.input_dim,),
-                                        minval=self.init_minval,
-                                        maxval=self.init_maxval,
+                                        minval=init_minval,
+                                        maxval=init_maxval,
                                         dtype=tf.float64)
         vs.assign(ls_name, ls_init)
 
         vs.assign(gp_var_name, tf.random.uniform(shape=(1,),
-                                                 minval=self.init_minval,
-                                                 maxval=self.init_maxval,
+                                                 minval=init_minval,
+                                                 maxval=init_maxval,
                                                  dtype=tf.float64))
 
         vs.assign(noise_var_name, tf.random.uniform(shape=(1,),
-                                                    minval=self.init_minval,
-                                                    maxval=self.init_maxval,
+                                                    minval=init_minval,
+                                                    maxval=init_maxval,
                                                     dtype=tf.float64))
 
-    def fit(self, xs=None, ys=None, init_minval=0.5, init_maxval=2.0) -> None:
+    def fit(self, xs, ys, optimizer_restarts=1) -> None:
 
-        if xs is None and ys is None:
-            logger.info("No training data supplied, retraining using data already present!")
+        xs, ys = self._validate_and_convert_input_output(xs, ys)
 
-        elif xs is not None and ys is not None:
-            logger.info(f"Training data supplied with xs shape {xs.shape} and ys shape {ys.shape}, training!")
-            self._set_data(xs, ys)
+        logger.info(f"Training data supplied with xs shape {xs.shape} and ys shape {ys.shape}, training!")
 
-        else:
-            message = f"Training conditions inconsistent, xs were {type(xs)} and ys were {type(xs)}!"
-
-            logger.error(message)
-            raise ModelError(message)
-
-        self.models.clear()
+        self._calculate_statistics_for_median_initialization_heuristic(xs, ys)
 
         vs = self.create_hyperparameters()
 
@@ -185,17 +195,17 @@ class FullyFactorizedGPModel(AbstractModel):
                                      length_scales=length_scales,
                                      noise_amplitude=noise_amplitude)
 
-                return -gp.log_pdf(self.xs, self.ys[:, i:i + 1], normalize=True)
+                return -gp.log_pdf(xs, ys[:, i:i + 1], normalize=True)
 
             # Robust optimization
-            for j in range(self.num_optimizer_restarts):
+            for j in range(optimizer_restarts):
 
                 # Reinitialize parameters
                 self.initialize_hyperparameters(vs,
                                                 index=i,
-                                                length_scale_init="dim_median")
+                                                length_scale_init=self.initialization_heuristic)
 
-                logger.info("Optimization round: {} / {}".format(j + 1, self.num_optimizer_restarts))
+                logger.info("Optimization round: {} / {}".format(j + 1, optimizer_restarts))
 
                 loss = np.inf
                 try:
@@ -218,19 +228,19 @@ class FullyFactorizedGPModel(AbstractModel):
 
                     # Reassign variables
                     self.length_scales[i].assign(vs[ls_name])
-                    self.gp_variances[i].assign(vs[gp_var_name])
-                    self.noise_variances[i].assign(vs[noise_var_name])
+                    self.signal_amplitudes[i].assign(vs[gp_var_name])
+                    self.noise_amplitudes[i].assign(vs[noise_var_name])
 
-            best_gp = GaussianProcess(kernel=self.kernel_name,
-                                      signal_amplitude=self.gp_variances[i],
-                                      length_scales=self.length_scales[i],
-                                      noise_amplitude=self.noise_variances[i])
-            self.models.append(best_gp)
+        self.trained.assign(True)
 
-    def predict_batch(self, xs):
+    def predict(self, xs):
 
-        if len(self.models) == 0:
-            raise ModelError("The model has not been trained yet!")
+        if not self.trained:
+            logger.warning("Using untrained model for prediction!")
+
+        if len(self.models) < self.output_dim:
+            logger.info("GPs haven't been cached yet, creating them now.")
+            self.create_gps()
 
         xs = tf.convert_to_tensor(xs, dtype=tf.float64)
 
@@ -253,3 +263,53 @@ class FullyFactorizedGPModel(AbstractModel):
         variances = tf.concat(variances, axis=1)
 
         return means, variances
+
+    def create_gps(self):
+        self.models.clear()
+
+        for i in range(self.output_dim):
+            gp = GaussianProcess(kernel=self.kernel_name,
+                                 signal_amplitude=self.signal_amplitudes[i],
+                                 length_scales=self.length_scales[i],
+                                 noise_amplitude=self.noise_amplitudes[i])
+
+            self.models.append(gp)
+
+    @staticmethod
+    def restore(save_path):
+
+        with open(save_path + ".json", "r") as config_file:
+            config = json.load(config_file)
+
+        model = FullyFactorizedGPModel.from_config(config, restore_num_data_points=True)
+
+        model.load_weights(save_path)
+        model.create_gps()
+
+        return model
+
+    def get_config(self):
+
+        return {
+            "name": self.name,
+            "kernel": self.kernel_name,
+            "input_dim": self.input_dim,
+            "output_dim": self.output_dim,
+            "initialization_heuristic": self.initialization_heuristic,
+            "parallel": self.parallel,
+            "verbose": self.verbose,
+            "num_data_points": self.xs.shape[0]
+        }
+
+    @staticmethod
+    def from_config(config, restore_num_data_points=False):
+
+        return FullyFactorizedGPModel(kernel=config["kernel"],
+                                      input_dim=config["input_dim"],
+                                      output_dim=config["output_dim"],
+                                      initialization_heuristic=config["initialization_heuristic"],
+                                      parallel=config["parallel"],
+                                      verbose=config["verbose"],
+                                      _num_starting_data_points=config["num_data_points"] if restore_num_data_points else 0)
+
+

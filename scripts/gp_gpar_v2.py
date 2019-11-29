@@ -31,7 +31,7 @@ def run():
     ff_gp.fit()
 
     ff_gp.add_pseudo_point(pseudo_point)
-    y_pred_ff_gp, var_pred_ff_gp = ff_gp.predict_batch(x_cont)
+    y_pred_ff_gp, var_pred_ff_gp = ff_gp.predict(x_cont)
 
     y_pred_ff_gp = y_pred_ff_gp.numpy()
     var_pred_ff_gp = var_pred_ff_gp.numpy()
@@ -42,7 +42,7 @@ def run():
     gpar.fit()
 
     gpar.add_pseudo_point(pseudo_point)
-    y_pred_gpar, var_pred_gpar = gpar.predict_batch(x_cont)
+    y_pred_gpar, var_pred_gpar = gpar.predict(x_cont)
 
     y_pred_gpar = y_pred_gpar.numpy()
     var_pred_gpar = var_pred_gpar.numpy()

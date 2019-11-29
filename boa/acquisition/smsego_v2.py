@@ -34,7 +34,7 @@ class SMSEGO(AbstractAcquisition):
         ys = self.slice_output(ys)
 
         # Model predictions for candidates
-        means, var = model.predict_batch(candidate_xs)
+        means, var = model.predict(candidate_xs)
         means = self.slice_output(means)
         var = self.slice_output(var)
 
