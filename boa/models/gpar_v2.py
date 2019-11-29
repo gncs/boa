@@ -306,7 +306,7 @@ class GPARModel(AbstractModel):
 
         self.trained.assign(True)
 
-    def predict(self, xs) -> Tuple[tf.Tensor, tf.Tensor]:
+    def predict(self, xs, numpy=True):
 
         if not self.trained:
             logger.warning("Using untrained model for prediction!")
@@ -337,6 +337,10 @@ class GPARModel(AbstractModel):
 
         means = tf.concat(means, axis=1)
         variances = tf.concat(variances, axis=1)
+
+        if numpy:
+            means = means.numpy()
+            variances = variances.numpy()
 
         return means, variances
 

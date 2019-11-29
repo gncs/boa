@@ -12,7 +12,7 @@ from boa.core.utils import setup_logger
 import numpy as np
 import matplotlib.pyplot as plt
 
-logger = setup_logger(__name__, level=logging.INFO, to_console=True)
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/smsego_v2.log")
 
 
 def plot(xs, fs, preds, var, acqs, points_xs, points_ys):
@@ -58,10 +58,11 @@ def f(x):
 def manual_optimization(x_train, y_train):
 
     # Infer GP
-    model = FullyFactorizedGPModel(kernel="rbf", num_optimizer_restarts=5, verbose=False)
+    model = FullyFactorizedGPModel(kernel="rbf", input_dim=1, output_dim=1, verbose=False)
 
     # Optimize the hyperparameters
-    model.fit(x_train, y_train)
+    model = model.condition_on(x_train, y_train)
+    model.fit_to_conditioning_data(optimizer_restarts=5)
 
     # Set up the acquisition function
     acq = SMSEGO(gain=1., epsilon=0.1, reference=[2])
@@ -77,7 +78,7 @@ def manual_optimization(x_train, y_train):
 
         y_cont, var_cont = model.predict(x_cont)
 
-        print(data_x.shape, data_y.shape, x_cont.shape, y_cont.shape, var_cont.shape)
+        logger.debug(f"{data_x.shape} {data_y.shape} {x_cont.shape} {y_cont.shape} {var_cont.shape}")
 
         acquisition_values = acq.evaluate(model=model, xs=data_x, ys=data_y, candidate_xs=x_cont)
 
@@ -101,9 +102,10 @@ def manual_optimization(x_train, y_train):
         # Add evaluations to data set and model
         data_x = np.vstack((data_x, inp))
         data_y = np.vstack((data_y, outp))
-        model.add_true_point(inp.reshape([-1, 1]), outp)
 
-        model.fit()
+        model = model.condition_on(inp.reshape([-1, 1]), outp)
+
+        model.fit_to_conditioning_data(optimizer_restarts=3)
 
 
 def automated_optimization(x_train, y_train):
@@ -135,14 +137,15 @@ def automated_optimization(x_train, y_train):
     objective = Objective(fun=f, candidates=x_cont)
 
     # Set up GP model and train it
-    model = FullyFactorizedGPModel(kernel='rbf', num_optimizer_restarts=3, verbose=False)
-    model.fit(x_train, y_train)
+    model = FullyFactorizedGPModel(kernel='rbf', input_dim=1, output_dim=1, verbose=False)
+    model = model.condition_on(x_train, y_train)
+    model.fit_to_conditioning_data(optimizer_restarts=3)
 
     # Setup the acquisition fn
     acq = SMSEGO(gain=1, epsilon=0.1, reference=[2])
 
     # Set up the optimizer
-    optimizer = Optimizer(max_num_iterations=4, batch_size=1)
+    optimizer = Optimizer(max_num_iterations=4, batch_size=1, strict=True)
 
     data_x, data_y = optimizer.optimize(
         f=objective,
@@ -150,8 +153,11 @@ def automated_optimization(x_train, y_train):
         acq_fun=acq,
         xs=x_train,
         ys=y_train,
-        candidate_xs=x_cont
+        candidate_xs=x_cont,
+        optimizer_restarts=3
     )
+
+    model = model.condition_on(data_x, data_y, keep_previous=False)
 
     y_cont, var_cont = model.predict(x_cont)
     acquisition_values = acq.evaluate(model=model, xs=data_x, ys=data_y, candidate_xs=x_cont)

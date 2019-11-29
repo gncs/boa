@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from .labels.fft import input_labels, output_labels
+from labels.fft import input_labels, output_labels
 
 
 def generate_histograms(data: pd.DataFrame):
@@ -30,6 +30,9 @@ def main(dataset_path: str):
     # Check for duplicates in input
     if data_set.duplicated(subset=input_labels).any():
         raise ValueError('Duplicates present')
+
+    all_the_same = data_set.apply(func=lambda c: all(c[0] == c), axis=0)
+    print('Only one value in columns:', all_the_same[all_the_same].index.tolist())
 
     # Generate histograms summarizing data
     generate_histograms(data_set[input_labels])

@@ -233,7 +233,7 @@ class FullyFactorizedGPModel(AbstractModel):
 
         self.trained.assign(True)
 
-    def predict(self, xs):
+    def predict(self, xs, numpy=False):
 
         if not self.trained:
             logger.warning("Using untrained model for prediction!")
@@ -261,6 +261,10 @@ class FullyFactorizedGPModel(AbstractModel):
 
         means = tf.concat(means, axis=1)
         variances = tf.concat(variances, axis=1)
+
+        if numpy:
+            means = means.numpy()
+            variances = variances.numpy()
 
         return means, variances
 

@@ -28,7 +28,7 @@ class Optimizer:
         self.create_checkpoints = checkpoints
 
     def optimize(self, f: AbstractObjective, model: AbstractModel, acq_fun: AbstractAcquisition, xs: np.array,
-                 ys: np.array, candidate_xs: np.array) -> Tuple[np.ndarray, np.ndarray]:
+                 ys: np.array, candidate_xs: np.array, optimizer_restarts: int) -> Tuple[np.ndarray, np.ndarray]:
 
         xs = xs.copy()
         ys = ys.copy()
@@ -43,6 +43,8 @@ class Optimizer:
 
             eval_points = []
 
+            eval_model = model.copy()
+
             # Collect evaluation points
             for _ in range(self.batch_size):
 
@@ -55,11 +57,9 @@ class Optimizer:
                 eval_point = candidate_xs[max_acquisition_index]
 
                 eval_points.append(eval_point)
-                model.add_pseudo_point(eval_point.reshape((1, -1)))
+                eval_model = eval_model.condition_on_input_only(eval_point.reshape((1, -1)))
 
                 candidate_xs = np.delete(candidate_xs, max_acquisition_index, axis=0)
-
-            model.remove_pseudo_points()
 
             # If no new evaluation points are selected, break
             if not eval_points:
@@ -73,16 +73,16 @@ class Optimizer:
             ys = np.vstack((ys, outp))
 
             for i, o in zip(inp, outp):
-                model.add_true_point(i.reshape((1, -1)), o.reshape(1, -1))
+                model = model.condition_on(i.reshape((1, -1)), o.reshape(1, -1))
 
             try:
-                model.fit()
+                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts)
             except Exception as e:
                 print_message('Error: ' + str(e))
                 if not self.strict:
                     print_message('Failed to update model, continuing.')
                 else:
-                    raise
+                    raise e
 
             if self.create_checkpoints:
                 self.create_checkpoint(f=f, xs=xs, ys=ys)
