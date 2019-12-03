@@ -76,35 +76,14 @@ class MatrixFactorizedGPARModel(GPARModel):
 
     def copy(self, name=None):
 
-        mf_gpar = MatrixFactorizedGPARModel(kernel=self.kernel_name,
-                                            input_dim=self.input_dim,
-                                            output_dim=self.output_dim,
-                                            latent_dim=self.latent_dim,
-                                            initialization_heuristic=self.initialization_heuristic,
-                                            verbose=self.verbose,
-                                            name=name if name is not None else self.name)
+        mf_gpar = super(MatrixFactorizedGPARModel, self).copy(name=name)
 
-        # Copy hyperparameters
-        mf_gpar.left_length_scale_matrix.assign(self.left_length_scale_matrix)
-        mf_gpar.right_length_scale_matrix.assign(self.right_length_scale_matrix)
-
-        input_length_scales = tf.matmul(self.left_length_scale_matrix,
-                                        self.right_length_scale_matrix)
+        input_length_scales = tf.matmul(mf_gpar.left_length_scale_matrix, mf_gpar.right_length_scale_matrix)
 
         for i in range(self.output_dim):
-            mf_gpar.output_length_scales[i].assign(self.output_length_scales[i])
             mf_gpar.length_scales[i] = tf.concat((input_length_scales[i, :],
                                                   mf_gpar.output_length_scales[i]),
                                                  axis=0)
-            mf_gpar.signal_amplitudes[i].assign(self.signal_amplitudes[i])
-            mf_gpar.noise_amplitudes[i].assign(self.noise_amplitudes[i])
-
-        # Copy data
-        mf_gpar.xs = tf.Variable(self.xs, name=self.XS_NAME, trainable=False)
-        mf_gpar.ys = tf.Variable(self.ys, name=self.YS_NAME, trainable=False)
-
-        # Copy miscellaneous stuff
-        mf_gpar.trained.assign(self.trained)
 
         return mf_gpar
 
@@ -116,13 +95,13 @@ class MatrixFactorizedGPARModel(GPARModel):
         vs.bnd(init=tf.ones((self.output_dim, self.latent_dim),
                             dtype=tf.float64),
                lower=1e-10,
-               upper=1e4,
+               upper=1e2,
                name=self.LLS_MAT)
 
         vs.bnd(init=tf.ones((self.latent_dim, self.input_dim),
                             dtype=tf.float64),
                lower=1e-10,
-               upper=1e4,
+               upper=1e2,
                name=self.RLS_MAT)
 
         # Create the rest of the hyperparameters
@@ -130,18 +109,20 @@ class MatrixFactorizedGPARModel(GPARModel):
         for i in range(self.output_dim):
             # Note the scaling in dimension with the index
             vs.bnd(init=tf.ones(i, dtype=tf.float64),
-                   lower=1e-4,
-                   upper=1e4,
+                   lower=1e-3,
+                   upper=1e2,
                    name=f"{i}/output_length_scales")
 
             # GP variance
-            vs.pos(init=tf.ones(1, dtype=tf.float64),
+            vs.bnd(init=tf.ones(1, dtype=tf.float64),
+                   lower=1e-4,
+                   upper=1e4,
                    name=f"{i}/signal_amplitude")
 
             # Noise variance: bound between 1e-4 and 1e4
             vs.bnd(init=tf.ones(1, dtype=tf.float64),
-                   lower=1e-4,
-                   upper=1e4,
+                   lower=1e-6,
+                   upper=1e2,
                    name=f"{i}/noise_amplitude")
 
         return vs
@@ -359,7 +340,7 @@ class MatrixFactorizedGPARModel(GPARModel):
         with open(save_path + ".json", "r") as config_file:
             config = json.load(config_file)
 
-        model = GPARModel.from_config(config, restore_num_data_points=True)
+        model = GPARModel.from_config(config)
 
         model.load_weights(save_path)
         model.create_gps()
@@ -378,19 +359,9 @@ class MatrixFactorizedGPARModel(GPARModel):
             "denoising": self.denoising,
             "initialization_heuristic": self.initialization_heuristic,
             "verbose": self.verbose,
-            "num_data_points": self.xs.shape[0]
         }
 
     @staticmethod
     def from_config(config, restore_num_data_points=False):
+        return MatrixFactorizedGPARModel(**config)
 
-        return MatrixFactorizedGPARModel(kernel=config["kernel"],
-                                         input_dim=config["input_dim"],
-                                         output_dim=config["output_dim"],
-                                         latent_dim=config["latent_dim"],
-                                         learn_permutation=config["learn_permutation"],
-                                         denoising=config["denoising"],
-                                         initialization_heuristic=config["initialization_heuristic"],
-                                         verbose=config["verbose"],
-                                         _num_starting_data_points=config[
-                                             "num_data_points"] if restore_num_data_points else 0)
