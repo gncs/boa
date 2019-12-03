@@ -24,7 +24,6 @@ class GPARModel(AbstractModel):
                  initialization_heuristic: str = "median",
                  denoising: bool = True,
                  verbose: bool = False,
-                 _num_starting_data_points: int = 0,
                  name: str = "gpar_model",
                  **kwargs):
         """
@@ -38,7 +37,6 @@ class GPARModel(AbstractModel):
         super(GPARModel, self).__init__(kernel=kernel,
                                         input_dim=input_dim,
                                         output_dim=output_dim,
-                                        _num_starting_data_points=_num_starting_data_points,
                                         verbose=verbose,
                                         name=name,
                                         **kwargs)
@@ -72,32 +70,6 @@ class GPARModel(AbstractModel):
                                                      name=f"{i}/noise_amplitude",
                                                      trainable=False))
 
-    def copy(self, name=None):
-
-        gpar = GPARModel(kernel=self.kernel_name,
-                         input_dim=self.input_dim,
-                         output_dim=self.output_dim,
-                         verbose=self.verbose,
-                         learn_permutation=self.learn_permutation,
-                         initialization_heuristic=self.initialization_heuristic,
-                         denoising=self.denoising,
-                         name=name if name is not None else self.name)
-
-        # Copy hyperparameters
-        for i in range(self.output_dim):
-            gpar.length_scales[i].assign(self.length_scales[i])
-            gpar.signal_amplitudes[i].assign(self.signal_amplitudes[i])
-            gpar.noise_amplitudes[i].assign(self.noise_amplitudes[i])
-
-        # Copy data
-        gpar.xs = tf.Variable(self.xs, name=self.XS_NAME, trainable=False)
-        gpar.ys = tf.Variable(self.ys, name=self.YS_NAME, trainable=False)
-
-        # Copy miscellaneous stuff
-        gpar.trained.assign(self.trained)
-
-        return gpar
-
     def create_hyperparameters(self) -> Vars:
         """
         Creates the hyperparameter container that the model uses
@@ -121,20 +93,20 @@ class GPARModel(AbstractModel):
 
             # Note the scaling in dimension with the index
             vs.bnd(init=tf.ones(self.input_dim + i, dtype=tf.float64),
-                   lower=1e-4,
-                   upper=1e4,
+                   lower=1e-3,
+                   upper=1e2,
                    name=ls_name)
 
             # GP variance
             vs.bnd(init=tf.ones(1, dtype=tf.float64),
                    lower=1e-4,
-                   upper=1e3,
+                   upper=1e4,
                    name=gp_var_name)
 
             # Noise variance: bound between 1e-4 and 1e4
             vs.bnd(init=tf.ones(1, dtype=tf.float64),
                    lower=1e-6,
-                   upper=1e3,
+                   upper=1e2,
                    name=noise_var_name)
 
         return vs
@@ -146,7 +118,7 @@ class GPARModel(AbstractModel):
                                    init_minval=0.5,
                                    init_maxval=2.0) -> None:
 
-        logger.debug(f"Reinitializing hyperparameters with length scale init mode: {length_scale_init}.")
+        #logger.debug(f"Reinitializing hyperparameters with length scale init mode: {length_scale_init}.")
 
         ls_name = f"{index}/length_scales"
         gp_var_name = f"{index}/signal_amplitude"
@@ -306,7 +278,7 @@ class GPARModel(AbstractModel):
 
         self.trained.assign(True)
 
-    def predict(self, xs, numpy=True):
+    def predict(self, xs, numpy=False):
 
         if not self.trained:
             logger.warning("Using untrained model for prediction!")
@@ -315,11 +287,7 @@ class GPARModel(AbstractModel):
             logger.info("GPs haven't been cached yet, creating them now.")
             self.create_gps()
 
-        xs = tf.convert_to_tensor(xs, dtype=tf.float64)
-
-        if xs.shape[1] != self.input_dim:
-            raise ModelError("xs with shape {} must have 1st dimension (0 indexed) {}!".format(xs.shape,
-                                                                                               self.input_dim))
+        xs = self._validate_and_convert(xs, output=False)
 
         means = []
         variances = []
@@ -361,7 +329,7 @@ class GPARModel(AbstractModel):
         with open(save_path + ".json", "r") as config_file:
             config = json.load(config_file)
 
-        model = GPARModel.from_config(config, restore_num_data_points=True)
+        model = GPARModel.from_config(config)
 
         model.load_weights(save_path)
         model.create_gps()
@@ -379,19 +347,10 @@ class GPARModel(AbstractModel):
             "denoising": self.denoising,
             "initialization_heuristic": self.initialization_heuristic,
             "verbose": self.verbose,
-            "num_data_points": self.xs.shape[0]
         }
 
     @staticmethod
-    def from_config(config, restore_num_data_points=False):
-
-        return GPARModel(kernel=config["kernel"],
-                         input_dim=config["input_dim"],
-                         output_dim=config["output_dim"],
-                         learn_permutation=config["learn_permutation"],
-                         denoising=config["denoising"],
-                         initialization_heuristic=config["initialization_heuristic"],
-                         verbose=config["verbose"],
-                         _num_starting_data_points=config["num_data_points"] if restore_num_data_points else 0)
+    def from_config(config):
+        return GPARModel(**config)
 
 

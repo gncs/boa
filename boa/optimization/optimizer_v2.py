@@ -57,7 +57,9 @@ class Optimizer:
                 eval_point = candidate_xs[max_acquisition_index]
 
                 eval_points.append(eval_point)
-                eval_model = eval_model.condition_on_input_only(eval_point.reshape((1, -1)))
+
+                y_pred, _ = eval_model.predict(eval_point)
+                eval_model = eval_model.condition_on(eval_point, y_pred)
 
                 candidate_xs = np.delete(candidate_xs, max_acquisition_index, axis=0)
 

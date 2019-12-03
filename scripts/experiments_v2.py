@@ -31,96 +31,17 @@ LOG_LEVELS = {
 }
 
 
-def run_gp_experiment(model,
-                      data,
-                      inputs: Sequence[str],
-                      outputs: Sequence[str],
-                      logdir,
-                      experiment_file_name,
-                      rounds: int = 5,
-                      seed: int = 42,
-                      verbose=False):
-
-    experiment_file_path = os.path.join(logdir, experiment_file_name)
-
-    # Make sure the directory exists
-    if not os.path.exists(logdir):
-        os.makedirs(logdir)
-
-    experiments = []
-
-    # Set seed for reproducibility
-    np.random.seed(seed)
-    tf.random.set_seed(seed)
-
-    for size in [25, 50, 100, 150, 200]:
-
-        for output in outputs:
-            print(f'Property: {output}')
-
-            for index in range(rounds):
-
-                if verbose:
-                    print("----------------------------------------------------------")
-                    print(f"Training round: {index + 1} for training set size {size}")
-                    print("----------------------------------------------------------")
-
-                experiment = {'index': index,
-                              'size': size,
-                              'inputs': inputs,
-                              'output': output}
-
-                train, test = train_test_split(data,
-                                               train_size=size,
-                                               test_size=200,
-                                               random_state=seed + index)
-
-                start_time = time.time()
-                try:
-                    model.fit(train[inputs].values, train[[output]].values)
-                except Exception as e:
-                    print("Training failed: {}".format(str(e)))
-                    raise e
-
-                experiment['train_time'] = time.time() - start_time
-
-                start_time = time.time()
-
-                try:
-                    mean, _ = model.predict(test[inputs].values)
-                except Exception as e:
-                    print("Prediction failed: {}".format(str(e)))
-                    raise e
-
-                mean = mean.numpy()
-
-                experiment['predict_time'] = time.time() - start_time
-
-                diff = (test[[output]].values - mean)[:, 0]
-
-                experiment['mean_abs_err'] = np.mean(np.abs(diff))
-                experiment['mean_squ_err'] = np.mean(np.square(diff))
-                experiment['rmse'] = np.sqrt(np.mean(np.square(diff)))
-
-                experiments.append(experiment)
-
-            print("Saving experiments to {}".format(experiment_file_path))
-            with open(experiment_file_path, mode='w') as out_file:
-                json.dump(experiments, out_file, sort_keys=True, indent=4)
-
-    return experiments
-
-
-def run_gpar_experiment(model,
-                        data,
-                        inputs: Sequence[str],
-                        outputs: Sequence[str],
-                        logdir,
-                        experiment_file_name,
-                        matrix_factorized,
-                        rounds: int = 5,
-                        seed: int = 42,
-                        verbose=False):
+def run_experiment(model,
+                   data,
+                   optimizer_restarts,
+                   inputs: Sequence[str],
+                   outputs: Sequence[str],
+                   logdir,
+                   experiment_file_name,
+                   matrix_factorized,
+                   rounds: int = 5,
+                   seed: int = 42,
+                   verbose=False):
 
     experiment_file_path = os.path.join(logdir, experiment_file_name)
 
@@ -138,9 +59,9 @@ def run_gpar_experiment(model,
         for index in range(rounds):
 
             if verbose:
-                print("-----------------------------------------------------------")
-                print(f"Training round: {index + 1} for training set size {size}")
-                print("-----------------------------------------------------------")
+                logger.info("-----------------------------------------------------------")
+                logger.info(f"Training round: {index + 1} for training set size {size}")
+                logger.info("-----------------------------------------------------------")
 
             experiment = {'index': index,
                           'size': size,
@@ -157,9 +78,10 @@ def run_gpar_experiment(model,
 
             start_time = time.time()
             try:
-                model.fit(train[inputs].values, train[outputs].values[:, :])
+                model = model.condition_on(train[inputs].values, train[outputs].values[:, :], keep_previous=False)
+                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts)
             except Exception as e:
-                print("Training failed: {}".format(str(e)))
+                logger.exception("Training failed: {}".format(str(e)))
                 raise e
 
             experiment['train_time'] = time.time() - start_time
@@ -167,13 +89,13 @@ def run_gpar_experiment(model,
             start_time = time.time()
 
             try:
-                mean, _ = model.predict(test[inputs].values)
+                mean, _ = model.predict(test[inputs].values, numpy=True)
             except Exception as e:
-                print("Prediction failed: {}".format(str(e)))
-                #raise e
-                continue
+                logger.exception("Prediction failed: {}, saving model!".format(str(e)))
 
-            mean = mean.numpy()
+                model.save("models/exceptions/" + model.name + "/model")
+                raise e
+                # continue
 
             experiment['predict_time'] = time.time() - start_time
 
@@ -185,7 +107,7 @@ def run_gpar_experiment(model,
 
             experiments.append(experiment)
 
-            print("Saving experiments to {}".format(experiment_file_path))
+            logger.info("Saving experiments to {}".format(experiment_file_path))
             with open(experiment_file_path, mode='w') as out_file:
                 json.dump(experiments, out_file, sort_keys=True, indent=4)
 
@@ -231,35 +153,49 @@ def main(args,
                                                                              targets)
 
         model = FullyFactorizedGPModel(kernel=args.kernel,
-                                       num_optimizer_restarts=args.num_optimizer_restarts,
+                                       input_dim=len(input_labels),
+                                       output_dim=len(output_labels),
+                                       initialization_heuristic="median",
                                        verbose=args.verbose)
 
         # Perform experiments
-        results = run_gp_experiment(model=model,
-                                    data=df,
-                                    inputs=input_labels,
-                                    outputs=output_labels,
-                                    logdir=args.logdir,
-                                    experiment_file_name=experiment_json_format.format(args.model),
-                                    seed=seed,
-                                    rounds=5,
-                                    verbose=args.verbose)
+        results = run_experiment(model=model,
+                                 data=df,
+                                 optimizer_restarts=args.num_optimizer_restarts,
+                                 inputs=input_labels,
+                                 outputs=output_labels,
+                                 matrix_factorized=False,
+                                 logdir=args.logdir,
+                                 experiment_file_name=experiment_json_format.format(args.model),
+                                 seed=seed,
+                                 rounds=5,
+                                 verbose=args.verbose)
 
         # For the fully factorized GP model,
         # we also look at training using auxiliary data
-        print("============================================================")
-        print("Performing auxiliary training for FF-GP")
-        print("============================================================")
-
-        results = run_gp_experiment(model=model,
-                                    data=df_aux,
-                                    inputs=input_labels_aux,
-                                    outputs=output_labels_aux,
-                                    logdir=args.logdir,
-                                    experiment_file_name=experiment_json_format.format(args.model),
-                                    seed=seed,
-                                    rounds=5,
-                                    verbose=args.verbose)
+        # logger.info("============================================================")
+        # logger.info("Performing auxiliary training for FF-GP")
+        # logger.info("============================================================")
+        #
+        # model = FullyFactorizedGPModel(kernel=args.kernel,
+        #                                input_dim=len(input_labels_aux),
+        #                                output_dim=len(output_labels_aux),
+        #                                initialization_heuristic="median",
+        #                                verbose=args.verbose)
+        #
+        # print(input_labels_aux)
+        #
+        # results = run_experiment(model=model,
+        #                          data=df_aux,
+        #                          optimizer_restarts=args.num_optimizer_restarts,
+        #                          inputs=input_labels_aux,
+        #                          outputs=output_labels_aux,
+        #                          matrix_factorized=False,
+        #                          logdir=args.logdir,
+        #                          experiment_file_name=experiment_json_format.format(args.model),
+        #                          seed=seed,
+        #                          rounds=5,
+        #                          verbose=args.verbose)
 
     elif args.model in ["gpar", "mf-gpar"]:
         df, input_labels, output_labels = prepare_gpar_data(data,
@@ -267,26 +203,31 @@ def main(args,
 
         if args.model == 'gpar':
             model = GPARModel(kernel=args.kernel,
-                              num_optimizer_restarts=args.num_optimizer_restarts,
+                              input_dim=len(input_labels),
+                              output_dim=len(output_labels),
+                              initialization_heuristic="median",
                               verbose=args.verbose)
 
         elif args.model == 'mf-gpar':
             model = MatrixFactorizedGPARModel(kernel=args.kernel,
-                                              num_optimizer_restarts=args.num_optimizer_restarts,
+                                              input_dim=len(input_labels),
+                                              output_dim=len(output_labels),
                                               latent_dim=args.latent_dim,
+                                              initialization_heuristic="median",
                                               verbose=args.verbose)
 
         # Perform experiments
-        results = run_gpar_experiment(model=model,
-                                      data=df,
-                                      inputs=input_labels,
-                                      outputs=output_labels,
-                                      logdir=args.logdir,
-                                      matrix_factorized=args.model=="mf-gpar",
-                                      experiment_file_name=experiment_json_format.format(args.model),
-                                      seed=seed,
-                                      rounds=5,
-                                      verbose=args.verbose)
+        results = run_experiment(model=model,
+                                 data=df,
+                                 optimizer_restarts=args.num_optimizer_restarts,
+                                 inputs=input_labels,
+                                 outputs=output_labels,
+                                 logdir=args.logdir,
+                                 matrix_factorized=args.model == "mf-gpar",
+                                 experiment_file_name=experiment_json_format.format(args.model),
+                                 seed=seed,
+                                 rounds=5,
+                                 verbose=args.verbose)
 
 
 if __name__ == "__main__":
@@ -302,7 +243,7 @@ if __name__ == "__main__":
                         help="Path to the directory to which we will write the log files "
                              "for the experiment.")
 
-    parser.add_argument('--loglevel', choices=LOG_LEVELS,)
+    parser.add_argument('--loglevel', choices=LOG_LEVELS, )
 
     parser.add_argument('--verbose', action="store_true", default=False,
                         help="Turns on verbose logging")

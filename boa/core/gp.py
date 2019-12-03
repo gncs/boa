@@ -1,6 +1,7 @@
 import logging
 import tensorflow as tf
 from stheno.tensorflow import EQ, Delta, Matern52, GP, Graph
+from stheno.matrix import Dense
 
 from .utils import CoreError, setup_logger
 
@@ -28,7 +29,7 @@ class GaussianProcess(tf.Module):
                  signal_amplitude,
                  length_scales,
                  noise_amplitude,
-                 jitter: tf.float64 = 1e-6,
+                 jitter: tf.float64 = 1e-10,
                  verbose: bool = False,
                  name: str = "gaussian_process",
                  **kwargs):
@@ -45,7 +46,7 @@ class GaussianProcess(tf.Module):
         self.signal_amplitude = signal_amplitude
         self.length_scales = length_scales
         self.noise_amplitude = noise_amplitude
-        self.jitter = jitter
+        self.jitter_amplitude = jitter
 
         self.verbose = verbose
 
@@ -58,18 +59,21 @@ class GaussianProcess(tf.Module):
 
         noise_kernel = self.noise_amplitude * Delta()
 
+        jitter_kernel = self.jitter_amplitude * self.signal_amplitude * Delta()
+
         self.signal = GP(signal_kernel, graph=self.graph)
         self.noise = GP(noise_kernel, graph=self.graph)
+        self.jitter = GP(jitter_kernel, graph=self.graph)
 
         # Data stuff
         self.xs = tf.zeros((0, self.input_dim), dtype=tf.float64)
         self.ys = tf.zeros((0, 1), dtype=tf.float64)
 
-        self.xs_forward_transform = lambda x: x
-        self.ys_forward_transform = lambda y: y
+        self.xs_forward_transform = lambda x, var=False: x
+        self.ys_forward_transform = lambda y, var=False: y
 
-        self.xs_backward_transform = lambda x: x
-        self.ys_backward_transform = lambda y: y
+        self.xs_backward_transform = lambda x, var=False: x
+        self.ys_backward_transform = lambda y, var=False: y
 
     def copy(self):
         """
@@ -82,8 +86,15 @@ class GaussianProcess(tf.Module):
                              signal_amplitude=self.signal_amplitude,
                              length_scales=self.length_scales,
                              noise_amplitude=self.noise_amplitude,
-                             jitter=self.jitter,
+                             jitter=self.jitter_amplitude,
                              verbose=self.verbose)
+
+        # Copy data
+        gp.xs = self.xs
+        gp.ys = self.ys
+
+        gp.xs_forward_transform, gp.xs_backward_transform = self._create_transforms(gp.xs)
+        gp.ys_forward_transform, gp.ys_backward_transform = self._create_transforms(gp.ys)
 
         return gp
 
@@ -125,6 +136,9 @@ class GaussianProcess(tf.Module):
         new_noise = GP(gp.noise.kernel, gp.noise.mean, graph=gp.signal.graph)
         gp.noise = new_noise
 
+        new_jitter = GP(gp.jitter.kernel, gp.jitter.mean, graph=gp.signal.graph)
+        gp.jitter = new_jitter
+
         return gp
 
     def log_pdf(self, xs, ys, normalize=False, latent=False, with_jitter=True):
@@ -146,7 +160,7 @@ class GaussianProcess(tf.Module):
             gp = gp + self.noise
 
         if with_jitter:
-            gp = gp + self.signal * self.jitter * GP(Delta(), graph=self.signal.graph)
+            gp = gp + self.jitter
 
         return gp(xs).logpdf(ys)
 
@@ -166,20 +180,25 @@ class GaussianProcess(tf.Module):
 
         return sample
 
-    def predict(self, xs, latent=True):
+    def predict(self, xs, latent=True, with_jitter=True):
 
         xs = self.xs_forward_transform(xs)
 
+        gp = self.signal
+
         if latent:
-            prediction = self.signal.mean(xs)
-            pred_var = self.signal.kernel.elwise(xs)
+            gp = gp + self.noise
 
-        else:
-            prediction = (self.signal + self.noise).mean(xs)
+        if with_jitter:
+            gp = gp + self.jitter
 
-            # For some reason this returns the Dense() wrapper around the TF tensor,
-            # so get the matrix from it instead
-            pred_var = (self.signal + self.noise).kernel.elwise(xs).mat
+        prediction = gp.mean(xs)
+        pred_var = gp.kernel.elwise(xs)
+
+        if isinstance(pred_var, Dense):
+            logger.debug(f"Predicted variance was stheno.matrix.Dense, not tf.Tensor. "
+                         f"latent: {latent}, jitter: {with_jitter}")
+            pred_var = pred_var.mat
 
         prediction = tf.reshape(prediction, (-1, 1))
         prediction = self.ys_backward_transform(prediction)
@@ -191,6 +210,15 @@ class GaussianProcess(tf.Module):
 
     @staticmethod
     def _create_transforms(input, min_std=1e-6):
+        """
+
+        :param input: rank-2 tensor with rows of inputs
+        :param min_std:
+        :return:
+        """
+
+        if input.shape[0] == 0:
+            return lambda x, var=False: x, lambda x, var=False: x
 
         # Calculate data statistics
         mean, var = tf.nn.moments(input, axes=[0], keepdims=True)

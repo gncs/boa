@@ -6,7 +6,8 @@ import os
 import tensorflow as tf
 
 from boa.core.gp import GaussianProcess
-from boa.core.utils import calculate_euclidean_distance_percentiles, calculate_per_dimension_distance_percentiles, setup_logger
+from boa.core.utils import calculate_euclidean_distance_percentiles, calculate_per_dimension_distance_percentiles, \
+    setup_logger
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True)
 
@@ -16,11 +17,7 @@ class ModelError(Exception):
 
 
 class AbstractModel(tf.keras.Model):
-
     __metaclass__ = abc.ABCMeta
-
-    XS_NAME = "inputs"
-    YS_NAME = "outputs"
 
     def __init__(self,
                  kernel: str,
@@ -28,7 +25,6 @@ class AbstractModel(tf.keras.Model):
                  output_dim: int,
                  parallel: bool = False,
                  verbose: bool = False,
-                 _num_starting_data_points: int = 0,
                  name: str = "abstract_model", **kwargs):
         """
 
@@ -59,8 +55,15 @@ class AbstractModel(tf.keras.Model):
 
         self.verbose = verbose
 
-        self.xs = tf.Variable(tf.zeros((_num_starting_data_points, input_dim), dtype=tf.float64), name=self.XS_NAME, trainable=False)
-        self.ys = tf.Variable(tf.zeros((_num_starting_data_points, output_dim), dtype=tf.float64), name=self.YS_NAME, trainable=False)
+        self.xs = tf.Variable(tf.zeros((0, input_dim), dtype=tf.float64),
+                              name="inputs",
+                              trainable=False,
+                              shape=(None, input_dim))
+
+        self.ys = tf.Variable(tf.zeros((0, output_dim), dtype=tf.float64),
+                              name="outputs",
+                              trainable=False,
+                              shape=(None, output_dim))
 
         self.num_pseudo_points = 0
         self.num_true_points = 0
@@ -73,9 +76,26 @@ class AbstractModel(tf.keras.Model):
 
         self.trained = tf.Variable(False, name="trained", trainable=False)
 
-    @abc.abstractmethod
     def copy(self, name=None):
-        pass
+
+        # Reflect the class of the current instance
+        constructor = self.__class__
+
+        # Get the config of the instance
+        config = self.get_config()
+
+        # Instantiate the model
+        model = constructor(**config)
+
+        # Create dictionaries of model variables
+        self_dict = {v.name: v for v in self.variables}
+        model_dict = {v.name: v for v in model.variables}
+
+        # Copy variables over
+        for k, v in self_dict.items():
+            model_dict[k].assign(v)
+
+        return model
 
     def condition_on(self, xs, ys, keep_previous=True):
         """
@@ -100,18 +120,11 @@ class AbstractModel(tf.keras.Model):
             xs = tf.concat((self.xs, xs), axis=0)
             ys = tf.concat((self.ys, ys), axis=0)
 
-        model.xs = tf.Variable(xs, name=self.XS_NAME, trainable=False)
-        model.ys = tf.Variable(ys, name=self.YS_NAME, trainable=False)
+        model.xs.assign(xs)
+        model.ys.assign(ys)
         model.num_true_points = xs.shape[0]
 
         return model
-
-    def condition_on_input_only(self, xs):
-
-        xs = self._validate_and_convert(xs)
-        ys, _ = self.predict(xs)
-
-        return self.condition_on(xs, ys)
 
     def fit_to_conditioning_data(self, optimizer_restarts=1):
         self.fit(xs=self.xs.value(), ys=self.ys.value(), optimizer_restarts=optimizer_restarts)
@@ -130,7 +143,7 @@ class AbstractModel(tf.keras.Model):
 
     @staticmethod
     @abc.abstractmethod
-    def from_config(config, restore_num_data_points=False):
+    def from_config(config):
         pass
 
     @abc.abstractmethod
@@ -154,7 +167,7 @@ class AbstractModel(tf.keras.Model):
     def restore(save_path):
         pass
 
-    def _validate_and_convert(self, xs):
+    def _validate_and_convert(self, xs, output=False):
 
         # Reasonable test of whether the inputs are array-like
         if not hasattr(xs, "__len__"):
@@ -162,19 +175,25 @@ class AbstractModel(tf.keras.Model):
 
         xs = tf.convert_to_tensor(xs, dtype=tf.float64)
 
+        # Convert a vector to "row vector"
+        if len(xs.shape) == 1:
+            xs = tf.reshape(xs, (1, -1))
+
         # Check if the shapes are correct
         if not len(xs.shape) == 2:
             raise ModelError("The input must be of rank 2!")
 
-        if not xs.shape[1] == self.input_dim:
-            raise ModelError(f"The second dimension of the input must equal the set input dimension ({self.input_dim})!")
+        if (not output and xs.shape[1] != self.input_dim) or \
+                (output and xs.shape[1] != self.output_dim):
+            raise ModelError(
+                f"The second dimension of the input is incorrect: {xs.shape[1]}!")
 
         return xs
 
     def _validate_and_convert_input_output(self, xs, ys):
 
-        xs = self._validate_and_convert(xs)
-        ys = self._validate_and_convert(ys)
+        xs = self._validate_and_convert(xs, output=False)
+        ys = self._validate_and_convert(ys, output=True)
 
         # Ensure the user provided the same number of input and output points
         if not xs.shape[0] == ys.shape[0]:
