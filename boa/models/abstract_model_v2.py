@@ -126,11 +126,16 @@ class AbstractModel(tf.keras.Model):
 
         return model
 
-    def fit_to_conditioning_data(self, optimizer_restarts=1):
-        self.fit(xs=self.xs.value(), ys=self.ys.value(), optimizer_restarts=optimizer_restarts)
+    def fit_to_conditioning_data(self, **kwargs):
+        """
+
+        :param kwargs: keyword arguments to be passed to optimize()
+        :return:
+        """
+        self.fit(xs=self.xs.value(), ys=self.ys.value(), **kwargs)
 
     @abc.abstractmethod
-    def fit(self, xs, ys, optimizer_restarts=1) -> None:
+    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1) -> None:
         pass
 
     @abc.abstractmethod

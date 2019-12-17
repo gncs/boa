@@ -3,9 +3,9 @@ import json
 
 import numpy as np
 import tensorflow as tf
-from varz.tensorflow import Vars, minimise_l_bfgs_b
+from varz.tensorflow import Vars, minimise_l_bfgs_b, minimise_adam
 
-from .abstract_model_v2 import ModelError
+from boa.models.abstract_model_v2 import ModelError
 from .gpar_v2 import GPARModel
 
 from boa.core.utils import setup_logger
@@ -205,7 +205,7 @@ class MatrixFactorizedGPARModel(GPARModel):
                                         maxval=init_maxval,
                                         dtype=tf.float64))
 
-    def fit(self, xs, ys, optimizer_restarts=1) -> None:
+    def fit(self, xs, ys, optimizer="adam", optimizer_restarts=1) -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -270,8 +270,15 @@ class MatrixFactorizedGPARModel(GPARModel):
             loss = np.inf
 
             try:
-                # Perform L-BFGS-B optimization
-                loss = minimise_l_bfgs_b(negative_mf_gpar_log_likelihood, vs)
+                if optimizer == "l-bfgs-b":
+                    # Perform L-BFGS-B optimization
+                    loss = minimise_l_bfgs_b(negative_mf_gpar_log_likelihood, vs)
+
+                elif optimizer == "adam":
+
+                    loss = minimise_adam(negative_mf_gpar_log_likelihood, vs)
+                else:
+                    ModelError("unrecognized loss!")
 
             except Exception as e:
                 print("Iteration {} failed: {}".format(i, str(e)))

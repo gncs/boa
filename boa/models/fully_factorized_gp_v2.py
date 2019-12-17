@@ -166,7 +166,7 @@ class FullyFactorizedGPModel(AbstractModel):
                                                     maxval=init_maxval,
                                                     dtype=tf.float64))
 
-    def fit(self, xs, ys, optimizer_restarts=1) -> None:
+    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1) -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 

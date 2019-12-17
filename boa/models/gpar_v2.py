@@ -190,7 +190,7 @@ class GPARModel(AbstractModel):
                                     maxval=init_maxval,
                                     dtype=tf.float64))
 
-    def fit(self, xs, ys, optimizer_restarts=1) -> None:
+    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1) -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -231,16 +231,27 @@ class GPARModel(AbstractModel):
                 loss = np.inf
 
                 try:
-                    # Perform L-BFGS-B optimization
-                    loss = minimise_l_bfgs_b(lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
-                                                                                  length_scales=v[length_scales_name],
-                                                                                  noise_amplitude=v[noise_amp]),
-                                             vs,
-                                             names=[sig_amp_name,
-                                                    length_scales_name,
-                                                    noise_amp],
-                                             trace=False,
-                                             err_level="raise")
+                    if optimizer == "l-bfgs-b":
+                        # Perform L-BFGS-B optimization
+                        loss = minimise_l_bfgs_b(lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
+                                                                                      length_scales=v[length_scales_name],
+                                                                                      noise_amplitude=v[noise_amp]),
+                                                 vs,
+                                                 names=[sig_amp_name,
+                                                        length_scales_name,
+                                                        noise_amp],
+                                                 trace=False,
+                                                 err_level="raise")
+                    else:
+                        # Perform L-BFGS-B optimization
+                        loss = minimise_l_bfgs_b(lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
+                                                                                      length_scales=v[
+                                                                                          length_scales_name],
+                                                                                      noise_amplitude=v[noise_amp]),
+                                                 vs,
+                                                 names=[sig_amp_name,
+                                                        length_scales_name,
+                                                        noise_amp])
 
                 except Exception as e:
 

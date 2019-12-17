@@ -23,6 +23,8 @@ import tensorflow as tf
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/experiments.log")
 
 AVAILABLE_DATASETS = ["fft", "stencil3d"]
+AVAILABLE_OPTIMIZERS = ["l-bfgs-b", "adam"]
+AVAILABLE_INITIALIZATION = ["median", "random", "dim_median"]
 
 LOG_LEVELS = {
     "info": logging.INFO,
@@ -33,6 +35,7 @@ LOG_LEVELS = {
 
 def run_experiment(model,
                    data,
+                   optimizer,
                    optimizer_restarts,
                    inputs: Sequence[str],
                    outputs: Sequence[str],
@@ -79,7 +82,7 @@ def run_experiment(model,
             start_time = time.time()
             try:
                 model = model.condition_on(train[inputs].values, train[outputs].values[:, :], keep_previous=False)
-                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts)
+                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts, optimizer=optimizer)
             except Exception as e:
                 logger.exception("Training failed: {}".format(str(e)))
                 raise e
@@ -155,12 +158,13 @@ def main(args,
         model = FullyFactorizedGPModel(kernel=args.kernel,
                                        input_dim=len(input_labels),
                                        output_dim=len(output_labels),
-                                       initialization_heuristic="median",
+                                       initialization_heuristic=args.initialization,
                                        verbose=args.verbose)
 
         # Perform experiments
         results = run_experiment(model=model,
                                  data=df,
+                                 optimizer=args.optimizer,
                                  optimizer_restarts=args.num_optimizer_restarts,
                                  inputs=input_labels,
                                  outputs=output_labels,
@@ -205,7 +209,7 @@ def main(args,
             model = GPARModel(kernel=args.kernel,
                               input_dim=len(input_labels),
                               output_dim=len(output_labels),
-                              initialization_heuristic="median",
+                              initialization_heuristic=args.initialization,
                               verbose=args.verbose)
 
         elif args.model == 'mf-gpar':
@@ -213,12 +217,13 @@ def main(args,
                                               input_dim=len(input_labels),
                                               output_dim=len(output_labels),
                                               latent_dim=args.latent_dim,
-                                              initialization_heuristic="median",
+                                              initialization_heuristic=args.initialization,
                                               verbose=args.verbose)
 
         # Perform experiments
         results = run_experiment(model=model,
                                  data=df,
+                                 optimizer=args.optimizer,
                                  optimizer_restarts=args.num_optimizer_restarts,
                                  inputs=input_labels,
                                  outputs=output_labels,
@@ -291,6 +296,16 @@ if __name__ == "__main__":
                           type=int,
                           default=5,
                           help="Number of random initializations to try in a single training cycle.")
+
+        mode.add_argument("--optimizer",
+                          choices=AVAILABLE_OPTIMIZERS,
+                          default=AVAILABLE_OPTIMIZERS[0],
+                          help="Optimization algorithm to use when fitting the models' hyperparameters.")
+
+        mode.add_argument("--initialization",
+                          choices=AVAILABLE_INITIALIZATION,
+                          default=AVAILABLE_INITIALIZATION[0],
+                          help="Initialization heuristic for the hyperparameters of the models.")
 
     args = parser.parse_args()
 
