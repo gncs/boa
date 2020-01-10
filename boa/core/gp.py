@@ -43,10 +43,30 @@ class GaussianProcess(tf.Module):
         else:
             raise CoreError(f"Specified kernel '{kernel}' not available!")
 
-        self.signal_amplitude = signal_amplitude
-        self.length_scales = length_scales
-        self.noise_amplitude = noise_amplitude
-        self.jitter_amplitude = jitter
+        # Convert the amplitudes
+        self.signal_amplitude = tf.convert_to_tensor(signal_amplitude, tf.float64)
+        self.noise_amplitude = tf.convert_to_tensor(noise_amplitude, tf.float64)
+        self.jitter_amplitude = tf.convert_to_tensor(jitter, tf.float64)
+
+        if self.signal_amplitude <= 0:
+            raise CoreError(f"Signal amplitude must be strictly positive! {self.signal_amplitude} was given.")
+
+        if self.noise_amplitude <= 0:
+            raise CoreError(f"Noise amplitude must be strictly positive! {self.noise_amplitude} was given.")
+
+        if self.jitter_amplitude <= 0:
+            raise CoreError(f"Jitter amplitude must be strictly positive! {self.jitter_amplitude} was given.")
+
+        # Convert and reshape the length scales
+        self.length_scales = tf.convert_to_tensor(length_scales, tf.float64)
+
+        if tf.rank(self.length_scales) > 1:
+            raise CoreError(f"Length scales rank must be at most 1!")
+
+        self. length_scales = tf.reshape(self.length_scales, [-1])
+
+        if tf.reduce_any(self.length_scales <= 0):
+            raise CoreError(f"All length scale amplitudes must be strictly positive! {self.length_scales} was given.")
 
         self.verbose = verbose
 

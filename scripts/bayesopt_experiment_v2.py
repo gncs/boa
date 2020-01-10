@@ -2,6 +2,8 @@ import logging
 import argparse
 import os
 
+from typing import List
+
 import pandas as pd
 import tensorflow as tf
 
@@ -11,6 +13,9 @@ from boa.objective.abstract import AbstractObjective
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="bayesopt_experiment_v2")
 
 objective_labels = ['cycle', 'avg_power', 'total_area']
+
+AVAILABLE_DATASETS = ["fft",
+                      "stencil3d"]
 
 
 class Objective(AbstractObjective):
@@ -42,3 +47,18 @@ class Objective(AbstractObjective):
         assert (mask.sum() == 1)
 
         return self.data.loc[mask, self.output_labels].values
+
+
+def main(args):
+    pass
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset",
+                        "-D",
+                        help="Path to file containing dataset",
+                        required=True)
+
+    parser.add_argument("--type", "-T", help="Dataset type", choices=AVAILABLE_DATASETS)

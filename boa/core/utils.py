@@ -28,7 +28,7 @@ def setup_logger(name, level, log_file=None, to_console=False, format="%(levelna
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
 
-        logger.addHandler(stream_handler)
+        #logger.addHandler(stream_handler)
 
     return logger
 

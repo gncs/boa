@@ -61,29 +61,6 @@ class FullyFactorizedGPModel(AbstractModel):
                                                      name=f"{i}/noise_amplitude",
                                                      trainable=False))
 
-    # def copy(self, name=None):
-    #     ff_gp = FullyFactorizedGPModel(kernel=self.kernel_name,
-    #                                    input_dim=self.input_dim,
-    #                                    output_dim=self.output_dim,
-    #                                    initialization_heuristic=self.initialization_heuristic,
-    #                                    parallel=self.parallel,
-    #                                    name=name if name is not None else self.name)
-    #
-    #     # Copy stored hyperparameter values
-    #     for i in range(self.output_dim):
-    #         ff_gp.length_scales[i].assign(self.length_scales[i])
-    #         ff_gp.signal_amplitudes[i].assign(self.signal_amplitudes[i])
-    #         ff_gp.noise_amplitudes[i].assign(self.noise_amplitudes[i])
-    #
-    #     # Copy data
-    #     ff_gp.xs.assign(self.xs)
-    #     ff_gp.ys.assign(self.ys)
-    #
-    #     # Copy miscellaneous stuff
-    #     ff_gp.trained.assign(self.trained)
-    #
-    #     return ff_gp
-
     def create_hyperparameters(self) -> Vars:
 
         vs = Vars(tf.float64)
@@ -195,7 +172,6 @@ class FullyFactorizedGPModel(AbstractModel):
                 return -gp.log_pdf(xs, ys[:, i:i + 1], normalize=True)
 
             # Robust optimization
-
             j = 0
             while j < optimizer_restarts:
 
