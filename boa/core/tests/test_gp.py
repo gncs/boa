@@ -124,3 +124,25 @@ class TestGaussianProcess(TestCase):
 
         # Copy must use a different Stheno graph
         self.assertNotEqual(self.gp.graph, gp.graph)
+
+    def test_conditioning(self):
+        conditioned_gp = self.gp | (self.xs, self.ys)
+
+        # Test that the conditioned GP is not the same one we started with
+        self.assertNotEqual(conditioned_gp, self.gp)
+
+        # Make sure the two gps are on separate Stheno graphs
+        self.assertNotEqual(conditioned_gp.graph, self.gp.graph)
+
+        # Make sure the unconditioned GP still has no data to it
+        self.assertEqual(self.gp.xs.shape[0], 0)
+        self.assertEqual(self.gp.ys.shape[0], 0)
+
+    def test_log_pdf(self):
+        pass
+
+    def test_sample(self):
+        pass
+
+    def test_predict(self):
+        pass

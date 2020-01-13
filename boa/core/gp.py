@@ -1,6 +1,6 @@
 import logging
 import tensorflow as tf
-from stheno.tensorflow import EQ, Delta, Matern52, GP, Graph
+from stheno.tensorflow import EQ, Delta, Matern52, GP, Graph, dense
 from stheno.matrix import Dense
 
 from .utils import CoreError, setup_logger
@@ -151,13 +151,13 @@ class GaussianProcess(tf.Module):
         gp.xs_forward_transform, gp.xs_backward_transform = self._create_transforms(xs)
         gp.ys_forward_transform, gp.ys_backward_transform = self._create_transforms(ys)
 
-        gp.signal = gp.signal | (gp.xs_forward_transform(xs), gp.ys_forward_transform(ys))
-
-        new_noise = GP(gp.noise.kernel, gp.noise.mean, graph=gp.signal.graph)
-        gp.noise = new_noise
-
-        new_jitter = GP(gp.jitter.kernel, gp.jitter.mean, graph=gp.signal.graph)
-        gp.jitter = new_jitter
+        # gp.signal = gp.signal | (gp.xs_forward_transform(xs), gp.ys_forward_transform(ys))
+        #
+        # new_noise = GP(gp.noise.kernel, gp.noise.mean, graph=gp.signal.graph)
+        # gp.noise = new_noise
+        #
+        # new_jitter = GP(gp.jitter.kernel, gp.jitter.mean, graph=gp.signal.graph)
+        # gp.jitter = new_jitter
 
         return gp
 
@@ -201,24 +201,28 @@ class GaussianProcess(tf.Module):
         return sample
 
     def predict(self, xs, latent=True, with_jitter=True):
+        """
+        :param xs: Input points for which we are predicting the output
+        :param latent: if True, we will _NOT_ add on the learned noise process for prediction
+        :param with_jitter: If True, we predict with a constant jittery noise process added on
+        :return: Tensor of predictions given by the model
+        """
 
         xs = self.xs_forward_transform(xs)
 
         gp = self.signal
 
-        if latent:
+        if not latent:
             gp = gp + self.noise
 
         if with_jitter:
             gp = gp + self.jitter
 
-        prediction = gp.mean(xs)
-        pred_var = gp.kernel.elwise(xs)
+        gp = gp | (self.xs_forward_transform(self.xs), self.ys_forward_transform(self.ys))
 
-        if isinstance(pred_var, Dense):
-            logger.debug(f"Predicted variance was stheno.matrix.Dense, not tf.Tensor. "
-                         f"latent: {latent}, jitter: {with_jitter}")
-            pred_var = pred_var.mat
+        # dense(X) is a no-op if X is a tensorflow op, or it is X.mat if it is a stheno.Dense
+        prediction = dense(gp.mean(xs))
+        pred_var = dense(gp.kernel.elwise(xs))
 
         prediction = tf.reshape(prediction, (-1, 1))
         prediction = self.ys_backward_transform(prediction)

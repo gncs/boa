@@ -72,14 +72,14 @@ class FullyFactorizedGPModel(AbstractModel):
 
             # Length scales
             vs.bnd(init=tf.ones(self.input_dim, dtype=tf.float64),
-                   lower=1e-3,
-                   upper=1e2,
+                   lower=1e-6,
+                   upper=1e6,
                    name=ls_name)
 
             # GP variance
             vs.bnd(init=tf.ones(1, dtype=tf.float64),
-                   lower=1e-4,
-                   upper=1e4,
+                   lower=1e-6,
+                   upper=1e6,
                    name=gp_var_name)
 
             # Noise variance
@@ -93,9 +93,9 @@ class FullyFactorizedGPModel(AbstractModel):
     def initialize_hyperparameters(self,
                                    vs: Vars,
                                    index,
-                                   length_scale_init="random",
-                                   init_minval=0.5,
-                                   init_maxval=2.0) -> None:
+                                   length_scale_init,
+                                   init_minval=0.1,
+                                   init_maxval=1.0) -> None:
 
         ls_name = f"{index}/length_scales"
         gp_var_name = f"{index}/signal_amplitude"
