@@ -195,6 +195,10 @@ class GPARModel(AbstractModel):
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
+        if self.denoising:
+            # This tensor will store the predictive means for the previous dimensions
+            pred_ys = tf.zeros(shape=(ys.shape[0], 0))
+
         logger.info(f"Training data supplied with xs shape {xs.shape} and ys shape {ys.shape}, training!")
 
         self._calculate_statistics_for_median_initialization_heuristic(xs, ys)
@@ -217,7 +221,8 @@ class GPARModel(AbstractModel):
                                      length_scales=length_scales,
                                      noise_amplitude=noise_amplitude)
 
-                gp_input = tf.concat((xs, ys[:, :i]), axis=1)
+                ys_to_append = pred_ys if self.denoising else ys[:, :i]
+                gp_input = tf.concat((xs, ys_to_append), axis=1)
 
                 return -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize=True)
 
@@ -285,12 +290,28 @@ class GPARModel(AbstractModel):
                     self.signal_amplitudes[i].assign(vs[sig_amp_name])
                     self.noise_amplitudes[i].assign(vs[noise_amp])
 
+                    # If we are using "denoising GPAR", then we now need to get the predictive means
+                    # for the current output
+                    if self.denoising:
+                        gp = GaussianProcess(kernel=self.kernel_name,
+                                             signal_amplitude=self.signal_amplitudes[i],
+                                             length_scales=self.length_scales[i],
+                                             noise_amplitude=self.noise_amplitudes[i])
+
+                        gp_input = tf.concat((xs, ys[:, :i]), axis=1)
+
+                        gp = gp | (gp_input, ys[:, i:i + 1])
+
+                        predictive_mean, _ = gp.predict(gp_input)
+
                 else:
                     logger.info(f"Output {i}, Iteration {j}: Loss: {loss:.3f}")
 
                 if np.isnan(loss) or np.isinf(loss):
                     logger.error(f"Output {i}, Iteration {j}: Loss was {loss}, restarting training iteration!")
                     j = j - 1
+
+                pred_ys = tf.concat([pred_ys, predictive_mean], axis=1)
 
         self.trained.assign(True)
 

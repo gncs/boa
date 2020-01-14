@@ -202,7 +202,7 @@ class FullyFactorizedGPModel(AbstractModel):
 
                 except Exception as e:
                     logger.exception("Iteration {} failed: {}".format(i + 1, str(e)))
-                    raise e
+                    loss = np.nan
 
                 if loss < best_loss:
                     logger.info(f"New best objective value for dimension {i}: {loss:.4f}")

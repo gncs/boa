@@ -23,7 +23,7 @@ from boa.acquisition.smsego_v2 import SMSEGO
 from boa.optimization.data import Data, generate_data, FileHandler
 from boa.optimization.optimizer_v2 import Optimizer
 
-logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/bayesopt_experiment_v2")
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/bayesopt_experiment_v2.log")
 
 OBJECTIVE_TARGETS = {
     "fft": ['cycle', 'avg_power', 'total_area'],
@@ -104,7 +104,8 @@ def optimize(objective,
         acq_fun=acq,
         xs=data.input,
         ys=data.output,
-        candidate_xs=candidates
+        candidate_xs=candidates,
+        optimizer_restarts=3
     )
 
     return Data(xs=xs,
@@ -113,7 +114,7 @@ def optimize(objective,
                 y_labels=objective.output_labels)
 
 
-def get_default_acq_config(df: pd.DataFrame) -> dict:
+def get_default_acq_config(df: pd.DataFrame, objective_labels) -> dict:
     max_values = df[objective_labels].apply(max).values
 
     return {'gain': 1,
@@ -139,10 +140,11 @@ def prepare_gpar_data(data,
 
 
 def main(args):
-    dataset = load_dataset(path=args.dataset, kind=args.type)
+    dataset = load_dataset(path=args.dataset, kind=args.task)
 
     # Setup acquisition function
-    acq_config = get_default_acq_config(dataset)
+    acq_config = get_default_acq_config(dataset.df,
+                                        objective_labels=OBJECTIVE_TARGETS[args.task])
     smsego_acq = SMSEGO(**acq_config)
 
     # Setup optimizer
@@ -172,6 +174,7 @@ def main(args):
                                                input_labels=input_labels,
                                                output_labels=output_labels),
                            model=model,
+                           model_optimizer_restarts=args.num_optimizer_restarts,
                            optimizer=optimizer,
                            acq=smsego_acq,
                            seed=seed)
@@ -230,7 +233,7 @@ if __name__ == "__main__":
 
         mode.add_argument("--num_optimizer_restarts",
                           type=int,
-                          default=5,
+                          default=3,
                           help="Number of random initializations to try in a single training cycle.")
 
         mode.add_argument("--optimizer",
@@ -242,3 +245,7 @@ if __name__ == "__main__":
                           choices=AVAILABLE_INITIALIZATION,
                           default=AVAILABLE_INITIALIZATION[0],
                           help="Initialization heuristic for the hyperparameters of the models.")
+
+    args = parser.parse_args()
+
+    main(args)
