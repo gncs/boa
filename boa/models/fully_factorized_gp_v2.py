@@ -193,7 +193,13 @@ class FullyFactorizedGPModel(AbstractModel):
                                              vs,
                                              names=[ls_name,
                                                     gp_var_name,
-                                                    noise_var_name])
+                                                    noise_var_name],
+                                             err_level="raise")
+
+                except tf.errors.InvalidArgumentError as e:
+                    logger.error(str(e))
+                    loss = np.nan
+
                 except Exception as e:
                     logger.exception("Iteration {} failed: {}".format(i + 1, str(e)))
                     raise e

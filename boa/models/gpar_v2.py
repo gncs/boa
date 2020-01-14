@@ -6,7 +6,7 @@ from typing import Tuple, List
 
 import numpy as np
 import tensorflow as tf
-from varz.tensorflow import Vars, minimise_l_bfgs_b
+from varz.tensorflow import Vars, minimise_l_bfgs_b, minimise_adam
 
 from .abstract_model_v2 import AbstractModel, ModelError
 from boa.core import GaussianProcess, PermutationVariable, setup_logger
@@ -118,7 +118,7 @@ class GPARModel(AbstractModel):
                                    init_minval=0.5,
                                    init_maxval=2.0) -> None:
 
-        #logger.debug(f"Reinitializing hyperparameters with length scale init mode: {length_scale_init}.")
+        # logger.debug(f"Reinitializing hyperparameters with length scale init mode: {length_scale_init}.")
 
         ls_name = f"{index}/length_scales"
         gp_var_name = f"{index}/signal_amplitude"
@@ -160,8 +160,9 @@ class GPARModel(AbstractModel):
                                             dtype=tf.float64)
 
             ys_ls_init = self.ys_per_dim_percentiles[:index, 2]
-            ys_ls_rand_range = tf.minimum(self.ys_per_dim_percentiles[:index, 2] - self.ys_per_dim_percentiles[:index, 0],
-                                          self.ys_per_dim_percentiles[:index, 4] - self.ys_per_dim_percentiles[:index, 2])
+            ys_ls_rand_range = tf.minimum(
+                self.ys_per_dim_percentiles[:index, 2] - self.ys_per_dim_percentiles[:index, 0],
+                self.ys_per_dim_percentiles[:index, 4] - self.ys_per_dim_percentiles[:index, 2])
 
             ys_ls_init += tf.random.uniform(shape=(index,),
                                             minval=-ys_ls_rand_range,
@@ -234,7 +235,8 @@ class GPARModel(AbstractModel):
                     if optimizer == "l-bfgs-b":
                         # Perform L-BFGS-B optimization
                         loss = minimise_l_bfgs_b(lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
-                                                                                      length_scales=v[length_scales_name],
+                                                                                      length_scales=v[
+                                                                                          length_scales_name],
                                                                                       noise_amplitude=v[noise_amp]),
                                                  vs,
                                                  names=[sig_amp_name,
@@ -244,14 +246,17 @@ class GPARModel(AbstractModel):
                                                  err_level="raise")
                     else:
                         # Perform L-BFGS-B optimization
-                        loss = minimise_l_bfgs_b(lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
-                                                                                      length_scales=v[
-                                                                                          length_scales_name],
-                                                                                      noise_amplitude=v[noise_amp]),
-                                                 vs,
-                                                 names=[sig_amp_name,
-                                                        length_scales_name,
-                                                        noise_amp])
+                        loss = minimise_adam(lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
+                                                                                  length_scales=v[length_scales_name],
+                                                                                  noise_amplitude=v[noise_amp]),
+                                             vs,
+                                             names=[sig_amp_name,
+                                                    length_scales_name,
+                                                    noise_amp])
+
+                except tf.errors.InvalidArgumentError as e:
+                    logger.error(str(e))
+                    loss = np.nan
 
                 except Exception as e:
 
@@ -363,5 +368,3 @@ class GPARModel(AbstractModel):
     @staticmethod
     def from_config(config):
         return GPARModel(**config)
-
-

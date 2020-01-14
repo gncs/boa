@@ -272,7 +272,7 @@ class MatrixFactorizedGPARModel(GPARModel):
             try:
                 if optimizer == "l-bfgs-b":
                     # Perform L-BFGS-B optimization
-                    loss = minimise_l_bfgs_b(negative_mf_gpar_log_likelihood, vs)
+                    loss = minimise_l_bfgs_b(negative_mf_gpar_log_likelihood, vs, err_level="raise")
 
                 elif optimizer == "adam":
 
@@ -280,6 +280,9 @@ class MatrixFactorizedGPARModel(GPARModel):
                 else:
                     ModelError("unrecognized loss!")
 
+            except tf.errors.InvalidArgumentError as e:
+                logger.error(str(e))
+                loss = np.nan
             except Exception as e:
                 print("Iteration {} failed: {}".format(i, str(e)))
 
