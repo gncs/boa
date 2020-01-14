@@ -8,7 +8,7 @@ import tensorflow as tf
 from sklearn.model_selection import train_test_split
 
 from boa.models.mf_gpar import MFGPARModel
-from .dataset_loader import load_dataset
+from boa.datasets.loader import load_dataset
 
 
 def get_num_trainable_vars():

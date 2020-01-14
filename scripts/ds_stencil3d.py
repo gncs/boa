@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from .labels.stencil3d import input_labels, output_labels
+from boa.datasets.labels.stencil3d import input_labels, output_labels
 
 
 # Generate histograms summarizing data

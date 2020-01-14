@@ -1,8 +1,17 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+import tensorflow as tf
+
 from boa.models.fully_factorized_gp_v2 import FullyFactorizedGPModel
 from boa.models.gpar_v2 import GPARModel
+
+# Always use CPU
+tf.config.experimental.set_visible_devices([], 'GPU')
+
+# Set seed for reproducibility
+np.random.seed(60)
+tf.random.set_seed(60)
 
 
 def run():
@@ -10,9 +19,6 @@ def run():
     # Test function
     def f(x):
         return np.sinc(3 * x[:, 0]).reshape(-1, 1)
-
-    # Set seed for reproducibility
-    np.random.seed(42)
 
     # Generate input data
     x_train = np.random.rand(8, 2) * 2 - 1
@@ -26,26 +32,31 @@ def run():
     x_cont = np.hstack([x_cont, x_cont])
 
     # FF-GP model
-    ff_gp = FullyFactorizedGPModel(kernel='rbf', num_optimizer_restarts=10, verbose=False)
-    ff_gp = ff_gp | (x_train, y_train)
-    ff_gp.fit()
+    ff_gp = FullyFactorizedGPModel(kernel='rbf',
+                                   input_dim=2,
+                                   output_dim=1,
+                                   initialization_heuristic="median",
+                                   verbose=False)
+    ff_gp = ff_gp.condition_on(x_train, y_train)
+    ff_gp.fit_to_conditioning_data(optimizer_restarts=10)
 
-    ff_gp.add_pseudo_point(pseudo_point)
-    y_pred_ff_gp, var_pred_ff_gp = ff_gp.predict(x_cont)
-
-    y_pred_ff_gp = y_pred_ff_gp.numpy()
-    var_pred_ff_gp = var_pred_ff_gp.numpy()
+    # Add a "pseudo point"
+    pred_point, _ = ff_gp.predict(pseudo_point)
+    ff_gp = ff_gp.condition_on(pseudo_point, pred_point, keep_previous=True)
+    y_pred_ff_gp, var_pred_ff_gp = ff_gp.predict(x_cont, numpy=True)
 
     # GPAR model
-    gpar = GPARModel(kernel='rbf', num_optimizer_restarts=10, verbose=False)
-    gpar = gpar | (x_train, y_train)
-    gpar.fit()
+    gpar = GPARModel(kernel='rbf',
+                     input_dim=2,
+                     output_dim=1,
+                     initialization_heuristic="median",
+                     verbose=False)
+    gpar = gpar.condition_on(x_train, y_train)
+    gpar.fit_to_conditioning_data(optimizer_restarts=10)
 
-    gpar.add_pseudo_point(pseudo_point)
-    y_pred_gpar, var_pred_gpar = gpar.predict(x_cont)
-
-    y_pred_gpar = y_pred_gpar.numpy()
-    var_pred_gpar = var_pred_gpar.numpy()
+    pred_point, _ = gpar.predict(pseudo_point)
+    gpar.condition_on(pseudo_point, pred_point, keep_previous=True)
+    y_pred_gpar, var_pred_gpar = gpar.predict(x_cont, numpy=True)
 
     # Plot results
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(7, 5))
@@ -79,7 +90,8 @@ def run():
     ax.set_xlabel('$X$')
     ax.set_ylabel('$Y$')
 
-    fig.show()
+    fig.savefig("plots/script_plots/gp_gpar_v2.png")
+    print("Figure saved!")
 
 
 if __name__ == "__main__":

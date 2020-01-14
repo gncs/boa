@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 
-from .dataset_loader import load_labels
+from boa.datasets.loader import load_labels
 
 
 def average_log_ls(group, input_labels: Sequence[str]):
@@ -92,10 +92,9 @@ def main(args):
 
     input_labels, output_labels = load_labels(kind=args.type)
 
-    log_ls = df.groupby(['output', 'size']).apply(lambda g: average_log_ls(g, input_labels=input_labels)).reset_index()
-
-    plot_ls(log_ls)
-    plot_pca(log_ls)
+    log_ls = df.groupby(['outputs', 'size']).apply(lambda g: average_log_ls(g, input_labels=input_labels)).reset_index()
+    # plot_ls(log_ls)
+    # plot_pca(log_ls)
 
 
 if __name__ == '__main__':

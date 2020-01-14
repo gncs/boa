@@ -10,7 +10,7 @@ import pandas as pd
 
 import boa.acquisition.util as util
 from boa.optimization.data import FileHandler, Data
-from scripts.dataset_loader import load_dataset
+from boa.datasets.loader import load_dataset
 
 objective_labels = ['cycle', 'avg_power', 'total_area']
 

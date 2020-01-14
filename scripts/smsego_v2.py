@@ -11,8 +11,12 @@ from boa.core.utils import setup_logger
 
 import numpy as np
 import matplotlib.pyplot as plt
+import tensorflow as tf
 
+tf.config.experimental.set_visible_devices([], 'GPU')
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/smsego_v2.log")
+
+FIG_SAVE_FOLDER = "plots/script_plots/smsego"
 
 
 def plot(xs, fs, preds, var, acqs, points_xs, points_ys):
@@ -93,7 +97,9 @@ def manual_optimization(x_train, y_train):
                 points_xs=data_x,
                 points_ys=data_y)
 
-        fig.show()
+        fig_path = FIG_SAVE_FOLDER + f"/manual_{i}.png"
+        fig.savefig(fig_path)
+        print(f"Saved image to {fig_path}!")
 
         # Evaluate function at chosen points
         inp = eval_point
@@ -172,7 +178,9 @@ def automated_optimization(x_train, y_train):
         points_ys=data_y
     )
 
-    fig.show()
+    fig_path = FIG_SAVE_FOLDER + "/automated.png"
+    fig.savefig(fig_path)
+    print(f"Saved image to {fig_path}")
 
 
 if __name__ == "__main__":

@@ -9,11 +9,11 @@ DataTuple = namedtuple('DataTuple', field_names=['df', 'input_labels', 'output_l
 
 def load_labels(kind: str) -> Tuple[Sequence[str], Sequence[str]]:
     if kind == 'fft':
-        from scripts.labels.fft import input_labels, output_labels
+        from boa.datasets.labels.fft import input_labels, output_labels
         return input_labels, output_labels
 
     elif kind == 'stencil3d':
-        from scripts.labels import input_labels, output_labels
+        from boa.datasets.labels.stencil3d import input_labels, output_labels
         return input_labels, output_labels
 
     raise RuntimeError('Unknown label', kind)
@@ -21,7 +21,7 @@ def load_labels(kind: str) -> Tuple[Sequence[str], Sequence[str]]:
 
 def load_dataset(path: str, kind: str) -> DataTuple:
     if kind == 'fft':
-        from scripts.labels.fft import input_labels, output_labels
+        from boa.datasets.labels.fft import input_labels, output_labels
 
         with open(path) as f:
             df = pd.read_csv(f, sep=' ', dtype=np.float64)
@@ -29,7 +29,7 @@ def load_dataset(path: str, kind: str) -> DataTuple:
         return DataTuple(df=df[input_labels + output_labels], input_labels=input_labels, output_labels=output_labels)
 
     elif kind == 'stencil3d':
-        from scripts.labels import input_labels, output_labels
+        from boa.datasets.labels import input_labels, output_labels
 
         with open(path) as f:
             df = pd.read_csv(f, sep='\t', dtype=np.float64)

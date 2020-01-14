@@ -8,7 +8,7 @@ import tensorflow as tf
 from sklearn.model_selection import train_test_split
 
 from boa.models.gpar import GPARModel
-from .dataset_loader import load_dataset
+from boa.datasets.loader import load_dataset
 
 
 def gp_run(data, inputs: Sequence[str], outputs: Sequence[str], seed: int):

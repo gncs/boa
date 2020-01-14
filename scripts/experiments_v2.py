@@ -9,7 +9,6 @@ import numpy as np
 
 from sklearn.model_selection import train_test_split
 
-from boa.models.abstract_model_v2 import AbstractModel
 from boa.models.fully_factorized_gp_v2 import FullyFactorizedGPModel
 from boa.models.gpar_v2 import GPARModel
 from boa.models.matrix_factorized_gpar_v2 import MatrixFactorizedGPARModel
@@ -31,6 +30,8 @@ LOG_LEVELS = {
     "debug": logging.DEBUG,
     "warn": logging.WARNING
 }
+
+DEFAULT_MODEL_SAVE_DIR = "models/experiments_v2/"
 
 
 def run_experiment(model,
@@ -89,10 +90,15 @@ def run_experiment(model,
 
             experiment['train_time'] = time.time() - start_time
 
+            save_path = DEFAULT_MODEL_SAVE_DIR + "/" + model.name + f"/size_{size}/model_{index}"
+            model.save(save_path)
+            logger.info(f"Saved model to {save_path}!")
+
             start_time = time.time()
 
             try:
                 mean, _ = model.predict(test[inputs].values, numpy=True)
+
             except Exception as e:
                 logger.exception("Prediction failed: {}, saving model!".format(str(e)))
 
@@ -174,32 +180,6 @@ def main(args,
                                  seed=seed,
                                  rounds=5,
                                  verbose=args.verbose)
-
-        # For the fully factorized GP model,
-        # we also look at training using auxiliary data
-        # logger.info("============================================================")
-        # logger.info("Performing auxiliary training for FF-GP")
-        # logger.info("============================================================")
-        #
-        # model = FullyFactorizedGPModel(kernel=args.kernel,
-        #                                input_dim=len(input_labels_aux),
-        #                                output_dim=len(output_labels_aux),
-        #                                initialization_heuristic="median",
-        #                                verbose=args.verbose)
-        #
-        # print(input_labels_aux)
-        #
-        # results = run_experiment(model=model,
-        #                          data=df_aux,
-        #                          optimizer_restarts=args.num_optimizer_restarts,
-        #                          inputs=input_labels_aux,
-        #                          outputs=output_labels_aux,
-        #                          matrix_factorized=False,
-        #                          logdir=args.logdir,
-        #                          experiment_file_name=experiment_json_format.format(args.model),
-        #                          seed=seed,
-        #                          rounds=5,
-        #                          verbose=args.verbose)
 
     elif args.model in ["gpar", "mf-gpar"]:
         df, input_labels, output_labels = prepare_gpar_data(data,

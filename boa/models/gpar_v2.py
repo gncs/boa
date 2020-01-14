@@ -245,7 +245,7 @@ class GPARModel(AbstractModel):
                                                  trace=False,
                                                  err_level="raise")
                     else:
-                        # Perform L-BFGS-B optimization
+                        # Perform Adam optimization
                         loss = minimise_adam(lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
                                                                                   length_scales=v[length_scales_name],
                                                                                   noise_amplitude=v[noise_amp]),

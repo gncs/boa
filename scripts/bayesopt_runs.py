@@ -12,7 +12,7 @@ from boa.models.loader import load_model
 from boa.objective.abstract import AbstractObjective
 from boa.optimization.data import generate_data, Data, FileHandler
 from boa.optimization.loader import load_optimizer
-from scripts.dataset_loader import DataTuple, load_dataset
+from boa.datasets.loader import DataTuple, load_dataset
 
 objective_labels = ['cycle', 'avg_power', 'total_area']
 

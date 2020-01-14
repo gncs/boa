@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from .labels import label_names_dict
+from boa.datasets.labels import label_names_dict
 
 
 def load_gp_data(path, name):
