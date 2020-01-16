@@ -32,6 +32,7 @@ class MatrixFactorizedGPARModel(GPARModel):
                                                         input_dim=input_dim,
                                                         output_dim=output_dim,
                                                         initialization_heuristic=initialization_heuristic,
+                                                        _create_length_scales=False, # Never create the length scales in the parent class
                                                         verbose=verbose,
                                                         name=name,
                                                         **kwargs)
@@ -39,9 +40,6 @@ class MatrixFactorizedGPARModel(GPARModel):
         self.latent_dim = latent_dim
 
         self.output_length_scales = []
-
-        # Clear the length scales list, since we are going to create new ones
-        self.length_scales.clear()
 
         # Create TF variables for the hyperparameters
 
@@ -56,7 +54,7 @@ class MatrixFactorizedGPARModel(GPARModel):
             trainable=False,
             name=self.RLS_MAT)
 
-        # dimensions O x I
+        # # dimensions O x I
         input_length_scales = tf.matmul(self.left_length_scale_matrix,
                                         self.right_length_scale_matrix)
 
@@ -67,7 +65,7 @@ class MatrixFactorizedGPARModel(GPARModel):
 
             self.output_length_scales.append(out_length_scales)
 
-            # i-th length scales
+            # # i-th length scales
             length_scales = tf.concat((input_length_scales[i, :],
                                        out_length_scales),
                                       axis=0)
@@ -205,7 +203,7 @@ class MatrixFactorizedGPARModel(GPARModel):
                                         maxval=init_maxval,
                                         dtype=tf.float64))
 
-    def fit(self, xs, ys, optimizer="adam", optimizer_restarts=1) -> None:
+    def fit(self, xs, ys, optimizer="adam", optimizer_restarts=1, trace=True, iters=200, rate=1e-2) -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -272,7 +270,11 @@ class MatrixFactorizedGPARModel(GPARModel):
             try:
                 if optimizer == "l-bfgs-b":
                     # Perform L-BFGS-B optimization
-                    loss = minimise_l_bfgs_b(negative_mf_gpar_log_likelihood, vs, err_level="raise")
+                    loss = minimise_l_bfgs_b(negative_mf_gpar_log_likelihood,
+                                             vs,
+                                             err_level="raise",
+                                             trace=trace,
+                                             iters=iters)
 
                 elif optimizer == "adam":
 

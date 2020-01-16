@@ -9,6 +9,29 @@ class CoreError(Exception):
     """
 
 
+def tf_bounded_variable(init, lower, upper, name=None, dtype=tf.float64):
+
+    init = tf.convert_to_tensor(init, dtype=dtype)
+
+    # Calculate the reparametrized value first
+    var_init = (init - lower) / (upper - lower)
+
+    if name is not None:
+        var = tf.Variable(var_init, name=name)
+    else:
+        var = tf.Variable(var_init)
+
+    def transform(x):
+        return (upper - lower) * var + lower
+
+    def assign(x):
+        x = tf.convert_to_tensor(x, dtype=dtype)
+        x = tf.reshape(x, var.shape)
+        var.assign((x - lower) / (upper - lower + 1e-12))
+
+    return var, transform, assign
+
+
 def setup_logger(name, level, log_file=None, to_console=False, format="%(levelname)s:%(name)s:%(message)s"):
 
     logger = logging.getLogger(name)
@@ -117,4 +140,3 @@ def calculate_per_dimension_distance_percentiles(xs, percents):
         dim_percentiles.append(dim_percentile)
 
     return tf.stack(dim_percentiles)
-

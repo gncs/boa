@@ -15,7 +15,7 @@ from boa.models.matrix_factorized_gpar_v2 import MatrixFactorizedGPARModel
 
 from boa.core import GaussianProcess, setup_logger
 
-from dataset_loader import load_dataset
+from boa.datasets.loader import load_dataset
 
 import tensorflow as tf
 
@@ -32,6 +32,9 @@ LOG_LEVELS = {
 }
 
 DEFAULT_MODEL_SAVE_DIR = "models/experiments_v2/"
+
+# Set CPU as available physical device
+tf.config.experimental.set_visible_devices([], 'GPU')
 
 
 def run_experiment(model,
@@ -90,7 +93,7 @@ def run_experiment(model,
 
             experiment['train_time'] = time.time() - start_time
 
-            save_path = DEFAULT_MODEL_SAVE_DIR + "/" + model.name + f"/size_{size}/model_{index}"
+            save_path = DEFAULT_MODEL_SAVE_DIR + "/" + model.name + f"/size_{size}/model_{index}/model"
             model.save(save_path)
             logger.info(f"Saved model to {save_path}!")
 
@@ -201,6 +204,14 @@ def main(args,
                                               verbose=args.verbose)
 
         # Perform experiments
+        experiment_file_name = ""
+
+        # If the model uses matrix factorization, then append the latent dimension to the file name
+        if args.model in ["mf-gpar"]:
+            experiment_file_name = experiment_json_format.format(f"{args.model}-{args.latent_dim}")
+        else:
+            experiment_file_name = experiment_json_format.format(args.model)
+
         results = run_experiment(model=model,
                                  data=df,
                                  optimizer=args.optimizer,
@@ -209,7 +220,7 @@ def main(args,
                                  outputs=output_labels,
                                  logdir=args.logdir,
                                  matrix_factorized=args.model == "mf-gpar",
-                                 experiment_file_name=experiment_json_format.format(args.model),
+                                 experiment_file_name=experiment_file_name,
                                  seed=seed,
                                  rounds=5,
                                  verbose=args.verbose)

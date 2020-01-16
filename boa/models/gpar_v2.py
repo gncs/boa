@@ -22,8 +22,9 @@ class GPARModel(AbstractModel):
                  output_dim: int,
                  learn_permutation: bool = False,
                  initialization_heuristic: str = "median",
-                 denoising: bool = True,
+                 denoising: bool = False,
                  verbose: bool = False,
+                 _create_length_scales: bool = True,
                  name: str = "gpar_model",
                  **kwargs):
         """
@@ -45,20 +46,19 @@ class GPARModel(AbstractModel):
         self.initialization_heuristic = initialization_heuristic
         self.learn_permutation = learn_permutation
 
-        self.length_scales: List[tf.Variable] = []
-        self.signal_amplitudes: List[tf.Variable] = []
-        self.noise_amplitudes: List[tf.Variable] = []
-
-        self.output_perm = tf.eye(self.output_dim, dtype=tf.float64)
+        self.length_scales = []
+        self.signal_amplitudes = []
+        self.noise_amplitudes = []
 
         # Create TF variables for each of the hyperparameters, so that
         # we can use Keras' serialization features
         for i in range(self.output_dim):
             # Note the scaling in dimension
-            self.length_scales.append(tf.Variable(tf.ones(self.input_dim + i,
-                                                          dtype=tf.float64),
-                                                  name=f"{i}/length_scales",
-                                                  trainable=False))
+            if _create_length_scales:
+                self.length_scales.append(tf.Variable(tf.ones(self.input_dim + i,
+                                                              dtype=tf.float64),
+                                                      name=f"{i}/length_scales",
+                                                      trainable=False))
 
             self.signal_amplitudes.append(tf.Variable((1,),
                                                       dtype=tf.float64,
@@ -191,13 +191,13 @@ class GPARModel(AbstractModel):
                                     maxval=init_maxval,
                                     dtype=tf.float64))
 
-    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1) -> None:
+    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1, trace=False, iters=1000, rate=1e-2) -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
         if self.denoising:
             # This tensor will store the predictive means for the previous dimensions
-            pred_ys = tf.zeros(shape=(ys.shape[0], 0))
+            pred_ys = tf.zeros(shape=(ys.shape[0], 0), dtype=tf.float64)
 
         logger.info(f"Training data supplied with xs shape {xs.shape} and ys shape {ys.shape}, training!")
 
@@ -221,7 +221,8 @@ class GPARModel(AbstractModel):
                                      length_scales=length_scales,
                                      noise_amplitude=noise_amplitude)
 
-                ys_to_append = pred_ys if self.denoising else ys[:, :i]
+                #ys_to_append = pred_ys if self.denoising else ys[:, :i]
+                ys_to_append = ys[:, :i]
                 gp_input = tf.concat((xs, ys_to_append), axis=1)
 
                 return -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize=True)
@@ -247,7 +248,8 @@ class GPARModel(AbstractModel):
                                                  names=[sig_amp_name,
                                                         length_scales_name,
                                                         noise_amp],
-                                                 trace=False,
+                                                 trace=trace,
+                                                 iters=iters,
                                                  err_level="raise")
                     else:
                         # Perform Adam optimization
@@ -257,7 +259,10 @@ class GPARModel(AbstractModel):
                                              vs,
                                              names=[sig_amp_name,
                                                     length_scales_name,
-                                                    noise_amp])
+                                                    noise_amp],
+                                             iters=iters,
+                                             rate=rate,
+                                             trace=trace)
 
                 except tf.errors.InvalidArgumentError as e:
                     logger.error(str(e))
@@ -310,8 +315,10 @@ class GPARModel(AbstractModel):
                 if np.isnan(loss) or np.isinf(loss):
                     logger.error(f"Output {i}, Iteration {j}: Loss was {loss}, restarting training iteration!")
                     j = j - 1
+                    continue
 
-                pred_ys = tf.concat([pred_ys, predictive_mean], axis=1)
+                if self.denoising:
+                    pred_ys = tf.concat([pred_ys, predictive_mean], axis=1)
 
         self.trained.assign(True)
 
