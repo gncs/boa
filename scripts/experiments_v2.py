@@ -12,6 +12,7 @@ from sklearn.model_selection import train_test_split
 from boa.models.fully_factorized_gp_v2 import FullyFactorizedGPModel
 from boa.models.gpar_v2 import GPARModel
 from boa.models.matrix_factorized_gpar_v2 import MatrixFactorizedGPARModel
+from boa.models.gpar_perm import PermutedGPARModel
 
 from boa.core import GaussianProcess, setup_logger
 
@@ -49,7 +50,6 @@ def run_experiment(model,
                    rounds: int = 5,
                    seed: int = 42,
                    verbose=False):
-
     experiment_file_path = os.path.join(logdir, experiment_file_name)
 
     # Make sure the directory exists
@@ -184,7 +184,7 @@ def main(args,
                                  rounds=5,
                                  verbose=args.verbose)
 
-    elif args.model in ["gpar", "mf-gpar"]:
+    elif args.model in ["gpar", "mf-gpar", "p-gpar"]:
         df, input_labels, output_labels = prepare_gpar_data(data,
                                                             targets)
 
@@ -202,6 +202,13 @@ def main(args,
                                               latent_dim=args.latent_dim,
                                               initialization_heuristic=args.initialization,
                                               verbose=args.verbose)
+
+        elif args.model == 'p-gpar':
+            model = PermutedGPARModel(kernel=args.kernel,
+                                      input_dim=len(input_labels),
+                                      output_dim=len(output_labels),
+                                      initialization_heuristic=args.initialization,
+                                      verbose=args.verbose)
 
         # Perform experiments
         experiment_file_name = ""
@@ -276,8 +283,16 @@ if __name__ == "__main__":
     mf_gpar_mode.add_argument("--latent_dim", type=int, default=5,
                               help="Effective dimension of the factorization.")
 
+    # =========================================================================
+    # Permuted GPAR
+    # =========================================================================
+
+    p_gpar_mode = model_subparsers.add_parser("p-gpar",
+                                              formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                              description="use a Permuted GPAR Model")
+
     # Add common options to models
-    for mode in [ff_gp_mode, gpar_mode, mf_gpar_mode]:
+    for mode in [ff_gp_mode, gpar_mode, mf_gpar_mode, p_gpar_mode]:
         mode.add_argument("--kernel",
                           choices=GaussianProcess.AVAILABLE_KERNELS,
                           default="matern52",
