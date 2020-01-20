@@ -93,7 +93,7 @@ def run_experiment(model,
 
             experiment['train_time'] = time.time() - start_time
 
-            save_path = DEFAULT_MODEL_SAVE_DIR + "/" + model.name + f"/size_{size}/model_{index}/model"
+            save_path = DEFAULT_MODEL_SAVE_DIR + "/" + experiment_file_name + f"/size_{size}/model_{index}/model"
             model.save(save_path)
             logger.info(f"Saved model to {save_path}!")
 
@@ -105,7 +105,7 @@ def run_experiment(model,
             except Exception as e:
                 logger.exception("Prediction failed: {}, saving model!".format(str(e)))
 
-                model.save("models/exceptions/" + model.name + "/model")
+                model.save("models/exceptions/" + experiment_file_name + "/model")
                 raise e
                 # continue
 

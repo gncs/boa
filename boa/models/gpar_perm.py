@@ -209,8 +209,8 @@ class PermutedGPARModel(GPARModel):
 
                         # Forward pass: use hard permutation
                         # Backward pass: pretend we used the soft permutation all along
-                        permuted_output = soft_permuted_ys + tf.stop_gradient(hard_permuted_ys - soft_permuted_ys)
-                        # permuted_output = soft_permuted_ys
+                        # permuted_output = soft_permuted_ys + tf.stop_gradient(hard_permuted_ys - soft_permuted_ys)
+                        permuted_output = soft_permuted_ys
 
                         for i in range(self.output_dim):
                             # Define i-th GP training loss

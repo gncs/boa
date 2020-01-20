@@ -17,6 +17,7 @@ from boa.objective.abstract import AbstractObjective
 
 from boa.models.fully_factorized_gp_v2 import FullyFactorizedGPModel
 from boa.models.gpar_v2 import GPARModel
+from boa.models.matrix_factorized_gpar_v2 import MatrixFactorizedGPARModel
 
 from boa.acquisition.smsego_v2 import SMSEGO
 
@@ -42,6 +43,9 @@ DEFAULT_OPTIMIZER_CONFIG = {
     'batch_size': 1,
     'verbose': True,
 }
+
+tf.config.experimental.set_visible_devices([], 'GPU')
+logger.info("USING CPU ONLY!")
 
 
 class Objective(AbstractObjective):
@@ -77,11 +81,12 @@ class Objective(AbstractObjective):
 
 def optimize(objective,
              model,
+             model_optimizer,
              model_optimizer_restarts,
              optimizer,
              acq,
-             seed: int) -> Data:
-
+             seed: int,
+             verbose) -> Data:
     np.random.seed(seed)
     tf.random.set_seed(seed)
 
@@ -96,7 +101,9 @@ def optimize(objective,
     model = model.condition_on(xs=data.input,
                                ys=data.output)
 
-    model.fit_to_conditioning_data(optimizer_restarts=model_optimizer_restarts)
+    model.fit_to_conditioning_data(optimizer_restarts=model_optimizer_restarts,
+                                   optimizer=model_optimizer,
+                                   trace=verbose)
 
     xs, ys = optimizer.optimize(
         f=objective,
@@ -159,14 +166,23 @@ def main(args):
                                        output_dim=len(output_labels),
                                        initialization_heuristic=args.initialization,
                                        verbose=args.verbose)
-    elif args.model == "gpar":
+    elif args.model in ["gpar", "mf-gpar"]:
         df, input_labels, output_labels = prepare_gpar_data(dataset,
                                                             targets=OBJECTIVE_TARGETS[args.task])
-        model = GPARModel(kernel=args.kernel,
-                          input_dim=len(input_labels),
-                          output_dim=len(output_labels),
-                          initialization_heuristic=args.initialization,
-                          verbose=args.verbose)
+        if args.model == "gpar":
+            model = GPARModel(kernel=args.kernel,
+                              input_dim=len(input_labels),
+                              output_dim=len(output_labels),
+                              initialization_heuristic=args.initialization,
+                              verbose=args.verbose)
+
+        elif args.model == "mf-gpar":
+            model = MatrixFactorizedGPARModel(kernel=args.kernel,
+                                              input_dim=len(input_labels),
+                                              output_dim=len(output_labels),
+                                              latent_dim=args.latent_dim,
+                                              initialization_heuristic=args.initialization,
+                                              verbose=args.verbose)
 
     # Run the optimization
     for seed in range(5):
@@ -174,12 +190,17 @@ def main(args):
                                                input_labels=input_labels,
                                                output_labels=output_labels),
                            model=model,
+                           model_optimizer=args.optimizer,
                            model_optimizer_restarts=args.num_optimizer_restarts,
                            optimizer=optimizer,
                            acq=smsego_acq,
-                           seed=seed)
+                           seed=seed,
+                           verbose=args.verbose)
 
-        save_dir = args.logdir + "/bayesopt/" + args.model
+        model_name = args.model
+        model_name += f"_{args.latent_dim}" if args.model == "mf-gpar" else ""
+
+        save_dir = args.logdir + "/bayesopt/" + model_name
         os.makedirs(save_dir, exist_ok=True)
         handler = FileHandler(path=save_dir + f"/{seed}.json")
         handler.save(results)
@@ -224,8 +245,19 @@ if __name__ == "__main__":
                                             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                             description="Use a GPAR model.")
 
+    # =========================================================================
+    # Matrix factorized GPAR
+    # =========================================================================
+
+    mf_gpar_mode = model_subparsers.add_parser("mf-gpar",
+                                               formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                               description="use a GPAR Model with factorized length scale matrix")
+
+    mf_gpar_mode.add_argument("--latent_dim", type=int, default=5,
+                              help="Effective dimension of the factorization.")
+
     # Add common options to models
-    for mode in [ff_gp_mode, gpar_mode]:
+    for mode in [ff_gp_mode, gpar_mode, mf_gpar_mode]:
         mode.add_argument("--kernel",
                           choices=GaussianProcess.AVAILABLE_KERNELS,
                           default="matern52",

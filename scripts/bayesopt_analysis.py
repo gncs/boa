@@ -70,7 +70,7 @@ def main(dataset_path: str, kind: str, base_dir: str):
 
     label_dict = {
         'random': 'Random',
-        'gp': 'GP',
+        'ff-gp': 'FF-GP',
         'gpar': 'GPAR',
         'mf-gpar': 'MF-GPAR',
         'mf-gpar_3': 'MF-GPAR-3',
@@ -79,7 +79,7 @@ def main(dataset_path: str, kind: str, base_dir: str):
 
     color_dict = {
         'random': 'C0',
-        'gp': 'C1',
+        'ff-gp': 'C1',
         'gpar': 'C2',
         'mf-gpar': 'C3',
         'mf-gpar_3': 'C4',
@@ -110,7 +110,7 @@ def main(dataset_path: str, kind: str, base_dir: str):
             zorder=-2,
         )
 
-    ordered_names = ['random', 'gp', 'gpar', 'mf-gpar', 'mf-gpar_3', 'mf-gpar_5']
+    ordered_names = ['random', 'ff-gp', 'gpar', 'mf-gpar', 'mf-gpar_3', 'mf-gpar_5']
 
     for name in ordered_names:
         if name not in summary_dict:
