@@ -5,8 +5,8 @@ from tqdm import trange
 import numpy as np
 import tensorflow as tf
 
-from boa.core import GaussianProcess, setup_logger, tf_bounded_variable
-from .abstract_model_v2 import AbstractModel, ModelError
+from boa.core import GaussianProcess, setup_logger
+from boa.core.variables import BoundedVariable
 from .gpar_v2 import GPARModel
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/perm_gpar.log")
@@ -101,9 +101,6 @@ class PermutedGPARModel(GPARModel):
         noise_amplitudes = []
 
         for index in range(self.output_dim):
-            ls_name = f"{index}/length_scales"
-            gp_var_name = f"{index}/signal_amplitude"
-            noise_var_name = f"{index}/noise_amplitude"
 
             if length_scale_init == "median":
 
@@ -137,27 +134,28 @@ class PermutedGPARModel(GPARModel):
                                             dtype=tf.float64)
 
             # Note the scaling in dimension
-            length_scales.append(tf_bounded_variable(ls_init,
-                                                     lower=1e-3,
-                                                     upper=1e2))
+            length_scales.append(BoundedVariable(ls_init,
+                                                 lower=1e-3,
+                                                 upper=1e2))
 
-            signal_amplitudes.append(tf_bounded_variable(tf.random.uniform(shape=(1,),
-                                                                           minval=init_minval,
-                                                                           maxval=init_maxval,
-                                                                           dtype=tf.float64),
-                                                         lower=1e-4,
-                                                         upper=1e4))
+            signal_amplitudes.append(BoundedVariable(tf.random.uniform(shape=(1,),
+                                                                       minval=init_minval,
+                                                                       maxval=init_maxval,
+                                                                       dtype=tf.float64),
+                                                     lower=1e-4,
+                                                     upper=1e4))
 
-            noise_amplitudes.append(tf_bounded_variable(tf.random.uniform(shape=(1,),
-                                                                          minval=init_minval,
-                                                                          maxval=init_maxval,
-                                                                          dtype=tf.float64),
-                                                        lower=1e-6,
-                                                        upper=1e2))
+            noise_amplitudes.append(BoundedVariable(tf.random.uniform(shape=(1,),
+                                                                      minval=init_minval,
+                                                                      maxval=init_maxval,
+                                                                      dtype=tf.float64),
+                                                    lower=1e-6,
+                                                    upper=1e2))
 
         return permutation, length_scales, signal_amplitudes, noise_amplitudes
 
-    def fit(self, xs, ys, optimizer_restarts=1, learn_rate=1e-1, tol=1e-6, iters=1000, start_temp=2., end_temp=1e-10) -> None:
+    def fit(self, xs, ys, optimizer_restarts=1, learn_rate=1e-1, tol=1e-6, iters=1000, start_temp=2.,
+            end_temp=1e-10) -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -180,9 +178,9 @@ class PermutedGPARModel(GPARModel):
             permutation, length_scales, signal_amplitudes, noise_amplitudes = hps
 
             hps = [permutation] + \
-                  list(map(lambda x: x[0], length_scales)) + \
-                  list(map(lambda x: x[0], signal_amplitudes)) + \
-                  list(map(lambda x: x[0], noise_amplitudes))
+                  list(map(lambda x: x.reparameterization, length_scales)) + \
+                  list(map(lambda x: x.reparameterization, signal_amplitudes)) + \
+                  list(map(lambda x: x.reparameterization, noise_amplitudes))
 
             # Epsilon set to 1e-8 to match Wessel's Varz Adam settings.
             optimizer = tf.optimizers.Adam(learn_rate,
@@ -198,7 +196,8 @@ class PermutedGPARModel(GPARModel):
 
                         tape.watch(hps)
 
-                        temperature = tf.maximum((end_temp - start_temp) / (iters / 2) * iteration + start_temp, end_temp)
+                        temperature = tf.maximum((end_temp - start_temp) / (iters / 2) * iteration + start_temp,
+                                                 end_temp)
 
                         soft_perm, hard_perm = self.permutation_matrix(permutation,
                                                                        temperature=temperature,
@@ -216,9 +215,9 @@ class PermutedGPARModel(GPARModel):
                             # Define i-th GP training loss
                             # Create i-th GP
                             gp = GaussianProcess(kernel=self.kernel_name,
-                                                 signal_amplitude=signal_amplitudes[i][1](signal_amplitudes[i][0]),
-                                                 length_scales=length_scales[i][1](length_scales[i][0]),
-                                                 noise_amplitude=noise_amplitudes[i][1](noise_amplitudes[i][0]))
+                                                 signal_amplitude=signal_amplitudes[i](),
+                                                 length_scales=length_scales[i](),
+                                                 noise_amplitude=noise_amplitudes[i]())
 
                             # Create input to the i-th GP
                             ys_to_append = permuted_output[:, :i]
@@ -248,9 +247,9 @@ class PermutedGPARModel(GPARModel):
 
                 for i in range(self.output_dim):
                     # Assign the hyperparameters for each input to the model variables
-                    self.length_scales[i].assign(length_scales[i][1](length_scales[i][0]))
-                    self.signal_amplitudes[i].assign(signal_amplitudes[i][1](signal_amplitudes[i][0]))
-                    self.noise_amplitudes[i].assign(noise_amplitudes[i][1](noise_amplitudes[i][0]))
+                    self.length_scales[i].assign(length_scales[i]())
+                    self.signal_amplitudes[i].assign(signal_amplitudes[i]())
+                    self.noise_amplitudes[i].assign(noise_amplitudes[i]())
 
                     soft_perm, perm = self.permutation_matrix(permutation, 1e-10, sinkhorn_iterations=100)
                     self.permutation.assign(perm)

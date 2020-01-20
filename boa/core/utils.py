@@ -9,36 +9,21 @@ class CoreError(Exception):
     """
 
 
+def inv_perm(x):
+    inv = [0] * len(x)
+
+    for i in x:
+        inv[x[i]] = i
+
+    return tuple(inv)
+
+
 def sigmoid_inverse(x):
     if tf.reduce_any(x < 0.) or tf.reduce_any(x > 1.):
         raise ValueError(f"x = {x} was not in the sigmoid function's range ([0, 1])!")
     x = tf.clip_by_value(x, 1e-10, 1 - 1e-10)
 
     return -tf.math.log(1. / x - 1.)
-
-
-def tf_bounded_variable(init, lower, upper, name=None, dtype=tf.float64):
-
-    init = tf.convert_to_tensor(init, dtype=dtype)
-
-    # Calculate the reparametrized value first
-    var_init = (init - lower) / (upper - lower + 1e-12)
-    var_init = sigmoid_inverse(var_init)
-
-    if name is not None:
-        var = tf.Variable(var_init, name=name)
-    else:
-        var = tf.Variable(var_init)
-
-    def transform(x):
-        return (upper - lower) * tf.nn.sigmoid(var) + lower
-
-    def assign(x):
-        x = tf.convert_to_tensor(x, dtype=dtype)
-        x = tf.reshape(x, var.shape)
-        var.assign(sigmoid_inverse((x - lower) / (upper - lower + 1e-12)))
-
-    return var, transform, assign
 
 
 def setup_logger(name, level, log_file=None, to_console=False, format="%(levelname)s:%(name)s:%(message)s"):
