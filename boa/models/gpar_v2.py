@@ -199,7 +199,12 @@ class GPARModel(AbstractModel):
             permutation=None,
             trace=False,
             iters=1000,
+            seed=None,
             rate=1e-2) -> None:
+
+        if seed is not None:
+            np.random.seed(seed)
+            tf.random.set_seed(seed)
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -228,6 +233,8 @@ class GPARModel(AbstractModel):
         self._calculate_statistics_for_median_initialization_heuristic(xs, ys)
 
         vs = self.create_hyperparameters()
+
+        cumulative_loss = 0
 
         # Optimize dimensions individually
         for i in range(self.output_dim):
@@ -346,7 +353,11 @@ class GPARModel(AbstractModel):
                 if self.denoising:
                     pred_ys = tf.concat([pred_ys, predictive_mean], axis=1)
 
+            cumulative_loss += best_loss
+
         self.trained.assign(True)
+
+        return cumulative_loss
 
     def fit_greedy_ordering(self,
                             xs,
