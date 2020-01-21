@@ -1,7 +1,6 @@
 import logging
 import tensorflow as tf
 from stheno.tensorflow import EQ, Delta, Matern52, GP, Graph, dense
-from stheno.matrix import Dense
 
 from .utils import CoreError, setup_logger
 

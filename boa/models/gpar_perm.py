@@ -7,7 +7,7 @@ import tensorflow as tf
 
 from boa.core import GaussianProcess, setup_logger
 from boa.core.variables import BoundedVariable
-from .gpar_v2 import GPARModel
+from .gpar import GPARModel
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/perm_gpar.log")
 

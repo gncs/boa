@@ -15,14 +15,14 @@ from boa.datasets.loader import load_dataset
 
 from boa.objective.abstract import AbstractObjective
 
-from boa.models.fully_factorized_gp_v2 import FullyFactorizedGPModel
-from boa.models.gpar_v2 import GPARModel
-from boa.models.matrix_factorized_gpar_v2 import MatrixFactorizedGPARModel
+from boa.models.fully_factorized_gp import FullyFactorizedGPModel
+from boa.models.gpar import GPARModel
+from boa.models.matrix_factorized_gpar import MatrixFactorizedGPARModel
 
-from boa.acquisition.smsego_v2 import SMSEGO
+from boa.acquisition.smsego import SMSEGO
 
 from boa.optimization.data import Data, generate_data, FileHandler
-from boa.optimization.optimizer_v2 import Optimizer
+from boa.optimization.optimizer import Optimizer
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/bayesopt_experiment_v2.log")
 

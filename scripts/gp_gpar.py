@@ -1,66 +1,92 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from boa.models.gp import GPModel
+import tensorflow as tf
+
+from boa.models.fully_factorized_gp import FullyFactorizedGPModel
 from boa.models.gpar import GPARModel
 
+# Always use CPU
+tf.config.experimental.set_visible_devices([], 'GPU')
 
-def f(x):
-    return np.sinc(3 * x[:, 0]).reshape(-1, 1)
+# Set seed for reproducibility
+np.random.seed(60)
+tf.random.set_seed(60)
 
 
-np.random.seed(42)
-X_train = np.random.rand(8, 2) * 2 - 1
-pseudo_point = np.array([0.8, 0.3])
-X_train = np.vstack([X_train, pseudo_point])
+def run():
 
-Y_train = f(X_train)
+    # Test function
+    def f(x):
+        return np.sinc(3 * x[:, 0]).reshape(-1, 1)
 
-# Points for plotting
-x_cont = np.arange(-1.5, 1.5, 0.02).reshape(-1, 1)
-x_cont = np.hstack([x_cont, x_cont])
+    # Generate input data
+    x_train = np.random.rand(8, 2) * 2 - 1
+    pseudo_point = np.array([[0.8, 0.3]])
+    x_train = np.vstack([x_train, pseudo_point])
 
-# GP
-model1 = GPModel(kernel='rbf', num_optimizer_restarts=10)
-model1.set_data(X_train, Y_train)
-model1.train()
+    y_train = f(x_train)
 
-model1.add_pseudo_point(pseudo_point)
-y_pred_1, var_pred_1 = model1.predict_batch(x_cont)
+    # Points for plotting
+    x_cont = np.arange(-1.5, 1.5, 0.02).reshape(-1, 1)
+    x_cont = np.hstack([x_cont, x_cont])
 
-# GPAR
-model2 = GPARModel(kernel='rbf', num_optimizer_restarts=10, verbose=True)
-model2.set_data(X_train, Y_train)
-model2.train()
+    # FF-GP model
+    ff_gp = FullyFactorizedGPModel(kernel='rbf',
+                                   input_dim=2,
+                                   output_dim=1,
+                                   initialization_heuristic="median",
+                                   verbose=False)
+    ff_gp = ff_gp.condition_on(x_train, y_train)
+    ff_gp.fit_to_conditioning_data(optimizer_restarts=10)
 
-model2.add_pseudo_point(pseudo_point)
-y_pred_2, var_pred_2 = model2.predict_batch(x_cont)
+    # Add a "pseudo point"
+    pred_point, _ = ff_gp.predict(pseudo_point)
+    ff_gp = ff_gp.condition_on(pseudo_point, pred_point, keep_previous=True)
+    y_pred_ff_gp, var_pred_ff_gp = ff_gp.predict(x_cont, numpy=True)
 
-# Plot
-fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(7, 5))
+    # GPAR model
+    gpar = GPARModel(kernel='rbf', input_dim=2, output_dim=1, initialization_heuristic="median", verbose=False)
+    gpar = gpar.condition_on(x_train, y_train)
+    gpar.fit_to_conditioning_data(optimizer_restarts=10)
 
-ax.plot(x_cont[:, 0], f(x_cont), color='black', linestyle='dashed', label='f', zorder=-1)
+    pred_point, _ = gpar.predict(pseudo_point)
+    gpar.condition_on(pseudo_point, pred_point, keep_previous=True)
+    y_pred_gpar, var_pred_gpar = gpar.predict(x_cont, numpy=True)
 
-ax.plot(x_cont[:, 0], y_pred_1, color='C0', zorder=-1, label=r'$\mathcal{GP}$')
-ax.fill_between(x_cont.T[0], (y_pred_1 + 2 * np.sqrt(var_pred_1)).T[0], (y_pred_1 - 2 * np.sqrt(var_pred_1)).T[0],
-                color='C0',
-                alpha=0.3,
-                zorder=-1,
-                label=r'$\pm$2$\sigma$')
-ax.plot(x_cont[:, 0], y_pred_2, color='C1', zorder=-1, label=r'$\mathcal{GPAR}$', linestyle='dashed')
-ax.fill_between(x_cont.T[0], (y_pred_2 + 2 * np.sqrt(var_pred_2)).T[0], (y_pred_2 - 2 * np.sqrt(var_pred_2)).T[0],
-                color='C1',
-                alpha=0.3,
-                zorder=-1,
-                label=r'$\pm$2$\sigma$')
+    # Plot results
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(7, 5))
 
-# Data points
-ax.scatter(x=X_train[:, 0], y=Y_train[:, 0], s=30, c='white', edgecolors='black', label=r'$\mathcal{D}$')
-ax.scatter(x=model1.xs[-1:, 0], y=model1.ys[-1:, 0], c='C0', edgecolor='black', label='pseudo point')
-ax.scatter(x=model2.xs[-1:, 0], y=model2.ys[-1:, 0], c='C1', edgecolor='black', label='pseudo point')
+    ax.plot(x_cont[:, 0], f(x_cont), color='black', linestyle='dashed', label='f', zorder=-1)
 
-ax.legend(loc='upper left', bbox_to_anchor=(1.03, 1.0))
-ax.set_xlabel('$X$')
-ax.set_ylabel('$Y$')
+    ax.plot(x_cont[:, 0], y_pred_ff_gp, color='C0', zorder=-1, label=r'$\mathcal{GP}$')
+    ax.fill_between(x_cont.T[0], (y_pred_ff_gp + 2 * np.sqrt(var_pred_ff_gp)).T[0],
+                    (y_pred_ff_gp - 2 * np.sqrt(var_pred_ff_gp)).T[0],
+                    color='C0',
+                    alpha=0.3,
+                    zorder=-1,
+                    label=r'$\pm2\sigma$')
 
-fig.show()
+    ax.plot(x_cont[:, 0], y_pred_gpar, color='C1', zorder=-1, label=r'$\mathcal{GPAR}$', linestyle='dashed')
+    ax.fill_between(x_cont.T[0], (y_pred_gpar + 2 * np.sqrt(var_pred_gpar)).T[0],
+                    (y_pred_gpar - 2 * np.sqrt(var_pred_gpar)).T[0],
+                    color='C1',
+                    alpha=0.3,
+                    zorder=-1,
+                    label=r'$\pm2\sigma$')
+
+    # Data points
+    ax.scatter(x=x_train[:, 0], y=y_train[:, 0], s=30, c='white', edgecolors='black', label=r'$\mathcal{D}$')
+    ax.scatter(x=ff_gp.xs[-1:, 0], y=ff_gp.ys[-1:, 0], c='C0', edgecolors='black', label='pseudo point')
+    ax.scatter(x=gpar.xs[-1:, 0], y=gpar.ys[-1:, 0], c='C1', edgecolors='black', label='pseudo point')
+
+    ax.legend(loc='upper left')
+    ax.set_xlabel('$X$')
+    ax.set_ylabel('$Y$')
+
+    fig.savefig("plots/script_plots/gp_gpar_v2.png")
+    print("Figure saved!")
+
+
+if __name__ == "__main__":
+    run()

@@ -9,9 +9,9 @@ import numpy as np
 
 from sklearn.model_selection import train_test_split
 
-from boa.models.fully_factorized_gp_v2 import FullyFactorizedGPModel
-from boa.models.gpar_v2 import GPARModel
-from boa.models.matrix_factorized_gpar_v2 import MatrixFactorizedGPARModel
+from boa.models.fully_factorized_gp import FullyFactorizedGPModel
+from boa.models.gpar import GPARModel
+from boa.models.matrix_factorized_gpar import MatrixFactorizedGPARModel
 from boa.models.gpar_perm import PermutedGPARModel
 
 from boa.core import GaussianProcess, setup_logger

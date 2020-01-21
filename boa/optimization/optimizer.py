@@ -6,7 +6,7 @@ import numpy as np
 
 from boa.acquisition.abstract import AbstractAcquisition
 from boa.optimization.data import FileHandler, Data
-from boa.models.abstract import AbstractModel
+from boa.models.abstract_model import AbstractModel
 from boa.objective.abstract import AbstractObjective
 
 
@@ -18,7 +18,7 @@ def print_message(msg: str):
 
 
 class Optimizer:
-    LOG_FILE = 'opt_chkpt.json'
+    LOG_FILE = 'opt_ckpt.json'
 
     def __init__(self, max_num_iterations: int, batch_size: int, strict=False, checkpoints=True, verbose=False):
         self.max_num_iterations = max_num_iterations
@@ -28,7 +28,7 @@ class Optimizer:
         self.create_checkpoints = checkpoints
 
     def optimize(self, f: AbstractObjective, model: AbstractModel, acq_fun: AbstractAcquisition, xs: np.array,
-                 ys: np.array, candidate_xs: np.array) -> Tuple[np.ndarray, np.ndarray]:
+                 ys: np.array, candidate_xs: np.array, optimizer_restarts: int) -> Tuple[np.ndarray, np.ndarray]:
 
         xs = xs.copy()
         ys = ys.copy()
@@ -43,8 +43,11 @@ class Optimizer:
 
             eval_points = []
 
+            eval_model = model.copy()
+
             # Collect evaluation points
             for _ in range(self.batch_size):
+
                 # Ensure that there are candidates left
                 if candidate_xs.size == 0:
                     break
@@ -54,11 +57,11 @@ class Optimizer:
                 eval_point = candidate_xs[max_acquisition_index]
 
                 eval_points.append(eval_point)
-                model.add_pseudo_point(eval_point)
+
+                y_pred, _ = eval_model.predict(eval_point)
+                eval_model = eval_model.condition_on(eval_point, y_pred)
 
                 candidate_xs = np.delete(candidate_xs, max_acquisition_index, axis=0)
-
-            model.remove_pseudo_points()
 
             # If no new evaluation points are selected, break
             if not eval_points:
@@ -72,16 +75,16 @@ class Optimizer:
             ys = np.vstack((ys, outp))
 
             for i, o in zip(inp, outp):
-                model.add_true_point(i, o)
+                model = model.condition_on(i.reshape((1, -1)), o.reshape((1, -1)))
 
             try:
-                model.train()
+                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts)
             except Exception as e:
                 print_message('Error: ' + str(e))
                 if not self.strict:
                     print_message('Failed to update model, continuing.')
                 else:
-                    raise
+                    raise e
 
             if self.create_checkpoints:
                 self.create_checkpoint(f=f, xs=xs, ys=ys)

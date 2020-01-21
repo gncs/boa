@@ -2,7 +2,7 @@ import abc
 
 import numpy as np
 
-from boa.models.abstract import AbstractModel
+from boa.models.abstract_model import AbstractModel
 
 
 class AbstractAcquisition:
