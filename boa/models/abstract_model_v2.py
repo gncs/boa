@@ -65,9 +65,6 @@ class AbstractModel(tf.keras.Model):
                               trainable=False,
                               shape=(None, output_dim))
 
-        self.num_pseudo_points = 0
-        self.num_true_points = 0
-
         self.xs_per_dim_percentiles = None
         self.ys_per_dim_percentiles = None
 
@@ -122,7 +119,6 @@ class AbstractModel(tf.keras.Model):
 
         model.xs.assign(xs)
         model.ys.assign(ys)
-        model.num_true_points = xs.shape[0]
 
         return model
 

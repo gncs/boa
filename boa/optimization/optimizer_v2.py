@@ -75,7 +75,7 @@ class Optimizer:
             ys = np.vstack((ys, outp))
 
             for i, o in zip(inp, outp):
-                model = model.condition_on(i.reshape((1, -1)), o.reshape(1, -1))
+                model = model.condition_on(i.reshape((1, -1)), o.reshape((1, -1)))
 
             try:
                 model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts)

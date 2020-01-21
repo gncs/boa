@@ -151,14 +151,6 @@ class GaussianProcess(tf.Module):
         gp.xs_forward_transform, gp.xs_backward_transform = self._create_transforms(xs)
         gp.ys_forward_transform, gp.ys_backward_transform = self._create_transforms(ys)
 
-        # gp.signal = gp.signal | (gp.xs_forward_transform(xs), gp.ys_forward_transform(ys))
-        #
-        # new_noise = GP(gp.noise.kernel, gp.noise.mean, graph=gp.signal.graph)
-        # gp.noise = new_noise
-        #
-        # new_jitter = GP(gp.jitter.kernel, gp.jitter.mean, graph=gp.signal.graph)
-        # gp.jitter = new_jitter
-
         return gp
 
     def log_pdf(self, xs, ys, normalize=False, latent=False, with_jitter=True):

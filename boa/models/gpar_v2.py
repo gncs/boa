@@ -219,14 +219,14 @@ class GPARModel(AbstractModel):
         if len(permutation) != self.output_dim:
             raise ModelError("Length of permutation must match the number of outputs!")
 
+        # Check if the permutation has every output in it
+        if len([x for x in range(self.output_dim) if x not in permutation]) != 0:
+            raise ModelError("Permutation must contain every output dimension!")
+
         # We're learning the hyperparameters for this permutation
         self.permutation = permutation
 
         ys = tf.gather(ys, indices=tf.convert_to_tensor(permutation, dtype=tf.int32), axis=1)
-
-        # Check if the permutation has every output in it
-        if len([x for x in range(self.output_dim) if x not in permutation]) != 0:
-            raise ModelError("Permutation must contain every output dimension!")
 
         logger.info(f"Training data supplied with xs shape {xs.shape} and ys shape {ys.shape}, training!")
 
