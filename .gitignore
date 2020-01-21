@@ -4,6 +4,7 @@ logs/
 
 # Temporary model files
 models/
+notebooks/
 notebooks/models/
 
 # Scratch folder
