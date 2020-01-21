@@ -252,7 +252,7 @@ class GPARModel(AbstractModel):
                                      length_scales=length_scales,
                                      noise_amplitude=noise_amplitude)
 
-                #ys_to_append = pred_ys if self.denoising else ys[:, :i]
+                # ys_to_append = pred_ys if self.denoising else ys[:, :i]
 
                 # Permute the output
                 ys_to_append = ys[:, :i]
@@ -439,21 +439,23 @@ class GPARModel(AbstractModel):
                     try:
                         if optimizer == "l-bfgs-b":
                             # Perform L-BFGS-B optimization
-                            loss = minimise_l_bfgs_b(lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
-                                                                                          length_scales=v[
-                                                                                              length_scales_name],
-                                                                                          noise_amplitude=v[noise_amp]),
-                                                     vs,
-                                                     names=[sig_amp_name,
-                                                            length_scales_name,
-                                                            noise_amp],
-                                                     trace=trace,
-                                                     iters=iters,
-                                                     err_level="raise")
+                            loss = minimise_l_bfgs_b(
+                                lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
+                                                                     length_scales=v[
+                                                                         length_scales_name],
+                                                                     noise_amplitude=v[noise_amp]),
+                                vs,
+                                names=[sig_amp_name,
+                                       length_scales_name,
+                                       noise_amp],
+                                trace=trace,
+                                iters=iters,
+                                err_level="raise")
                         else:
                             # Perform Adam optimization
                             loss = minimise_adam(lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
-                                                                                      length_scales=v[length_scales_name],
+                                                                                      length_scales=v[
+                                                                                          length_scales_name],
                                                                                       noise_amplitude=v[noise_amp]),
                                                  vs,
                                                  names=[sig_amp_name,
