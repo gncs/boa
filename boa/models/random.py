@@ -1,10 +1,13 @@
 import numpy as np
 
-from .abstract import AbstractModel
+from .abstract_model import AbstractModel
 
 
 class RandomModel(AbstractModel):
-    def __init__(self, seed, num_samples):
+    def __init__(self, seed, num_samples, name="random_model", **kwargs):
+
+        super(RandomModel, self).__init__(name=name, **kwargs)
+
         self.random_state = np.random.RandomState(seed=seed)
         self.num_samples = num_samples
 
@@ -15,7 +18,11 @@ class RandomModel(AbstractModel):
 
         self.ys = np.array([[]])
 
-    def set_data(self, xs, ys):
+    def condition_on(self, xs, ys):
+
+        # Performs validation of the inputs
+        super(RandomModel, self).condition_on(xs, ys)
+
         self.output_dim = ys.shape[1]
         self.ys = ys
 
@@ -39,10 +46,10 @@ class RandomModel(AbstractModel):
     def remove_pseudo_points(self):
         pass
 
-    def train(self):
+    def fit(self):
         self._update_mean_std()
 
-    def predict_batch(self, xs):
+    def predict(self, xs):
         return (self.random_state.normal(loc=self.ys_mean, scale=self.ys_std, size=(xs.shape[0], self.output_dim)),
                 np.var(
                     self.random_state.normal(loc=self.ys_mean,

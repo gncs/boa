@@ -1,12 +1,22 @@
+import logging
+
 from typing import List
 
-import matplotlib.pyplot as plt
-import numpy as np
-
+from boa.models.fully_factorized_gp import FullyFactorizedGPModel
 from boa.acquisition.smsego import SMSEGO
-from boa.models.gp import GPModel
 from boa.objective.abstract import AbstractObjective
 from boa.optimization.optimizer import Optimizer
+
+from boa.core.utils import setup_logger
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+
+tf.config.experimental.set_visible_devices([], 'GPU')
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/smsego_v2.log")
+
+FIG_SAVE_FOLDER = "plots/script_plots/smsego"
 
 
 def plot(xs, fs, preds, var, acqs, points_xs, points_ys):
@@ -42,118 +52,139 @@ def plot(xs, fs, preds, var, acqs, points_xs, points_ys):
     return fig
 
 
-# Target function (noise free).
-def f(X):
-    return (np.sinc(3 * X) + 0.5 * (X - 0.5)**2).reshape(-1, 1)
+def f(x):
+    """
+    Target function (noise free).
+    """
+    return (np.sinc(3 * x) + 0.5 * (x - 0.5)**2).reshape(-1, 1)
 
 
-# Generate X's and Y's for training.
-np.random.seed(42)
-X_train = np.array([
-    -0.25,
-    0,
-    0.1,
-]).reshape(-1, 1)
-Y_train = f(X_train)
+def manual_optimization(x_train, y_train):
 
-# Setup GP model and train.
-model = GPModel(kernel='rbf', num_optimizer_restarts=3)
-model.set_data(X_train, Y_train)
-model.train()
+    # Infer GP
+    model = FullyFactorizedGPModel(kernel="rbf", input_dim=1, output_dim=1, verbose=False)
 
-# Setup acquisition function
-acq = SMSEGO(gain=1, epsilon=0.1, reference=[2])
+    # Optimize the hyperparameters
+    model = model.condition_on(x_train, y_train)
+    model.fit_to_conditioning_data(optimizer_restarts=5)
 
-# Make predictions and evaluate acquisition function
-x_cont = np.linspace(start=-1.5, stop=1.5, num=200).reshape(-1, 1)
+    # Set up the acquisition function
+    acq = SMSEGO(gain=1., epsilon=0.1, reference=[2])
 
-data_x = X_train.copy()
-data_y = Y_train.copy()
+    # Make predictions and evaluate acquisition function
+    x_cont = np.linspace(start=-1.5, stop=1.5, num=200).reshape([-1, 1])
 
-# Manual exploration
-for iteration in range(5):
-    y_cont, var_cont = model.predict_batch(x_cont)
+    data_x = x_train.copy()
+    data_y = y_train.copy()
+
+    # Perform optimization without the optimizer interface
+    for i in range(5):
+
+        y_cont, var_cont = model.predict(x_cont)
+
+        logger.debug(f"{data_x.shape} {data_y.shape} {x_cont.shape} {y_cont.shape} {var_cont.shape}")
+
+        acquisition_values = acq.evaluate(model=model, xs=data_x, ys=data_y, candidate_xs=x_cont)
+
+        eval_point = x_cont[np.argmax(acquisition_values)]
+
+        fig = plot(xs=x_cont,
+                   fs=f(x_cont),
+                   preds=y_cont.numpy(),
+                   var=var_cont.numpy(),
+                   acqs=acquisition_values,
+                   points_xs=data_x,
+                   points_ys=data_y)
+
+        fig_path = FIG_SAVE_FOLDER + f"/manual_{i}.png"
+        fig.savefig(fig_path)
+        print(f"Saved image to {fig_path}!")
+
+        # Evaluate function at chosen points
+        inp = eval_point
+        outp = f(eval_point)
+
+        # Add evaluations to data set and model
+        data_x = np.vstack((data_x, inp))
+        data_y = np.vstack((data_y, outp))
+
+        model = model.condition_on(inp.reshape([-1, 1]), outp)
+
+        model.fit_to_conditioning_data(optimizer_restarts=3)
+
+
+def automated_optimization(x_train, y_train):
+    # SMS-EGO
+    # Wrap the objective f
+
+    # Make predictions and evaluate acquisition function
+    x_cont = np.linspace(start=-1.5, stop=1.5, num=200).reshape([-1, 1])
+
+    class Objective(AbstractObjective):
+        def __init__(self, fun, candidates):
+            super().__init__()
+            self.f = fun
+            self.candidates = candidates
+
+        def get_candidates(self) -> np.ndarray:
+            return self.candidates
+
+        def get_input_labels(self) -> List[str]:
+            return ['X']
+
+        def get_output_labels(self) -> List[str]:
+            return ['Y']
+
+        def __call__(self, candidate: np.ndarray) -> np.ndarray:
+            return self.f(candidate)
+
+    objective = Objective(fun=f, candidates=x_cont)
+
+    # Set up GP model and train it
+    model = FullyFactorizedGPModel(kernel='rbf', input_dim=1, output_dim=1, verbose=False)
+    model = model.condition_on(x_train, y_train)
+    model.fit_to_conditioning_data(optimizer_restarts=3)
+
+    # Setup the acquisition fn
+    acq = SMSEGO(gain=1, epsilon=0.1, reference=[2])
+
+    # Set up the optimizer
+    optimizer = Optimizer(max_num_iterations=4, batch_size=1, strict=True)
+
+    data_x, data_y = optimizer.optimize(f=objective,
+                                        model=model,
+                                        acq_fun=acq,
+                                        xs=x_train,
+                                        ys=y_train,
+                                        candidate_xs=x_cont,
+                                        optimizer_restarts=3)
+
+    model = model.condition_on(data_x, data_y, keep_previous=False)
+
+    y_cont, var_cont = model.predict(x_cont)
     acquisition_values = acq.evaluate(model=model, xs=data_x, ys=data_y, candidate_xs=x_cont)
-    eval_point = x_cont[np.argmax(acquisition_values)]
 
-    fig = plot(
-        xs=x_cont,
-        fs=f(x_cont),
-        preds=y_cont,
-        var=var_cont,
-        acqs=acquisition_values,
-        points_xs=data_x,
-        points_ys=data_y,
-    )
-    fig.show()
+    fig = plot(xs=x_cont,
+               fs=f(x_cont),
+               preds=y_cont.numpy(),
+               var=var_cont.numpy(),
+               acqs=acquisition_values,
+               points_xs=data_x,
+               points_ys=data_y)
 
-    # Evaluate function at chosen points
-    inp = eval_point
-    outp = f(eval_point)
-
-    # Add evaluations to data set and model
-    data_x = np.vstack((data_x, inp))
-    data_y = np.vstack((data_y, outp))
-    model.add_true_point(inp, outp)
-
-    model.train()
+    fig_path = FIG_SAVE_FOLDER + "/automated.png"
+    fig.savefig(fig_path)
+    print(f"Saved image to {fig_path}")
 
 
-# SMS-EGO
-# Wrap objective function f
-class Objective(AbstractObjective):
-    def __init__(self, fun, candidates):
-        super().__init__()
-        self.f = fun
-        self.candidates = candidates
+if __name__ == "__main__":
+    # Set seed for reproducibility
+    np.random.seed(42)
 
-    def get_candidates(self) -> np.ndarray:
-        return self.candidates
+    # Generate X's and Y's for training.
+    x_train = np.array([-0.25, 0, 0.1]).reshape(-1, 1)
+    y_train = f(x_train)
 
-    def get_input_labels(self) -> List[str]:
-        return ['X']
+    manual_optimization(x_train, y_train)
 
-    def get_output_labels(self) -> List[str]:
-        return ['Y']
-
-    def __call__(self, candidate: np.ndarray) -> np.ndarray:
-        return self.f(candidate)
-
-
-objective = Objective(fun=f, candidates=x_cont)
-
-# Setup GP model and train.
-model = GPModel(kernel='rbf', num_optimizer_restarts=3)
-model.set_data(X_train, Y_train)
-model.train()
-
-# Setup acquisition function
-acq = SMSEGO(gain=1, epsilon=0.1, reference=[2])
-
-# Optimize
-optimizer = Optimizer(max_num_iterations=4, batch_size=1)
-
-x_cont = np.linspace(start=-1.5, stop=1.5, num=200).reshape(-1, 1)
-
-data_x, data_y = optimizer.optimize(
-    f=objective,
-    model=model,
-    acq_fun=acq,
-    xs=X_train,
-    ys=Y_train,
-    candidate_xs=x_cont,
-)
-
-y_cont, var_cont = model.predict_batch(x_cont)
-acquisition_values = acq.evaluate(model=model, xs=data_x, ys=data_y, candidate_xs=x_cont)
-
-fig = plot(
-    xs=x_cont,
-    fs=f(x_cont),
-    preds=y_cont,
-    var=var_cont,
-    acqs=acquisition_values,
-    points_xs=data_x,
-    points_ys=data_y,
-)
-fig.show()
+    automated_optimization(x_train, y_train)

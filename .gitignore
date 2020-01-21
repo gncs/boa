@@ -1,8 +1,14 @@
-notebooks/
-
-# Logs
+# Logs folder
 logs/
 *.log
+
+# Temporary model files
+models/
+notebooks/
+notebooks/models/
+
+# Scratch folder
+scratch/
 
 # IDE
 .idea/
@@ -24,3 +30,7 @@ __pycache__/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# JSON checkpoints
+opt_chkpt.json
+opt_ckpt.json

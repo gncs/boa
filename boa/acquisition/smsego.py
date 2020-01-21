@@ -2,7 +2,7 @@ from typing import List, Tuple, Optional
 
 import numpy as np
 
-from boa.models.abstract import AbstractModel
+from boa.models.abstract_model import AbstractModel
 from .abstract import AbstractAcquisition
 from .util import calculate_hypervolume, get_frontier
 
@@ -34,7 +34,8 @@ class SMSEGO(AbstractAcquisition):
         ys = self.slice_output(ys)
 
         # Model predictions for candidates
-        means, var = model.predict_batch(candidate_xs)
+        means, var = model.predict(candidate_xs, numpy=True)
+
         means = self.slice_output(means)
         var = self.slice_output(var)
 
@@ -56,8 +57,10 @@ class SMSEGO(AbstractAcquisition):
         values = np.zeros((candidate_ys_normalized.shape[0], 1))
         for i, candidate in enumerate(candidate_ys_normalized):
             max_penalty = 0.0
+
             # Iterate over frontier values and choose maximum value
             for frontier in frontier_normalized:
+
                 # If frontier value is weakly dominating
                 if np.all(frontier <= candidate + self.epsilon):
                     penalty = -1 + np.prod(1 + (candidate - frontier))
