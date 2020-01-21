@@ -2,7 +2,7 @@ import logging
 
 import json
 
-from typing import Tuple, List
+from typing import List
 
 import tensorflow as tf
 from varz.tensorflow import minimise_l_bfgs_b, Vars
@@ -11,7 +11,7 @@ import numpy as np
 
 from boa.core.gp import GaussianProcess
 from boa.core.utils import setup_logger
-from .abstract_model import AbstractModel, ModelError
+from .abstract_model import AbstractModel
 
 __all__ = ["FullyFactorizedGPModel"]
 
