@@ -15,7 +15,6 @@ logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="
 
 
 class GPARModel(AbstractModel):
-
     def __init__(self,
                  kernel: str,
                  input_dim: int,
@@ -55,20 +54,16 @@ class GPARModel(AbstractModel):
         for i in range(self.output_dim):
             # Note the scaling in dimension
             if _create_length_scales:
-                self.length_scales.append(tf.Variable(tf.ones(self.input_dim + i,
-                                                              dtype=tf.float64),
-                                                      name=f"{i}/length_scales",
-                                                      trainable=False))
+                self.length_scales.append(
+                    tf.Variable(tf.ones(self.input_dim + i, dtype=tf.float64),
+                                name=f"{i}/length_scales",
+                                trainable=False))
 
-            self.signal_amplitudes.append(tf.Variable((1,),
-                                                      dtype=tf.float64,
-                                                      name=f"{i}/signal_amplitude",
-                                                      trainable=False))
+            self.signal_amplitudes.append(
+                tf.Variable((1, ), dtype=tf.float64, name=f"{i}/signal_amplitude", trainable=False))
 
-            self.noise_amplitudes.append(tf.Variable((1,),
-                                                     dtype=tf.float64,
-                                                     name=f"{i}/noise_amplitude",
-                                                     trainable=False))
+            self.noise_amplitudes.append(
+                tf.Variable((1, ), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
 
     def create_hyperparameters(self) -> Vars:
         """
@@ -92,22 +87,13 @@ class GPARModel(AbstractModel):
             noise_var_name = f"{i}/noise_amplitude"
 
             # Note the scaling in dimension with the index
-            vs.bnd(init=tf.ones(self.input_dim + i, dtype=tf.float64),
-                   lower=1e-3,
-                   upper=1e2,
-                   name=ls_name)
+            vs.bnd(init=tf.ones(self.input_dim + i, dtype=tf.float64), lower=1e-3, upper=1e2, name=ls_name)
 
             # GP variance
-            vs.bnd(init=tf.ones(1, dtype=tf.float64),
-                   lower=1e-4,
-                   upper=1e4,
-                   name=gp_var_name)
+            vs.bnd(init=tf.ones(1, dtype=tf.float64), lower=1e-4, upper=1e4, name=gp_var_name)
 
             # Noise variance: bound between 1e-4 and 1e4
-            vs.bnd(init=tf.ones(1, dtype=tf.float64),
-                   lower=1e-6,
-                   upper=1e2,
-                   name=noise_var_name)
+            vs.bnd(init=tf.ones(1, dtype=tf.float64), lower=1e-6, upper=1e2, name=noise_var_name)
 
         return vs
 
@@ -136,12 +122,12 @@ class GPARModel(AbstractModel):
             ys_ls_rand_range = tf.minimum(self.ys_euclidean_percentiles[2] - self.ys_euclidean_percentiles[0],
                                           self.ys_euclidean_percentiles[4] - self.ys_euclidean_percentiles[2])
 
-            xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
+            xs_ls_init += tf.random.uniform(shape=(self.input_dim, ),
                                             minval=-xs_ls_rand_range,
                                             maxval=xs_ls_rand_range,
                                             dtype=tf.float64)
 
-            ys_ls_init += tf.random.uniform(shape=(index,),
+            ys_ls_init += tf.random.uniform(shape=(index, ),
                                             minval=-ys_ls_rand_range,
                                             maxval=ys_ls_rand_range,
                                             dtype=tf.float64)
@@ -154,7 +140,7 @@ class GPARModel(AbstractModel):
             xs_ls_rand_range = tf.minimum(self.xs_per_dim_percentiles[:, 2] - self.xs_per_dim_percentiles[:, 0],
                                           self.xs_per_dim_percentiles[:, 4] - self.xs_per_dim_percentiles[:, 2])
 
-            xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
+            xs_ls_init += tf.random.uniform(shape=(self.input_dim, ),
                                             minval=-xs_ls_rand_range,
                                             maxval=xs_ls_rand_range,
                                             dtype=tf.float64)
@@ -164,7 +150,7 @@ class GPARModel(AbstractModel):
                 self.ys_per_dim_percentiles[:index, 2] - self.ys_per_dim_percentiles[:index, 0],
                 self.ys_per_dim_percentiles[:index, 4] - self.ys_per_dim_percentiles[:index, 2])
 
-            ys_ls_init += tf.random.uniform(shape=(index,),
+            ys_ls_init += tf.random.uniform(shape=(index, ),
                                             minval=-ys_ls_rand_range,
                                             maxval=ys_ls_rand_range,
                                             dtype=tf.float64)
@@ -173,23 +159,16 @@ class GPARModel(AbstractModel):
             ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
 
         else:
-            ls_init = tf.random.uniform(shape=(self.input_dim + index,),
+            ls_init = tf.random.uniform(shape=(self.input_dim + index, ),
                                         minval=init_minval,
                                         maxval=init_maxval,
                                         dtype=tf.float64)
         vs.assign(ls_name, ls_init)
 
-        vs.assign(gp_var_name,
-                  tf.random.uniform(shape=(1,),
-                                    minval=init_minval,
-                                    maxval=init_maxval,
-                                    dtype=tf.float64))
+        vs.assign(gp_var_name, tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval, dtype=tf.float64))
 
         vs.assign(noise_var_name,
-                  tf.random.uniform(shape=(1,),
-                                    minval=init_minval,
-                                    maxval=init_maxval,
-                                    dtype=tf.float64))
+                  tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval, dtype=tf.float64))
 
     def fit(self,
             xs,
@@ -273,26 +252,22 @@ class GPARModel(AbstractModel):
                 try:
                     if optimizer == "l-bfgs-b":
                         # Perform L-BFGS-B optimization
-                        loss = minimise_l_bfgs_b(lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
-                                                                                      length_scales=v[
-                                                                                          length_scales_name],
-                                                                                      noise_amplitude=v[noise_amp]),
-                                                 vs,
-                                                 names=[sig_amp_name,
-                                                        length_scales_name,
-                                                        noise_amp],
-                                                 trace=trace,
-                                                 iters=iters,
-                                                 err_level="raise")
+                        loss = minimise_l_bfgs_b(
+                            lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
+                                                                 length_scales=v[length_scales_name],
+                                                                 noise_amplitude=v[noise_amp]),
+                            vs,
+                            names=[sig_amp_name, length_scales_name, noise_amp],
+                            trace=trace,
+                            iters=iters,
+                            err_level="raise")
                     else:
                         # Perform Adam optimization
                         loss = minimise_adam(lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
                                                                                   length_scales=v[length_scales_name],
                                                                                   noise_amplitude=v[noise_amp]),
                                              vs,
-                                             names=[sig_amp_name,
-                                                    length_scales_name,
-                                                    noise_amp],
+                                             names=[sig_amp_name, length_scales_name, noise_amp],
                                              iters=iters,
                                              rate=rate,
                                              trace=trace)
@@ -402,8 +377,9 @@ class GPARModel(AbstractModel):
             logger.info(f"Selecting output {i}!")
 
             # Search through the remaining output dimensions
-            remaining_dimensions = [dim for dim in range(self.output_dim - num_target_dimensions)
-                                    if dim not in permutation]
+            remaining_dimensions = [
+                dim for dim in range(self.output_dim - num_target_dimensions) if dim not in permutation
+            ]
 
             # Perform robust optimization for each candidate loss
             for candidate_dim in remaining_dimensions:
@@ -441,29 +417,24 @@ class GPARModel(AbstractModel):
                             # Perform L-BFGS-B optimization
                             loss = minimise_l_bfgs_b(
                                 lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
-                                                                     length_scales=v[
-                                                                         length_scales_name],
+                                                                     length_scales=v[length_scales_name],
                                                                      noise_amplitude=v[noise_amp]),
                                 vs,
-                                names=[sig_amp_name,
-                                       length_scales_name,
-                                       noise_amp],
+                                names=[sig_amp_name, length_scales_name, noise_amp],
                                 trace=trace,
                                 iters=iters,
                                 err_level="raise")
                         else:
                             # Perform Adam optimization
-                            loss = minimise_adam(lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
-                                                                                      length_scales=v[
-                                                                                          length_scales_name],
-                                                                                      noise_amplitude=v[noise_amp]),
-                                                 vs,
-                                                 names=[sig_amp_name,
-                                                        length_scales_name,
-                                                        noise_amp],
-                                                 iters=iters,
-                                                 rate=rate,
-                                                 trace=trace)
+                            loss = minimise_adam(
+                                lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
+                                                                     length_scales=v[length_scales_name],
+                                                                     noise_amplitude=v[noise_amp]),
+                                vs,
+                                names=[sig_amp_name, length_scales_name, noise_amp],
+                                iters=iters,
+                                rate=rate,
+                                trace=trace)
 
                     except tf.errors.InvalidArgumentError as e:
                         logger.error(str(e))
@@ -549,7 +520,7 @@ class GPARModel(AbstractModel):
             gp_input = tf.concat([xs] + means, axis=1)
             gp_train_input = tf.concat([self.xs, train_ys[:, :i]], axis=1)
 
-            model = model | (gp_train_input, train_ys[:, i: i + 1])
+            model = model | (gp_train_input, train_ys[:, i:i + 1])
 
             mean, var = model.predict(gp_input, latent=False)
 

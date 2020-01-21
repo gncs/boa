@@ -25,7 +25,8 @@ class AbstractModel(tf.keras.Model):
                  output_dim: int,
                  parallel: bool = False,
                  verbose: bool = False,
-                 name: str = "abstract_model", **kwargs):
+                 name: str = "abstract_model",
+                 **kwargs):
         """
 
         :param kernel:
@@ -186,8 +187,7 @@ class AbstractModel(tf.keras.Model):
 
         if (not output and xs.shape[1] != self.input_dim) or \
                 (output and xs.shape[1] != self.output_dim):
-            raise ModelError(
-                f"The second dimension of the input is incorrect: {xs.shape[1]}!")
+            raise ModelError(f"The second dimension of the input is incorrect: {xs.shape[1]}!")
 
         return xs
 

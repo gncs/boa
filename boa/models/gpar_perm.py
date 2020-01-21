@@ -46,25 +46,20 @@ class PermutedGPARModel(GPARModel):
         # we can use Keras' serialization features
         for i in range(self.output_dim):
             # Note the scaling in dimension
-            self.length_scales.append(tf.Variable(tf.ones(self.input_dim + i,
-                                                          dtype=tf.float64),
-                                                  name=f"{i}/length_scales"))
+            self.length_scales.append(
+                tf.Variable(tf.ones(self.input_dim + i, dtype=tf.float64), name=f"{i}/length_scales"))
 
-            self.signal_amplitudes.append(tf.Variable((1,),
-                                                      dtype=tf.float64,
-                                                      name=f"{i}/signal_amplitude"))
+            self.signal_amplitudes.append(tf.Variable((1, ), dtype=tf.float64, name=f"{i}/signal_amplitude"))
 
-            self.noise_amplitudes.append(tf.Variable((1,),
-                                                     dtype=tf.float64,
-                                                     name=f"{i}/noise_amplitude"))
+            self.noise_amplitudes.append(tf.Variable((1, ), dtype=tf.float64, name=f"{i}/noise_amplitude"))
 
     def permutation_matrix(self, log_mat, temperature, sinkhorn_iterations=20, soft=True):
 
         temperature = tf.cast(temperature, tf.float64)
 
         # Add Gumbel noise for robustness
-        log_perm_mat = log_mat - tf.math.log(-tf.math.log(tf.random.uniform(shape=log_mat.shape,
-                                                                            dtype=tf.float64) + 1e-20))
+        log_perm_mat = log_mat - tf.math.log(
+            -tf.math.log(tf.random.uniform(shape=log_mat.shape, dtype=tf.float64) + 1e-20))
         log_perm_mat = log_perm_mat - tf.math.log(temperature)
 
         # Perform Sinkhorn normalization
@@ -89,10 +84,7 @@ class PermutedGPARModel(GPARModel):
 
     # [self.permutation] + \
 
-    def initialize_hyperparameters(self,
-                                   length_scale_init="random",
-                                   init_minval=0.5,
-                                   init_maxval=2.0):
+    def initialize_hyperparameters(self, length_scale_init="random", init_minval=0.5, init_maxval=2.0):
 
         permutation = tf.Variable(tf.random.uniform(shape=(self.output_dim, self.output_dim), dtype=tf.float64))
 
@@ -114,12 +106,12 @@ class PermutedGPARModel(GPARModel):
                 ys_ls_rand_range = tf.minimum(self.ys_euclidean_percentiles[2] - self.ys_euclidean_percentiles[0],
                                               self.ys_euclidean_percentiles[4] - self.ys_euclidean_percentiles[2])
 
-                xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
+                xs_ls_init += tf.random.uniform(shape=(self.input_dim, ),
                                                 minval=-xs_ls_rand_range,
                                                 maxval=xs_ls_rand_range,
                                                 dtype=tf.float64)
 
-                ys_ls_init += tf.random.uniform(shape=(index,),
+                ys_ls_init += tf.random.uniform(shape=(index, ),
                                                 minval=-ys_ls_rand_range,
                                                 maxval=ys_ls_rand_range,
                                                 dtype=tf.float64)
@@ -128,33 +120,36 @@ class PermutedGPARModel(GPARModel):
                 ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
 
             else:
-                ls_init = tf.random.uniform(shape=(self.input_dim + index,),
+                ls_init = tf.random.uniform(shape=(self.input_dim + index, ),
                                             minval=init_minval,
                                             maxval=init_maxval,
                                             dtype=tf.float64)
 
             # Note the scaling in dimension
-            length_scales.append(BoundedVariable(ls_init,
-                                                 lower=1e-3,
-                                                 upper=1e2))
+            length_scales.append(BoundedVariable(ls_init, lower=1e-3, upper=1e2))
 
-            signal_amplitudes.append(BoundedVariable(tf.random.uniform(shape=(1,),
-                                                                       minval=init_minval,
-                                                                       maxval=init_maxval,
-                                                                       dtype=tf.float64),
-                                                     lower=1e-4,
-                                                     upper=1e4))
+            signal_amplitudes.append(
+                BoundedVariable(tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval,
+                                                  dtype=tf.float64),
+                                lower=1e-4,
+                                upper=1e4))
 
-            noise_amplitudes.append(BoundedVariable(tf.random.uniform(shape=(1,),
-                                                                      minval=init_minval,
-                                                                      maxval=init_maxval,
-                                                                      dtype=tf.float64),
-                                                    lower=1e-6,
-                                                    upper=1e2))
+            noise_amplitudes.append(
+                BoundedVariable(tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval,
+                                                  dtype=tf.float64),
+                                lower=1e-6,
+                                upper=1e2))
 
         return permutation, length_scales, signal_amplitudes, noise_amplitudes
 
-    def fit(self, xs, ys, optimizer_restarts=1, learn_rate=1e-1, tol=1e-6, iters=1000, start_temp=2.,
+    def fit(self,
+            xs,
+            ys,
+            optimizer_restarts=1,
+            learn_rate=1e-1,
+            tol=1e-6,
+            iters=1000,
+            start_temp=2.,
             end_temp=1e-10) -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
@@ -183,8 +178,7 @@ class PermutedGPARModel(GPARModel):
                   list(map(lambda x: x.reparameterization, noise_amplitudes))
 
             # Epsilon set to 1e-8 to match Wessel's Varz Adam settings.
-            optimizer = tf.optimizers.Adam(learn_rate,
-                                           epsilon=1e-8)
+            optimizer = tf.optimizers.Adam(learn_rate, epsilon=1e-8)
             prev_loss = np.inf
 
             with trange(iters) as t:
@@ -284,7 +278,7 @@ class PermutedGPARModel(GPARModel):
             gp_input = tf.concat([xs] + means, axis=1)
             gp_train_input = tf.concat([self.xs, permuted_ys[:, :i]], axis=1)
 
-            model = model | (gp_train_input, permuted_ys[:, i: i + 1])
+            model = model | (gp_train_input, permuted_ys[:, i:i + 1])
 
             mean, var = model.predict(gp_input, latent=False)
 

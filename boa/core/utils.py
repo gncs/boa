@@ -127,7 +127,7 @@ def calculate_per_dimension_distance_percentiles(xs, percents):
         if dim_dists.shape[0] > 0:
             dim_percentile = tfp.stats.percentile(dim_dists, percents, axis=0)
         else:
-            dim_percentile = tf.zeros((len(percents),), dtype=xs.dtype)
+            dim_percentile = tf.zeros((len(percents), ), dtype=xs.dtype)
 
         dim_percentiles.append(dim_percentile)
 

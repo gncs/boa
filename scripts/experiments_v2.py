@@ -26,11 +26,7 @@ AVAILABLE_DATASETS = ["fft", "stencil3d"]
 AVAILABLE_OPTIMIZERS = ["l-bfgs-b", "adam"]
 AVAILABLE_INITIALIZATION = ["median", "random", "dim_median"]
 
-LOG_LEVELS = {
-    "info": logging.INFO,
-    "debug": logging.DEBUG,
-    "warn": logging.WARNING
-}
+LOG_LEVELS = {"info": logging.INFO, "debug": logging.DEBUG, "warn": logging.WARNING}
 
 DEFAULT_MODEL_SAVE_DIR = "models/experiments_v2/"
 
@@ -70,18 +66,12 @@ def run_experiment(model,
                 logger.info(f"Training round: {index + 1} for training set size {size}")
                 logger.info("-----------------------------------------------------------")
 
-            experiment = {'index': index,
-                          'size': size,
-                          'inputs': inputs,
-                          'outputs': outputs}
+            experiment = {'index': index, 'size': size, 'inputs': inputs, 'outputs': outputs}
 
             if matrix_factorized:
                 experiment["latent_size"] = model.latent_dim
 
-            train, test = train_test_split(data,
-                                           train_size=size,
-                                           test_size=200,
-                                           random_state=seed + index)
+            train, test = train_test_split(data, train_size=size, test_size=200, random_state=seed + index)
 
             start_time = time.time()
             try:
@@ -130,8 +120,7 @@ def prepare_ff_gp_data(data):
     return data.df, data.input_labels.copy(), data.output_labels.copy()
 
 
-def prepare_ff_gp_aux_data(data,
-                           targets):
+def prepare_ff_gp_aux_data(data, targets):
     inputs = data.input_labels + data.output_labels
 
     for x in targets:
@@ -140,8 +129,7 @@ def prepare_ff_gp_aux_data(data,
     return data.df, inputs, targets
 
 
-def prepare_gpar_data(data,
-                      targets):
+def prepare_gpar_data(data, targets):
     output_labels = data.output_labels.copy()
 
     for target in targets:
@@ -151,18 +139,14 @@ def prepare_gpar_data(data,
     return data.df, data.input_labels.copy(), output_labels
 
 
-def main(args,
-         seed=27,
-         experiment_json_format="{}_experiments.json",
-         targets=('avg_power', 'cycle', 'total_area')):
+def main(args, seed=27, experiment_json_format="{}_experiments.json", targets=('avg_power', 'cycle', 'total_area')):
     data = load_dataset(path=args.dataset, kind=args.task)
 
     model = None
 
     if args.model == 'ff-gp':
         df, input_labels, output_labels = prepare_ff_gp_data(data)
-        df_aux, input_labels_aux, output_labels_aux = prepare_ff_gp_aux_data(data,
-                                                                             targets)
+        df_aux, input_labels_aux, output_labels_aux = prepare_ff_gp_aux_data(data, targets)
 
         model = FullyFactorizedGPModel(kernel=args.kernel,
                                        input_dim=len(input_labels),
@@ -185,8 +169,7 @@ def main(args,
                                  verbose=args.verbose)
 
     elif args.model in ["gpar", "mf-gpar", "p-gpar"]:
-        df, input_labels, output_labels = prepare_gpar_data(data,
-                                                            targets)
+        df, input_labels, output_labels = prepare_gpar_data(data, targets)
 
         if args.model == 'gpar':
             model = GPARModel(kernel=args.kernel,
@@ -236,24 +219,28 @@ def main(args,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--dataset', '-D', type=str, required=True,
-                        help="Path to the dataset.")
+    parser.add_argument('--dataset', '-D', type=str, required=True, help="Path to the dataset.")
 
-    parser.add_argument('--task', '-T', choices=AVAILABLE_DATASETS, required=True,
+    parser.add_argument('--task',
+                        '-T',
+                        choices=AVAILABLE_DATASETS,
+                        required=True,
                         help="Task for which we are providing the dataset.")
 
-    parser.add_argument('--logdir', type=str, default="logs",
+    parser.add_argument('--logdir',
+                        type=str,
+                        default="logs",
                         help="Path to the directory to which we will write the log files "
-                             "for the experiment.")
+                        "for the experiment.")
 
-    parser.add_argument('--loglevel', choices=LOG_LEVELS, )
+    parser.add_argument(
+        '--loglevel',
+        choices=LOG_LEVELS,
+    )
 
-    parser.add_argument('--verbose', action="store_true", default=False,
-                        help="Turns on verbose logging")
+    parser.add_argument('--verbose', action="store_true", default=False, help="Turns on verbose logging")
 
-    model_subparsers = parser.add_subparsers(title="model",
-                                             dest="model",
-                                             help="Model to fit to the data.")
+    model_subparsers = parser.add_subparsers(title="model", dest="model", help="Model to fit to the data.")
 
     model_subparsers.required = True
 
@@ -280,8 +267,7 @@ if __name__ == "__main__":
                                                formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                                description="use a GPAR Model with factorized length scale matrix")
 
-    mf_gpar_mode.add_argument("--latent_dim", type=int, default=5,
-                              help="Effective dimension of the factorization.")
+    mf_gpar_mode.add_argument("--latent_dim", type=int, default=5, help="Effective dimension of the factorization.")
 
     # =========================================================================
     # Permuted GPAR

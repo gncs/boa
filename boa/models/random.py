@@ -4,7 +4,6 @@ from .abstract_model_v2 import AbstractModel
 
 
 class RandomModel(AbstractModel):
-
     def __init__(self, seed, num_samples, name="random_model", **kwargs):
 
         super(RandomModel, self).__init__(name=name, **kwargs)

@@ -26,13 +26,9 @@ from boa.optimization.optimizer_v2 import Optimizer
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/bayesopt_experiment_v2.log")
 
-OBJECTIVE_TARGETS = {
-    "fft": ['cycle', 'avg_power', 'total_area'],
-    "stencil3d": []
-}
+OBJECTIVE_TARGETS = {"fft": ['cycle', 'avg_power', 'total_area'], "stencil3d": []}
 
-AVAILABLE_DATASETS = ["fft",
-                      "stencil3d"]
+AVAILABLE_DATASETS = ["fft", "stencil3d"]
 
 AVAILABLE_OPTIMIZERS = ["l-bfgs-b", "adam"]
 
@@ -79,14 +75,7 @@ class Objective(AbstractObjective):
         return self.data.loc[mask, self.output_labels].values
 
 
-def optimize(objective,
-             model,
-             model_optimizer,
-             model_optimizer_restarts,
-             optimizer,
-             acq,
-             seed: int,
-             verbose) -> Data:
+def optimize(objective, model, model_optimizer, model_optimizer_restarts, optimizer, acq, seed: int, verbose) -> Data:
     np.random.seed(seed)
     tf.random.set_seed(seed)
 
@@ -94,49 +83,36 @@ def optimize(objective,
 
     candidates = objective.get_candidates()
 
-    data = generate_data(objective=objective,
-                         size=init_data_size,
-                         seed=seed)
+    data = generate_data(objective=objective, size=init_data_size, seed=seed)
 
-    model = model.condition_on(xs=data.input,
-                               ys=data.output)
+    model = model.condition_on(xs=data.input, ys=data.output)
 
     model.fit_to_conditioning_data(optimizer_restarts=model_optimizer_restarts,
                                    optimizer=model_optimizer,
                                    trace=verbose)
 
-    xs, ys = optimizer.optimize(
-        f=objective,
-        model=model,
-        acq_fun=acq,
-        xs=data.input,
-        ys=data.output,
-        candidate_xs=candidates,
-        optimizer_restarts=3
-    )
+    xs, ys = optimizer.optimize(f=objective,
+                                model=model,
+                                acq_fun=acq,
+                                xs=data.input,
+                                ys=data.output,
+                                candidate_xs=candidates,
+                                optimizer_restarts=3)
 
-    return Data(xs=xs,
-                ys=ys,
-                x_labels=objective.input_labels,
-                y_labels=objective.output_labels)
+    return Data(xs=xs, ys=ys, x_labels=objective.input_labels, y_labels=objective.output_labels)
 
 
 def get_default_acq_config(df: pd.DataFrame, objective_labels) -> dict:
     max_values = df[objective_labels].apply(max).values
 
-    return {'gain': 1,
-            'epsilon': 0.01,
-            'reference': max_values,
-            'output_slice': (-3, None)
-            }
+    return {'gain': 1, 'epsilon': 0.01, 'reference': max_values, 'output_slice': (-3, None)}
 
 
 def prepare_ff_gp_data(data):
     return data.df, data.input_labels.copy(), data.output_labels.copy()
 
 
-def prepare_gpar_data(data,
-                      targets):
+def prepare_gpar_data(data, targets):
     output_labels = data.output_labels.copy()
 
     for target in targets:
@@ -150,8 +126,7 @@ def main(args):
     dataset = load_dataset(path=args.dataset, kind=args.task)
 
     # Setup acquisition function
-    acq_config = get_default_acq_config(dataset.df,
-                                        objective_labels=OBJECTIVE_TARGETS[args.task])
+    acq_config = get_default_acq_config(dataset.df, objective_labels=OBJECTIVE_TARGETS[args.task])
     smsego_acq = SMSEGO(**acq_config)
 
     # Setup optimizer
@@ -167,8 +142,7 @@ def main(args):
                                        initialization_heuristic=args.initialization,
                                        verbose=args.verbose)
     elif args.model in ["gpar", "mf-gpar"]:
-        df, input_labels, output_labels = prepare_gpar_data(dataset,
-                                                            targets=OBJECTIVE_TARGETS[args.task])
+        df, input_labels, output_labels = prepare_gpar_data(dataset, targets=OBJECTIVE_TARGETS[args.task])
         if args.model == "gpar":
             model = GPARModel(kernel=args.kernel,
                               input_dim=len(input_labels),
@@ -186,9 +160,7 @@ def main(args):
 
     # Run the optimization
     for seed in range(5):
-        results = optimize(objective=Objective(df=df,
-                                               input_labels=input_labels,
-                                               output_labels=output_labels),
+        results = optimize(objective=Objective(df=df, input_labels=input_labels, output_labels=output_labels),
                            model=model,
                            model_optimizer=args.optimizer,
                            model_optimizer_restarts=args.num_optimizer_restarts,
@@ -210,22 +182,23 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--dataset', '-D', type=str, required=True,
-                        help="Path to the dataset.")
+    parser.add_argument('--dataset', '-D', type=str, required=True, help="Path to the dataset.")
 
-    parser.add_argument('--task', '-T', choices=AVAILABLE_DATASETS, required=True,
+    parser.add_argument('--task',
+                        '-T',
+                        choices=AVAILABLE_DATASETS,
+                        required=True,
                         help="Task for which we are providing the dataset.")
 
-    parser.add_argument('--logdir', type=str, default="logs",
+    parser.add_argument('--logdir',
+                        type=str,
+                        default="logs",
                         help="Path to the directory to which we will write the log files "
-                             "for the experiment.")
+                        "for the experiment.")
 
-    parser.add_argument('--verbose', action="store_true", default=False,
-                        help="Turns on verbose logging")
+    parser.add_argument('--verbose', action="store_true", default=False, help="Turns on verbose logging")
 
-    model_subparsers = parser.add_subparsers(title="model",
-                                             dest="model",
-                                             help="Model to fit to the data.")
+    model_subparsers = parser.add_subparsers(title="model", dest="model", help="Model to fit to the data.")
 
     model_subparsers.required = True
 
@@ -253,8 +226,7 @@ if __name__ == "__main__":
                                                formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                                description="use a GPAR Model with factorized length scale matrix")
 
-    mf_gpar_mode.add_argument("--latent_dim", type=int, default=5,
-                              help="Effective dimension of the factorization.")
+    mf_gpar_mode.add_argument("--latent_dim", type=int, default=5, help="Effective dimension of the factorization.")
 
     # Add common options to models
     for mode in [ff_gp_mode, gpar_mode, mf_gpar_mode]:

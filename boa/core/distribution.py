@@ -21,7 +21,6 @@ class Distribution(tf.Module):
 
 
 class GumbelMatching(Distribution):
-
     def __init__(self, weight_matrix, dtype=tf.float64, name="gumbel_matching_distribution", **kwargs):
         super(GumbelMatching, self).__init__(dtype=dtype, name=name, **kwargs)
 

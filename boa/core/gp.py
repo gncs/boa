@@ -17,8 +17,10 @@ class GaussianProcess(tf.Module):
     the hyperparameters of models.
     """
 
-    AVAILABLE_KERNELS = {"rbf": EQ,
-                         "matern52": Matern52, }
+    AVAILABLE_KERNELS = {
+        "rbf": EQ,
+        "matern52": Matern52,
+    }
 
     SIG_AMP = "signal_amplitude"
     LEN_SCALE = "length_scales"
@@ -63,7 +65,7 @@ class GaussianProcess(tf.Module):
         if tf.rank(self.length_scales) > 1:
             raise CoreError(f"Length scales rank must be at most 1!")
 
-        self. length_scales = tf.reshape(self.length_scales, [-1])
+        self.length_scales = tf.reshape(self.length_scales, [-1])
 
         if tf.reduce_any(self.length_scales <= 0):
             raise CoreError(f"All length scale amplitudes must be strictly positive! {self.length_scales} was given.")
@@ -253,4 +255,3 @@ class GaussianProcess(tf.Module):
                 return (x * std) + mean
 
         return forward, backward
-

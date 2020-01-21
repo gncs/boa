@@ -56,7 +56,7 @@ def f(x):
     """
     Target function (noise free).
     """
-    return (np.sinc(3 * x) + 0.5 * (x - 0.5) ** 2).reshape(-1, 1)
+    return (np.sinc(3 * x) + 0.5 * (x - 0.5)**2).reshape(-1, 1)
 
 
 def manual_optimization(x_train, y_train):
@@ -88,14 +88,13 @@ def manual_optimization(x_train, y_train):
 
         eval_point = x_cont[np.argmax(acquisition_values)]
 
-        fig = plot(
-                xs=x_cont,
-                fs=f(x_cont),
-                preds=y_cont.numpy(),
-                var=var_cont.numpy(),
-                acqs=acquisition_values,
-                points_xs=data_x,
-                points_ys=data_y)
+        fig = plot(xs=x_cont,
+                   fs=f(x_cont),
+                   preds=y_cont.numpy(),
+                   var=var_cont.numpy(),
+                   acqs=acquisition_values,
+                   points_xs=data_x,
+                   points_ys=data_y)
 
         fig_path = FIG_SAVE_FOLDER + f"/manual_{i}.png"
         fig.savefig(fig_path)
@@ -122,7 +121,6 @@ def automated_optimization(x_train, y_train):
     x_cont = np.linspace(start=-1.5, stop=1.5, num=200).reshape([-1, 1])
 
     class Objective(AbstractObjective):
-
         def __init__(self, fun, candidates):
             super().__init__()
             self.f = fun
@@ -153,30 +151,26 @@ def automated_optimization(x_train, y_train):
     # Set up the optimizer
     optimizer = Optimizer(max_num_iterations=4, batch_size=1, strict=True)
 
-    data_x, data_y = optimizer.optimize(
-        f=objective,
-        model=model,
-        acq_fun=acq,
-        xs=x_train,
-        ys=y_train,
-        candidate_xs=x_cont,
-        optimizer_restarts=3
-    )
+    data_x, data_y = optimizer.optimize(f=objective,
+                                        model=model,
+                                        acq_fun=acq,
+                                        xs=x_train,
+                                        ys=y_train,
+                                        candidate_xs=x_cont,
+                                        optimizer_restarts=3)
 
     model = model.condition_on(data_x, data_y, keep_previous=False)
 
     y_cont, var_cont = model.predict(x_cont)
     acquisition_values = acq.evaluate(model=model, xs=data_x, ys=data_y, candidate_xs=x_cont)
 
-    fig = plot(
-        xs=x_cont,
-        fs=f(x_cont),
-        preds=y_cont.numpy(),
-        var=var_cont.numpy(),
-        acqs=acquisition_values,
-        points_xs=data_x,
-        points_ys=data_y
-    )
+    fig = plot(xs=x_cont,
+               fs=f(x_cont),
+               preds=y_cont.numpy(),
+               var=var_cont.numpy(),
+               acqs=acquisition_values,
+               points_xs=data_x,
+               points_ys=data_y)
 
     fig_path = FIG_SAVE_FOLDER + "/automated.png"
     fig.savefig(fig_path)

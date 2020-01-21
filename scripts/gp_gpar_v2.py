@@ -46,11 +46,7 @@ def run():
     y_pred_ff_gp, var_pred_ff_gp = ff_gp.predict(x_cont, numpy=True)
 
     # GPAR model
-    gpar = GPARModel(kernel='rbf',
-                     input_dim=2,
-                     output_dim=1,
-                     initialization_heuristic="median",
-                     verbose=False)
+    gpar = GPARModel(kernel='rbf', input_dim=2, output_dim=1, initialization_heuristic="median", verbose=False)
     gpar = gpar.condition_on(x_train, y_train)
     gpar.fit_to_conditioning_data(optimizer_restarts=10)
 
@@ -64,8 +60,7 @@ def run():
     ax.plot(x_cont[:, 0], f(x_cont), color='black', linestyle='dashed', label='f', zorder=-1)
 
     ax.plot(x_cont[:, 0], y_pred_ff_gp, color='C0', zorder=-1, label=r'$\mathcal{GP}$')
-    ax.fill_between(x_cont.T[0],
-                    (y_pred_ff_gp + 2 * np.sqrt(var_pred_ff_gp)).T[0],
+    ax.fill_between(x_cont.T[0], (y_pred_ff_gp + 2 * np.sqrt(var_pred_ff_gp)).T[0],
                     (y_pred_ff_gp - 2 * np.sqrt(var_pred_ff_gp)).T[0],
                     color='C0',
                     alpha=0.3,
@@ -73,8 +68,7 @@ def run():
                     label=r'$\pm2\sigma$')
 
     ax.plot(x_cont[:, 0], y_pred_gpar, color='C1', zorder=-1, label=r'$\mathcal{GPAR}$', linestyle='dashed')
-    ax.fill_between(x_cont.T[0],
-                    (y_pred_gpar + 2 * np.sqrt(var_pred_gpar)).T[0],
+    ax.fill_between(x_cont.T[0], (y_pred_gpar + 2 * np.sqrt(var_pred_gpar)).T[0],
                     (y_pred_gpar - 2 * np.sqrt(var_pred_gpar)).T[0],
                     color='C1',
                     alpha=0.3,

@@ -9,7 +9,6 @@ class BoundedVariable(tf.Module):
     problems using gradient-based methods by smoothly reparameterizing an unconstrained varaible through a
     sigmoid transformation.
     """
-
     def __init__(self, init, lower, upper, dtype=tf.float64, name="bounded_variable", **kwargs):
 
         super(BoundedVariable, self).__init__(name=name, **kwargs)
@@ -51,7 +50,6 @@ class BoundedVariable(tf.Module):
 
 
 class PermutationVariable(tf.Module):
-
     def __init__(self, name="permutation_variable", **kwargs):
 
         super(PermutationVariable, self).__init__(name=name, **kwargs)
