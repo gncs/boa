@@ -1,59 +1,98 @@
-import numpy as np
+import logging
+import json
+import tensorflow as tf
 
 from .abstract_model import AbstractModel
 
+from boa.core.utils import setup_logger
+
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/random_model.log")
 
 class RandomModel(AbstractModel):
-    def __init__(self, seed, num_samples, name="random_model", **kwargs):
 
-        super(RandomModel, self).__init__(name=name, **kwargs)
+    def __init__(self,
+                 input_dim,
+                 output_dim,
+                 seed,
+                 num_samples,
+                 name="random_model",
+                 **kwargs):
 
-        self.random_state = np.random.RandomState(seed=seed)
+        super(RandomModel, self).__init__(kernel="rbf",
+                                          input_dim=input_dim,
+                                          output_dim=output_dim,
+                                          name=name,
+                                          **kwargs)
+
+        self.seed = seed
+        self._internal_state = seed
+
         self.num_samples = num_samples
 
-        self.output_dim = 0
+    def fit(self, **kwargs):
+        if self.verbose:
+            logger.info("Random model needs no fitting!")
 
-        self.ys_mean = 0
-        self.ys_std = 1
+    def predict(self, xs, numpy=False):
 
-        self.ys = np.array([[]])
+        xs = self._validate_and_convert(xs, output=False)
 
-    def condition_on(self, xs, ys):
+        ys_mean, ys_var = tf.nn.moments(self.ys, axes=[0], keepdims=True)
 
-        # Performs validation of the inputs
-        super(RandomModel, self).condition_on(xs, ys)
+        # Always have some minimum variance
+        ys_var = tf.maximum(ys_var, 1e-10)
 
-        self.output_dim = ys.shape[1]
-        self.ys = ys
+        ys_std = tf.math.sqrt(ys_var)
 
-        self._update_mean_std()
+        # Fix randomness and advance random state
+        tf.random.set_seed(self._internal_state)
+        self._internal_state += 1
 
-    def _update_mean_std(self) -> None:
-        min_std = 1e-10
+        pred_mean = tf.random.normal(mean=ys_mean,
+                                     stddev=ys_std,
+                                     shape=(xs.shape[0], self.output_dim),
+                                     dtype=tf.float64)
 
-        self.ys_mean = np.mean(self.ys, axis=0)
-        self.ys_std = np.maximum(np.std(self.ys, axis=0), min_std)
+        pred_samples = tf.random.normal(mean=ys_mean,
+                                        stddev=ys_std,
+                                        shape=(self.num_samples, xs.shape[0], self.output_dim),
+                                        dtype=tf.float64)
 
-    def add_true_point(self, x, y):
-        self._append_data_point(x, y)
+        _, pred_var = tf.nn.moments(pred_samples, axes=[0], keepdims=False)
 
-    def add_pseudo_point(self, x):
-        pass
+        if numpy:
+            pred_mean = pred_mean.numpy()
+            pred_var = pred_var.numpy()
 
-    def _append_data_point(self, x: np.ndarray, y: np.ndarray) -> None:
-        self.ys = np.vstack((self.ys, y))
+        return pred_mean, pred_var
 
-    def remove_pseudo_points(self):
-        pass
+    def get_config(self):
 
-    def fit(self):
-        self._update_mean_std()
+        return {
+            "name": self.name,
+            "input_dim": self.input_dim,
+            "output_dim": self.output_dim,
+            "seed": self.seed,
+            "num_samples": self.num_samples,
+            "verbose": self.verbose
+        }
 
-    def predict(self, xs):
-        return (self.random_state.normal(loc=self.ys_mean, scale=self.ys_std, size=(xs.shape[0], self.output_dim)),
-                np.var(
-                    self.random_state.normal(loc=self.ys_mean,
-                                             scale=self.ys_std,
-                                             size=(self.num_samples, xs.shape[0], self.output_dim)),
-                    axis=0,
-                ))
+    @staticmethod
+    def from_config(config):
+
+        return RandomModel(**config)
+
+    def create_gps(self):
+        if self.verbose:
+            logger.info("No GPs used for Random Model!")
+
+    @staticmethod
+    def restore(save_path):
+        with open(save_path + ".json", "r") as config_file:
+            config = json.load(config_file)
+
+        model = RandomModel.from_config(config)
+
+        model.load_weights(save_path)
+
+        return model

@@ -15,6 +15,7 @@ from boa.datasets.loader import load_dataset
 
 from boa.objective.abstract import AbstractObjective
 
+from boa.models.random import RandomModel
 from boa.models.fully_factorized_gp import FullyFactorizedGPModel
 from boa.models.gpar import GPARModel
 from boa.models.matrix_factorized_gpar import MatrixFactorizedGPARModel
@@ -133,6 +134,15 @@ def main(args):
     optimizer = Optimizer(**DEFAULT_OPTIMIZER_CONFIG)
 
     # Setup models
+    if args.model == "random":
+        df, input_labels, output_labels = prepare_ff_gp_data(dataset)
+
+        model = RandomModel(input_dim=len(input_labels),
+                            output_dim=len(output_labels),
+                            seed=args.seed,
+                            num_samples=args.num_samples,
+                            verbose=args.verbose)
+
     if args.model == "ff-gp":
         df, input_labels, output_labels = prepare_ff_gp_data(dataset)
 
@@ -194,13 +204,24 @@ if __name__ == "__main__":
                         type=str,
                         default="logs",
                         help="Path to the directory to which we will write the log files "
-                        "for the experiment.")
+                             "for the experiment.")
 
     parser.add_argument('--verbose', action="store_true", default=False, help="Turns on verbose logging")
 
     model_subparsers = parser.add_subparsers(title="model", dest="model", help="Model to fit to the data.")
 
     model_subparsers.required = True
+
+    # =========================================================================
+    # Random Model
+    # =========================================================================
+
+    random_mode = model_subparsers.add_parser("random",
+                                              formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                              description="Use a random model")
+
+    random_mode.add_argument("--seed", type=int, default=42)
+    random_mode.add_argument("--num_samples", type=int, default=10)
 
     # =========================================================================
     # Fully factorized GP
@@ -229,7 +250,7 @@ if __name__ == "__main__":
     mf_gpar_mode.add_argument("--latent_dim", type=int, default=5, help="Effective dimension of the factorization.")
 
     # Add common options to models
-    for mode in [ff_gp_mode, gpar_mode, mf_gpar_mode]:
+    for mode in [random_mode, ff_gp_mode, gpar_mode, mf_gpar_mode]:
         mode.add_argument("--kernel",
                           choices=GaussianProcess.AVAILABLE_KERNELS,
                           default="matern52",
