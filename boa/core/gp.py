@@ -2,11 +2,13 @@ import logging
 import tensorflow as tf
 from stheno.tensorflow import EQ, Delta, Matern52, GP, Graph, dense
 
+from boa import ROOT_DIR
+
 from .utils import CoreError, setup_logger
 
 __all__ = ["GaussianProcess", "CoreError"]
 
-logger = setup_logger(__name__, level=logging.DEBUG, log_file="gp.log", to_console=True)
+logger = setup_logger(__name__, level=logging.DEBUG, log_file=f"{ROOT_DIR}/../logs/gp.log", to_console=True)
 
 
 class GaussianProcess(tf.Module):

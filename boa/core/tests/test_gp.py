@@ -1,9 +1,14 @@
 from unittest import TestCase
 
 from boa.core.gp import GaussianProcess, CoreError
-import numpy as np
 
+import numpy as np
 import tensorflow as tf
+
+import logging
+
+# Disable logging for tests
+logging.disable(logging.CRITICAL)
 
 # Set CPU as available physical device
 tf.config.experimental.set_visible_devices([], 'GPU')

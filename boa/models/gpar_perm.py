@@ -7,6 +7,7 @@ import tensorflow as tf
 
 from boa.core import GaussianProcess, setup_logger
 from boa.core.variables import BoundedVariable
+from boa.core.optimize import bounded_minimize
 from .gpar import GPARModel
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/perm_gpar.log")
@@ -49,9 +50,9 @@ class PermutedGPARModel(GPARModel):
             self.length_scales.append(
                 tf.Variable(tf.ones(self.input_dim + i, dtype=tf.float64), name=f"{i}/length_scales"))
 
-            self.signal_amplitudes.append(tf.Variable((1, ), dtype=tf.float64, name=f"{i}/signal_amplitude"))
+            self.signal_amplitudes.append(tf.Variable((1,), dtype=tf.float64, name=f"{i}/signal_amplitude"))
 
-            self.noise_amplitudes.append(tf.Variable((1, ), dtype=tf.float64, name=f"{i}/noise_amplitude"))
+            self.noise_amplitudes.append(tf.Variable((1,), dtype=tf.float64, name=f"{i}/noise_amplitude"))
 
     def permutation_matrix(self, log_mat, temperature, sinkhorn_iterations=20, soft=True):
 
@@ -106,12 +107,12 @@ class PermutedGPARModel(GPARModel):
                 ys_ls_rand_range = tf.minimum(self.ys_euclidean_percentiles[2] - self.ys_euclidean_percentiles[0],
                                               self.ys_euclidean_percentiles[4] - self.ys_euclidean_percentiles[2])
 
-                xs_ls_init += tf.random.uniform(shape=(self.input_dim, ),
+                xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
                                                 minval=-xs_ls_rand_range,
                                                 maxval=xs_ls_rand_range,
                                                 dtype=tf.float64)
 
-                ys_ls_init += tf.random.uniform(shape=(index, ),
+                ys_ls_init += tf.random.uniform(shape=(index,),
                                                 minval=-ys_ls_rand_range,
                                                 maxval=ys_ls_rand_range,
                                                 dtype=tf.float64)
@@ -120,7 +121,7 @@ class PermutedGPARModel(GPARModel):
                 ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
 
             else:
-                ls_init = tf.random.uniform(shape=(self.input_dim + index, ),
+                ls_init = tf.random.uniform(shape=(self.input_dim + index,),
                                             minval=init_minval,
                                             maxval=init_maxval,
                                             dtype=tf.float64)
@@ -129,13 +130,13 @@ class PermutedGPARModel(GPARModel):
             length_scales.append(BoundedVariable(ls_init, lower=1e-3, upper=1e2))
 
             signal_amplitudes.append(
-                BoundedVariable(tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval,
+                BoundedVariable(tf.random.uniform(shape=(1,), minval=init_minval, maxval=init_maxval,
                                                   dtype=tf.float64),
                                 lower=1e-4,
                                 upper=1e4))
 
             noise_amplitudes.append(
-                BoundedVariable(tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval,
+                BoundedVariable(tf.random.uniform(shape=(1,), minval=init_minval, maxval=init_maxval,
                                                   dtype=tf.float64),
                                 lower=1e-6,
                                 upper=1e2))
@@ -150,7 +151,8 @@ class PermutedGPARModel(GPARModel):
             tol=1e-6,
             iters=1000,
             start_temp=2.,
-            end_temp=1e-10) -> None:
+            end_temp=1e-10,
+            use_bfgs=False) -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -177,61 +179,86 @@ class PermutedGPARModel(GPARModel):
                   list(map(lambda x: x.reparameterization, signal_amplitudes)) + \
                   list(map(lambda x: x.reparameterization, noise_amplitudes))
 
-            # Epsilon set to 1e-8 to match Wessel's Varz Adam settings.
-            optimizer = tf.optimizers.Adam(learn_rate, epsilon=1e-8)
-            prev_loss = np.inf
+            if use_bfgs:
 
-            with trange(iters) as t:
+                for i in range(self.output_dim):
+                    # Define i-th GP training loss
+                    def negative_gp_log_likelihood(signal_amplitude, length_scales, noise_amplitude):
+                        gp = GaussianProcess(kernel=self.kernel_name,
+                                             signal_amplitude=signal_amplitude,
+                                             length_scales=length_scales,
+                                             noise_amplitude=noise_amplitude)
 
-                for iteration in t:
-                    with tf.GradientTape(watch_accessed_variables=True) as tape:
+                        # ys_to_append = pred_ys if self.denoising else ys[:, :i]
 
-                        loss = 0
+                        # Permute the output
+                        ys_to_append = ys[:, :i]
+                        gp_input = tf.concat((xs, ys_to_append), axis=1)
 
-                        tape.watch(hps)
+                        return -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize=True)
 
-                        temperature = tf.maximum((end_temp - start_temp) / (iters / 2) * iteration + start_temp,
-                                                 end_temp)
+                    loss = bounded_minimize(negative_gp_log_likelihood,
+                                            vs=(signal_amplitudes[i],
+                                                length_scales[i],
+                                                noise_amplitudes[i]),
+                                            optimizer_args={"tolerance": 1e-5})
 
-                        soft_perm, hard_perm = self.permutation_matrix(permutation,
-                                                                       temperature=temperature,
-                                                                       sinkhorn_iterations=20)
+            else:
+                # Epsilon set to 1e-8 to match Wessel's Varz Adam settings.
+                optimizer = tf.optimizers.Adam(learn_rate, epsilon=1e-8)
+                prev_loss = np.inf
 
-                        soft_permuted_ys = tf.matmul(ys, soft_perm)
-                        hard_permuted_ys = tf.matmul(ys, hard_perm)
+                with trange(iters) as t:
 
-                        # Forward pass: use hard permutation
-                        # Backward pass: pretend we used the soft permutation all along
-                        # permuted_output = soft_permuted_ys + tf.stop_gradient(hard_permuted_ys - soft_permuted_ys)
-                        permuted_output = soft_permuted_ys
+                    for iteration in t:
+                        with tf.GradientTape(watch_accessed_variables=True) as tape:
 
-                        for i in range(self.output_dim):
-                            # Define i-th GP training loss
-                            # Create i-th GP
-                            gp = GaussianProcess(kernel=self.kernel_name,
-                                                 signal_amplitude=signal_amplitudes[i](),
-                                                 length_scales=length_scales[i](),
-                                                 noise_amplitude=noise_amplitudes[i]())
+                            loss = 0
 
-                            # Create input to the i-th GP
-                            ys_to_append = permuted_output[:, :i]
-                            gp_input = tf.concat((xs, ys_to_append), axis=1)
+                            tape.watch(hps)
 
-                            gp_nll = -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize=True)
+                            temperature = tf.maximum((end_temp - start_temp) / (iters / 2) * iteration + start_temp,
+                                                     end_temp)
 
-                            loss += gp_nll
+                            soft_perm, hard_perm = self.permutation_matrix(permutation,
+                                                                           temperature=temperature,
+                                                                           sinkhorn_iterations=20)
 
-                    if tf.abs(prev_loss - loss) < tol:
-                        logger.info(
-                            f"Loss decreased less than {tol}, optimisation terminated at iteration {iteration}.")
-                        break
+                            soft_permuted_ys = tf.matmul(ys, soft_perm)
+                            hard_permuted_ys = tf.matmul(ys, hard_perm)
 
-                    prev_loss = loss
+                            # Forward pass: use hard permutation
+                            # Backward pass: pretend we used the soft permutation all along
+                            # permuted_output = soft_permuted_ys + tf.stop_gradient(hard_permuted_ys - soft_permuted_ys)
+                            permuted_output = soft_permuted_ys
 
-                    gradients = tape.gradient(loss, hps)
-                    optimizer.apply_gradients(zip(gradients, hps))
+                            for i in range(self.output_dim):
+                                # Define i-th GP training loss
+                                # Create i-th GP
+                                gp = GaussianProcess(kernel=self.kernel_name,
+                                                     signal_amplitude=signal_amplitudes[i](),
+                                                     length_scales=length_scales[i](),
+                                                     noise_amplitude=noise_amplitudes[i]())
 
-                    t.set_description(f"Loss at iteration {iteration}: {loss:.3f}, temperature: {temperature:.5f}")
+                                # Create input to the i-th GP
+                                ys_to_append = permuted_output[:, :i]
+                                gp_input = tf.concat((xs, ys_to_append), axis=1)
+
+                                gp_nll = -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize=True)
+
+                                loss += gp_nll
+
+                        if tf.abs(prev_loss - loss) < tol:
+                            logger.info(
+                                f"Loss decreased less than {tol}, optimisation terminated at iteration {iteration}.")
+                            break
+
+                        prev_loss = loss
+
+                        gradients = tape.gradient(loss, hps)
+                        optimizer.apply_gradients(zip(gradients, hps))
+
+                        t.set_description(f"Loss at iteration {iteration}: {loss:.3f}, temperature: {temperature:.5f}")
 
             if loss < best_loss:
 

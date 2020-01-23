@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow_probability as tfp
 import logging
+import functools
 
 
 class CoreError(Exception):
@@ -9,13 +10,10 @@ class CoreError(Exception):
     """
 
 
-def inv_perm(x):
-    inv = [0] * len(x)
+def inv_perm(perm):
 
-    for i in x:
-        inv[x[i]] = i
-
-    return tuple(inv)
+    perm = tf.convert_to_tensor(perm, dtype=tf.int32)
+    return tf.scatter_nd(indices=tf.reshape(perm, [-1, 1]), updates=tf.range(tf.size(perm)), shape=perm.shape)
 
 
 def sigmoid_inverse(x):

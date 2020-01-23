@@ -322,7 +322,6 @@ class MatrixFactorizedGPARModel(GPARModel):
             "input_dim": self.input_dim,
             "output_dim": self.output_dim,
             "latent_dim": self.latent_dim,
-            "learn_permutation": self.learn_permutation,
             "denoising": self.denoising,
             "initialization_heuristic": self.initialization_heuristic,
             "verbose": self.verbose,

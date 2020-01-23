@@ -43,7 +43,7 @@ class GPARModel(AbstractModel):
         self.denoising = denoising
         self.initialization_heuristic = initialization_heuristic
 
-        self.permutation = []
+        self.permutation = tf.Variable(tf.range(output_dim, dtype=tf.int32))
 
         self.length_scales = []
         self.signal_amplitudes = []
@@ -193,7 +193,7 @@ class GPARModel(AbstractModel):
 
         # If no permutation is given, use the regular order of the ys
         if permutation is None:
-            permutation = list(range(self.output_dim))
+            permutation = tf.range(self.output_dim, dtype=tf.int32)
 
         if len(permutation) != self.output_dim:
             raise ModelError("Length of permutation must match the number of outputs!")
@@ -203,7 +203,7 @@ class GPARModel(AbstractModel):
             raise ModelError("Permutation must contain every output dimension!")
 
         # We're learning the hyperparameters for this permutation
-        self.permutation = permutation
+        self.permutation.assign(permutation)
 
         ys = tf.gather(ys, indices=tf.convert_to_tensor(permutation, dtype=tf.int32), axis=1)
 
