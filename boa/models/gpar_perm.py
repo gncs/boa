@@ -77,14 +77,6 @@ class PermutedGPARModel(GPARModel):
 
         return soft_perm_mat, hard_perm_mat
 
-    def get_trainable_variables(self):
-        return [] + \
-               list(map(lambda x: x[0], self.length_scales)) + \
-               list(map(lambda x: x[0], self.signal_amplitudes)) + \
-               list(map(lambda x: x[0], self.noise_amplitudes))
-
-    # [self.permutation] + \
-
     def initialize_hyperparameters(self, length_scale_init="random", init_minval=0.5, init_maxval=2.0):
 
         permutation = tf.Variable(tf.random.uniform(shape=(self.output_dim, self.output_dim), dtype=tf.float64))
@@ -201,7 +193,7 @@ class PermutedGPARModel(GPARModel):
                                             vs=(signal_amplitudes[i],
                                                 length_scales[i],
                                                 noise_amplitudes[i]),
-                                            optimizer_args={"tolerance": 1e-5})
+                                            optimizer_args={"parallel_iterations": 10})
 
             else:
                 # Epsilon set to 1e-8 to match Wessel's Varz Adam settings.
