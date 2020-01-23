@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 import tensorflow as tf
 
 from .utils import CoreError, sigmoid_inverse
@@ -48,8 +50,51 @@ class BoundedVariable(tf.Module):
     def __call__(self):
         return self.forward_transform(self.reparameterization)
 
+    @staticmethod
+    def get_all(bounded_vars):
+        """
+        Get the forward transforms of all given bounded variables
+        :param bounded_vars:
+        :return:
+        """
+
+        res = []
+        for bv in bounded_vars:
+            if isinstance(bv, BoundedVariable):
+                res.append(bv())
+
+            elif isinstance(bv, Iterable):
+                res.append(BoundedVariable.get_all(bv))
+
+        return res
+
+    @staticmethod
+    def get_reparametrizations(bounded_vars, flatten=False):
+        """
+        Returns the list of reparameterizations for a list of BoundedVariables. Useful to pass to
+        tf.GradientTape.watch
+
+        :param bounded_vars:
+        :return:
+        """
+
+        res = []
+        for bv in bounded_vars:
+            if isinstance(bv, BoundedVariable):
+                res.append(bv.reparameterization)
+
+            elif isinstance(bv, Iterable):
+
+                reparams = BoundedVariable.get_reparametrizations(bv)
+
+                if flatten:
+                    res += reparams
+                else:
+                    res.append(reparams)
+
+        return res
+
 
 class PermutationVariable(tf.Module):
     def __init__(self, name="permutation_variable", **kwargs):
-
         super(PermutationVariable, self).__init__(name=name, **kwargs)

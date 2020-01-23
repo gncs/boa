@@ -5,13 +5,14 @@ import json
 from typing import List
 
 import tensorflow as tf
-from varz.tensorflow import minimise_l_bfgs_b, Vars
-
 import numpy as np
 
 from boa.core.gp import GaussianProcess
 from boa.core.utils import setup_logger
 from .abstract_model import AbstractModel
+
+from boa.core.variables import BoundedVariable
+from boa.core.optimize import bounded_minimize
 
 __all__ = ["FullyFactorizedGPModel"]
 
@@ -54,31 +55,7 @@ class FullyFactorizedGPModel(AbstractModel):
             self.noise_amplitudes.append(
                 tf.Variable((1.0, ), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
 
-    def create_hyperparameters(self) -> Vars:
-
-        vs = Vars(tf.float64)
-
-        for i in range(self.output_dim):
-            ls_name = f"{i}/length_scales"
-            gp_var_name = f"{i}/signal_amplitude"
-            noise_var_name = f"{i}/noise_amplitude"
-
-            # Length scales
-            vs.bnd(init=tf.ones(self.input_dim, dtype=tf.float64), lower=1e-6, upper=1e6, name=ls_name)
-
-            # GP variance
-            vs.bnd(init=tf.ones(1, dtype=tf.float64), lower=1e-6, upper=1e6, name=gp_var_name)
-
-            # Noise variance
-            vs.bnd(init=tf.ones(1, dtype=tf.float64), lower=1e-6, upper=1e2, name=noise_var_name)
-
-        return vs
-
-    def initialize_hyperparameters(self, vs: Vars, index, length_scale_init, init_minval=0.1, init_maxval=1.0) -> None:
-
-        ls_name = f"{index}/length_scales"
-        gp_var_name = f"{index}/signal_amplitude"
-        noise_var_name = f"{index}/noise_amplitude"
+    def initialize_hyperparameters(self, length_scale_init, init_minval=0.1, init_maxval=1.0):
 
         if length_scale_init == "median":
 
@@ -93,28 +70,32 @@ class FullyFactorizedGPModel(AbstractModel):
                                          maxval=ls_rand_range,
                                          dtype=tf.float64)
 
-        elif length_scale_init == "dim_median":
-
-            ls_init = self.xs_per_dim_percentiles[:, 2]
-
-            ls_rand_range = tf.minimum(self.xs_per_dim_percentiles[:, 2] - self.xs_per_dim_percentiles[:, 0],
-                                       self.xs_per_dim_percentiles[:, 4] - self.xs_per_dim_percentiles[:, 2])
-
-            tf.random.uniform(shape=(self.input_dim, ), minval=-ls_rand_range, maxval=ls_rand_range, dtype=tf.float64)
-
         else:
             ls_init = tf.random.uniform(shape=(self.input_dim, ),
                                         minval=init_minval,
                                         maxval=init_maxval,
                                         dtype=tf.float64)
-        vs.assign(ls_name, ls_init)
 
-        vs.assign(gp_var_name, tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval, dtype=tf.float64))
+        length_scales = BoundedVariable(ls_init, lower=1e-3, upper=1e2, dtype=tf.float64)
 
-        vs.assign(noise_var_name,
-                  tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval, dtype=tf.float64))
+        signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1, ),
+                                                             minval=init_minval,
+                                                             maxval=init_maxval,
+                                                             dtype=tf.float64),
+                                           lower=1e-4,
+                                           upper=1e4,
+                                           dtype=tf.float64)
 
-    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1) -> None:
+        noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1, ),
+                                                            minval=init_minval,
+                                                            maxval=init_maxval,
+                                                            dtype=tf.float64),
+                                          lower=1e-6,
+                                          upper=1e4)
+
+        return length_scales, signal_amplitude, noise_amplitude
+
+    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1, iters=1000) -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -122,18 +103,13 @@ class FullyFactorizedGPModel(AbstractModel):
 
         self._calculate_statistics_for_median_initialization_heuristic(xs, ys)
 
-        vs = self.create_hyperparameters()
-
         # Optimize each dimension individually
         for i in range(self.output_dim):
-            ls_name = f"{i}/length_scales"
-            gp_var_name = f"{i}/signal_amplitude"
-            noise_var_name = f"{i}/noise_amplitude"
 
             best_loss = np.inf
 
             # Training objective
-            def negative_gp_log_likelihood(signal_amplitude, length_scales, noise_amplitude):
+            def negative_gp_log_likelihood(length_scales, signal_amplitude, noise_amplitude):
 
                 gp = GaussianProcess(kernel=self.kernel_name,
                                      signal_amplitude=signal_amplitude,
@@ -149,18 +125,19 @@ class FullyFactorizedGPModel(AbstractModel):
                 j += 1
 
                 # Reinitialize parameters
-                self.initialize_hyperparameters(vs, index=i, length_scale_init=self.initialization_heuristic)
+                hyperparams = self.initialize_hyperparameters(length_scale_init=self.initialization_heuristic)
+
+                length_scales, signal_amplitude, noise_amplitude = hyperparams
 
                 logger.info(f"Dimension {i} Optimization round: {j} / {optimizer_restarts}")
 
                 loss = np.inf
                 try:
                     # Perform L-BFGS-B optimization
-                    loss = minimise_l_bfgs_b(
-                        lambda v: negative_gp_log_likelihood(v[gp_var_name], v[ls_name], v[noise_var_name]),
-                        vs,
-                        names=[ls_name, gp_var_name, noise_var_name],
-                        err_level="raise")
+                    loss = bounded_minimize(function=negative_gp_log_likelihood,
+                                            vs=hyperparams,
+                                            parallel_iterations=10,
+                                            max_iterations=iters)
 
                 except tf.errors.InvalidArgumentError as e:
                     logger.error(str(e))
@@ -176,9 +153,9 @@ class FullyFactorizedGPModel(AbstractModel):
                     best_loss = loss
 
                     # Reassign variables
-                    self.length_scales[i].assign(vs[ls_name])
-                    self.signal_amplitudes[i].assign(vs[gp_var_name])
-                    self.noise_amplitudes[i].assign(vs[noise_var_name])
+                    self.length_scales[i].assign(length_scales())
+                    self.signal_amplitudes[i].assign(signal_amplitude())
+                    self.noise_amplitudes[i].assign(noise_amplitude())
                 else:
                     logger.info(f"Loss for dimension {i}: {loss:.4f}")
 
@@ -203,7 +180,6 @@ class FullyFactorizedGPModel(AbstractModel):
         variances = []
 
         for i, model in enumerate(self.models):
-
             model = model | (self.xs, self.ys[:, i:i + 1])
 
             mean, var = model.predict(xs, latent=False)

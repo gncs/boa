@@ -6,32 +6,42 @@ from numpy import finfo, float64
 
 def bounded_minimize(function,
                      vs,
-                     optimizer_args):
+                     num_correction_pairs=10,
+                     tolerance=1e-05,
+                     x_tolerance=0,
+                     f_relative_tolerance=1e7,
+                     initial_inverse_hessian_estimate=None,
+                     max_iterations=2000,
+                     parallel_iterations=1):
     """
     Takes a function whose arguments are boa.core.BoundedVariables,
     and performs L-BFGS-B on it.
-    :param function: Function to be minimized
-    :param vs: Iterable of BoundedVariables containing the initial guess
-    :param optimizer_args: arguments to be passed to tfp.optimize.lbfgs_minimize
-    :return: loss of the optimizer
+
+    :param function:
+    :param vs: BoundedVariables or iterables of BoundedVariables
+    :param num_correction_pairs:
+    :param tolerance:
+    :param x_tolerance:
+    :param f_relative_tolerance:
+    :param initial_inverse_hessian_estimate:
+    :param max_iterations:
+    :param parallel_iterations:
+    :return:
     """
 
     float64_machine_eps = finfo(float64).eps
 
     # These are chosen to match the parameters of
     # scipy.optimizer.fmin_l_bfgs_b
-    default_optimizer_args = {"num_correction_pairs": 10,
-                              "tolerance": 1e-05,  # This is pgtol in scipy
-                              "x_tolerance": 0,
-                              "f_relative_tolerance": float64_machine_eps * 1e7,  # This is eps * factr in scipy
-                              "initial_inverse_hessian_estimate": None,
-                              "max_iterations": 50,
-                              "parallel_iterations": 1}
+    optimizer_args = {"num_correction_pairs": num_correction_pairs,
+                      "tolerance": tolerance,  # This is pgtol in scipy
+                      "x_tolerance": x_tolerance,
 
-    # Add missing optimizer arguments from the default ones
-    for arg, arg_val in default_optimizer_args.items():
-        if arg not in optimizer_args:
-            optimizer_args[arg] = arg_val
+                      # This is eps * factr in scipy
+                      "f_relative_tolerance": float64_machine_eps * f_relative_tolerance,
+                      "initial_inverse_hessian_estimate": initial_inverse_hessian_estimate,
+                      "max_iterations": max_iterations,
+                      "parallel_iterations": parallel_iterations}
 
     # Get the reparameterization of the BoundedVariables
     reparameterizations = [v.reparameterization for v in vs]

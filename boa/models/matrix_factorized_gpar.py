@@ -3,13 +3,17 @@ import json
 
 import numpy as np
 import tensorflow as tf
-from varz.tensorflow import Vars, minimise_l_bfgs_b, minimise_adam
+
+from tqdm import trange
 
 from boa.models.abstract_model import ModelError
 from .gpar import GPARModel
 
 from boa.core.utils import setup_logger
 from boa.core.gp import GaussianProcess
+
+from boa.core.variables import BoundedVariable
+from boa.core.optimize import bounded_minimize
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/mf_gpar.log")
 
@@ -80,36 +84,7 @@ class MatrixFactorizedGPARModel(GPARModel):
 
         return mf_gpar
 
-    def create_hyperparameters(self) -> Vars:
-
-        vs = Vars(tf.float64)
-
-        # Create container for matrix factors
-        vs.bnd(init=tf.ones((self.output_dim, self.latent_dim), dtype=tf.float64),
-               lower=1e-10,
-               upper=1e2,
-               name=self.LLS_MAT)
-
-        vs.bnd(init=tf.ones((self.latent_dim, self.input_dim), dtype=tf.float64),
-               lower=1e-10,
-               upper=1e2,
-               name=self.RLS_MAT)
-
-        # Create the rest of the hyperparameters
-
-        for i in range(self.output_dim):
-            # Note the scaling in dimension with the index
-            vs.bnd(init=tf.ones(i, dtype=tf.float64), lower=1e-3, upper=1e2, name=f"{i}/output_length_scales")
-
-            # GP variance
-            vs.bnd(init=tf.ones(1, dtype=tf.float64), lower=1e-4, upper=1e4, name=f"{i}/signal_amplitude")
-
-            # Noise variance: bound between 1e-4 and 1e4
-            vs.bnd(init=tf.ones(1, dtype=tf.float64), lower=1e-6, upper=1e2, name=f"{i}/noise_amplitude")
-
-        return vs
-
-    def initialize_hyperparameters(self, vs: Vars, length_scale_init="random", init_minval=0.5, init_maxval=2.0):
+    def initialize_hyperparameters(self, length_scale_init="random", init_minval=0.5, init_maxval=2.0):
 
         if length_scale_init == "median":
             ls_init = tf.sqrt(self.xs_euclidean_percentiles[2] / self.latent_dim)
@@ -127,23 +102,30 @@ class MatrixFactorizedGPARModel(GPARModel):
             rls_init = ls_init + tf.random.uniform(
                 shape=(self.latent_dim, self.input_dim), dtype=tf.float64, minval=-ls_rand_range, maxval=ls_rand_range)
 
-            vs.assign(self.LLS_MAT, lls_init)
-            vs.assign(self.RLS_MAT, rls_init)
-
         else:
-            vs.assign(
-                self.LLS_MAT,
-                tf.random.normal(shape=(self.output_dim, self.latent_dim),
-                                 dtype=tf.float64,
-                                 mean=tf.cast(np.log(0.5 / self.latent_dim), dtype=tf.float64),
-                                 stddev=tf.cast(tf.sqrt(2 / (self.output_dim + self.latent_dim)), dtype=tf.float64)))
 
-            vs.assign(
-                self.RLS_MAT,
-                tf.random.normal(shape=(self.latent_dim, self.input_dim),
-                                 dtype=tf.float64,
-                                 mean=tf.cast(np.log(0.5 / self.latent_dim), dtype=tf.float64),
-                                 stddev=tf.cast(tf.sqrt(2 / (self.latent_dim + self.input_dim)), dtype=tf.float64)))
+            lls_init = tf.random.normal(shape=(self.output_dim, self.latent_dim),
+                                        dtype=tf.float64,
+                                        mean=tf.cast(np.log(0.5 / self.latent_dim), dtype=tf.float64),
+                                        stddev=tf.cast(tf.sqrt(2 / (self.output_dim + self.latent_dim)),
+                                                       dtype=tf.float64))
+
+            rls_init = tf.random.normal(shape=(self.latent_dim, self.input_dim),
+                                        dtype=tf.float64,
+                                        mean=tf.cast(np.log(0.5 / self.latent_dim), dtype=tf.float64),
+                                        stddev=tf.cast(tf.sqrt(2 / (self.latent_dim + self.input_dim)),
+                                                       dtype=tf.float64))
+
+        # Create container for matrix factors:
+        # Left length scale (LLS) matrix and Right length scale (RLS) matrix
+        lls_mat = BoundedVariable(lls_init, lower=1e-10, upper=1e2, dtype=tf.float64)
+
+        rls_mat = BoundedVariable(rls_init, lower=1e-10, upper=1e2, dtype=tf.float64)
+
+        # Create the rest of the hyperparameters
+        output_length_scales = []
+        signal_amplitudes = []
+        noise_amplitudes = []
 
         for i in range(self.output_dim):
 
@@ -154,29 +136,42 @@ class MatrixFactorizedGPARModel(GPARModel):
                                            self.ys_euclidean_percentiles[4] - self.ys_euclidean_percentiles[2])
 
                 ls_init += tf.random.uniform(shape=(i, ), minval=-ls_rand_range, maxval=ls_rand_range, dtype=tf.float64)
-
-                vs.assign(f"{i}/output_length_scales", ls_init)
-
             else:
-                vs.assign(f"{i}/output_length_scales",
-                          tf.random.uniform(shape=(i, ), minval=init_minval, maxval=init_maxval, dtype=tf.float64))
+                ls_init = tf.random.uniform(shape=(i, ), minval=init_minval, maxval=init_maxval, dtype=tf.float64)
 
-            vs.assign(f"{i}/signal_amplitude",
-                      tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval, dtype=tf.float64))
+            output_length_scales.append(BoundedVariable(ls_init, lower=1e-3, upper=1e2, dtype=tf.float64))
 
-            vs.assign(f"{i}/noise_amplitude",
-                      tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval, dtype=tf.float64))
+            signal_amplitudes.append(
+                BoundedVariable(tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval,
+                                                  dtype=tf.float64),
+                                lower=1e-4,
+                                upper=1e4,
+                                dtype=tf.float64))
 
-    def fit(self, xs, ys, optimizer="adam", optimizer_restarts=1, trace=True, iters=200, rate=1e-2) -> None:
+            noise_amplitudes.append(
+                BoundedVariable(tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval,
+                                                  dtype=tf.float64),
+                                lower=1e-6,
+                                upper=1e2,
+                                dtype=tf.float64))
+
+        return lls_mat, rls_mat, output_length_scales, signal_amplitudes, noise_amplitudes
+
+    def fit(self,
+            xs,
+            ys,
+            optimizer="adam",
+            optimizer_restarts=1,
+            trace=True,
+            iters=200,
+            rate=1e-2,
+            tolerance=1e-5) -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
         logger.info(f"Training data supplied with xs shape {xs.shape} and ys shape {ys.shape}, training!")
 
         self._calculate_statistics_for_median_initialization_heuristic(xs, ys)
-
-        # Create dummy variables for training
-        vs = self.create_hyperparameters()
 
         # Define i-th GP training loss
         def negative_gp_log_likelihood(idx, signal_amplitude, length_scales, noise_amplitude):
@@ -191,22 +186,23 @@ class MatrixFactorizedGPARModel(GPARModel):
             return -gp.log_pdf(gp_input, ys[:, idx:idx + 1], normalize=True)
 
         # Define the GPAR training loss
-        def negative_mf_gpar_log_likelihood(vs):
+        def negative_mf_gpar_log_likelihood(lls_mat, rls_mat, output_length_scales, signal_amplitudes,
+                                            noise_amplitudes):
             losses = []
 
             # Create length scale matrix from its left and right factors
-            length_scales = tf.matmul(vs[self.LLS_MAT], vs[self.RLS_MAT])
+            length_scales = tf.matmul(lls_mat, rls_mat)
 
             for k in range(self.output_dim):
                 # Create a single length scale vector by concatenating
                 # the input and the output length scales
-                gp_length_scales = tf.concat((length_scales[k, :], vs[f"{k}/output_length_scales"]), axis=0)
+                gp_length_scales = tf.concat((length_scales[k, :], output_length_scales[k]), axis=0)
 
                 losses.append(
                     negative_gp_log_likelihood(idx=k,
-                                               signal_amplitude=vs[f"{k}/signal_amplitude"],
+                                               signal_amplitude=signal_amplitudes[k],
                                                length_scales=gp_length_scales,
-                                               noise_amplitude=vs[f"{k}/noise_amplitude"]))
+                                               noise_amplitude=noise_amplitudes[k]))
 
             return tf.add_n(losses)
 
@@ -224,30 +220,56 @@ class MatrixFactorizedGPARModel(GPARModel):
                 print("-------------------------------")
 
             # Re-initialize to a random configuration
-            self.initialize_hyperparameters(vs, length_scale_init="median")
+            hyperparams = self.initialize_hyperparameters(length_scale_init="median")
+
+            lls_mat, rls_mat, output_length_scales, signal_amplitudes, noise_amplitudes = hyperparams
 
             loss = np.inf
 
             try:
                 if optimizer == "l-bfgs-b":
+
                     # Perform L-BFGS-B optimization
-                    loss = minimise_l_bfgs_b(negative_mf_gpar_log_likelihood,
-                                             vs,
-                                             err_level="raise",
-                                             trace=trace,
-                                             iters=iters)
+                    loss = bounded_minimize(
+                        function=negative_mf_gpar_log_likelihood,
+                        vs=hyperparams,
+                        parallel_iterations=10,
+                        max_iterations=iters)
 
                 elif optimizer == "adam":
+                    # Get the list of reparametrizations for the hyperparameters
+                    reparams = BoundedVariable.get_reparametrizations(hyperparams, flatten=True)
 
-                    loss = minimise_adam(negative_mf_gpar_log_likelihood, vs)
-                else:
-                    ModelError("unrecognized loss!")
+                    optimizer = tf.optimizers.Adam(rate, epsilon=1e-8)
+
+                    prev_loss = np.inf
+
+                    with trange(iters) as t:
+                        for iteration in t:
+                            with tf.GradientTape(watch_accessed_variables=False) as tape:
+                                tape.watch(reparams)
+
+                                loss = negative_mf_gpar_log_likelihood(*BoundedVariable.get_all(hyperparams))
+
+                            if tf.abs(prev_loss - loss) < tolerance:
+                                logger.info(f"Loss decreased less than {tolerance}, "
+                                            f"optimisation terminated at iteration {iteration}.")
+                                break
+
+                            prev_loss = loss
+
+                            gradients = tape.gradient(loss, reparams)
+                            optimizer.apply_gradients(zip(gradients, reparams))
+
+                            t.set_description(f"Loss at iteration {iteration}: {loss:.3f}.")
 
             except tf.errors.InvalidArgumentError as e:
                 logger.error(str(e))
                 loss = np.nan
+                raise e
             except Exception as e:
                 print("Iteration {} failed: {}".format(i, str(e)))
+                raise e
 
             if loss < best_loss:
 
@@ -258,15 +280,15 @@ class MatrixFactorizedGPARModel(GPARModel):
                 self.models.clear()
 
                 # Assign the hyperparameters to the model variables
-                self.left_length_scale_matrix.assign(vs[self.LLS_MAT])
-                self.right_length_scale_matrix.assign(vs[self.RLS_MAT])
+                self.left_length_scale_matrix.assign(lls_mat())
+                self.right_length_scale_matrix.assign(rls_mat())
 
                 input_length_scales = tf.matmul(self.left_length_scale_matrix, self.right_length_scale_matrix)
 
                 for j in range(self.output_dim):
-                    self.output_length_scales[j].assign(vs[f"{j}/output_length_scales"])
-                    self.signal_amplitudes[j].assign(vs[f"{j}/signal_amplitude"])
-                    self.noise_amplitudes[j].assign(vs[f"{j}/noise_amplitude"])
+                    self.output_length_scales[j].assign(output_length_scales[j]())
+                    self.signal_amplitudes[j].assign(signal_amplitudes[j]())
+                    self.noise_amplitudes[j].assign(noise_amplitudes[j]())
 
                     self.length_scales[j] = tf.concat((input_length_scales[j, :], self.output_length_scales[j]), axis=0)
 

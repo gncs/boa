@@ -1,15 +1,15 @@
 import logging
-import os
 import json
-
-from typing import Tuple, List
+from tqdm import trange
 
 import numpy as np
 import tensorflow as tf
-from varz.tensorflow import Vars, minimise_l_bfgs_b, minimise_adam
 
 from .abstract_model import AbstractModel, ModelError
-from boa.core import GaussianProcess, PermutationVariable, setup_logger, inv_perm
+from boa.core import GaussianProcess, setup_logger, inv_perm
+
+from boa.core.variables import BoundedVariable
+from boa.core.optimize import bounded_minimize
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/gpar.log")
 
@@ -65,50 +65,7 @@ class GPARModel(AbstractModel):
             self.noise_amplitudes.append(
                 tf.Variable((1, ), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
 
-    def create_hyperparameters(self) -> Vars:
-        """
-        Creates the hyperparameter container that the model uses
-        and creates the constrained hyperparameter variables in it,
-        initialized to some dummy values.
-
-        *Note*: It is not safe to use the initialized values for training,
-        always call initialize_hyperparameters first!
-
-        :return: Varz variable container
-        """
-
-        logger.debug("Creating hyperparameters!")
-
-        vs = Vars(tf.float64)
-
-        for i in range(self.output_dim):
-            ls_name = f"{i}/length_scales"
-            gp_var_name = f"{i}/signal_amplitude"
-            noise_var_name = f"{i}/noise_amplitude"
-
-            # Note the scaling in dimension with the index
-            vs.bnd(init=tf.ones(self.input_dim + i, dtype=tf.float64), lower=1e-3, upper=1e2, name=ls_name)
-
-            # GP variance
-            vs.bnd(init=tf.ones(1, dtype=tf.float64), lower=1e-4, upper=1e4, name=gp_var_name)
-
-            # Noise variance: bound between 1e-4 and 1e4
-            vs.bnd(init=tf.ones(1, dtype=tf.float64), lower=1e-6, upper=1e2, name=noise_var_name)
-
-        return vs
-
-    def initialize_hyperparameters(self,
-                                   vs,
-                                   index,
-                                   length_scale_init="random",
-                                   init_minval=0.5,
-                                   init_maxval=2.0) -> None:
-
-        # logger.debug(f"Reinitializing hyperparameters with length scale init mode: {length_scale_init}.")
-
-        ls_name = f"{index}/length_scales"
-        gp_var_name = f"{index}/signal_amplitude"
-        noise_var_name = f"{index}/noise_amplitude"
+    def initialize_hyperparameters(self, index, length_scale_init="random", init_minval=0.5, init_maxval=2.0):
 
         if length_scale_init == "median":
 
@@ -135,40 +92,31 @@ class GPARModel(AbstractModel):
             # Once the inputs and outputs have been initialized separately, concatenate them
             ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
 
-        elif length_scale_init == "dim_median":
-            xs_ls_init = self.xs_per_dim_percentiles[:, 2]
-            xs_ls_rand_range = tf.minimum(self.xs_per_dim_percentiles[:, 2] - self.xs_per_dim_percentiles[:, 0],
-                                          self.xs_per_dim_percentiles[:, 4] - self.xs_per_dim_percentiles[:, 2])
-
-            xs_ls_init += tf.random.uniform(shape=(self.input_dim, ),
-                                            minval=-xs_ls_rand_range,
-                                            maxval=xs_ls_rand_range,
-                                            dtype=tf.float64)
-
-            ys_ls_init = self.ys_per_dim_percentiles[:index, 2]
-            ys_ls_rand_range = tf.minimum(
-                self.ys_per_dim_percentiles[:index, 2] - self.ys_per_dim_percentiles[:index, 0],
-                self.ys_per_dim_percentiles[:index, 4] - self.ys_per_dim_percentiles[:index, 2])
-
-            ys_ls_init += tf.random.uniform(shape=(index, ),
-                                            minval=-ys_ls_rand_range,
-                                            maxval=ys_ls_rand_range,
-                                            dtype=tf.float64)
-
-            # Once the inputs and outputs have been initialized separately, concatenate them
-            ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
-
         else:
             ls_init = tf.random.uniform(shape=(self.input_dim + index, ),
                                         minval=init_minval,
                                         maxval=init_maxval,
                                         dtype=tf.float64)
-        vs.assign(ls_name, ls_init)
 
-        vs.assign(gp_var_name, tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval, dtype=tf.float64))
+        # Create bounded variables
+        length_scales = BoundedVariable(ls_init, lower=1e-3, upper=1e2, dtype=tf.float64)
 
-        vs.assign(noise_var_name,
-                  tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval, dtype=tf.float64))
+        signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1, ),
+                                                             minval=init_minval,
+                                                             maxval=init_maxval,
+                                                             dtype=tf.float64),
+                                           lower=1e-4,
+                                           upper=1e4,
+                                           dtype=tf.float64)
+
+        noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1, ),
+                                                            minval=init_minval,
+                                                            maxval=init_maxval,
+                                                            dtype=tf.float64),
+                                          lower=1e-6,
+                                          upper=1e4)
+
+        return length_scales, signal_amplitude, noise_amplitude
 
     def fit(self,
             xs,
@@ -177,6 +125,7 @@ class GPARModel(AbstractModel):
             optimizer_restarts=1,
             permutation=None,
             trace=False,
+            tolerance=1e-5,
             iters=1000,
             seed=None,
             rate=1e-2) -> None:
@@ -211,20 +160,15 @@ class GPARModel(AbstractModel):
 
         self._calculate_statistics_for_median_initialization_heuristic(xs, ys)
 
-        vs = self.create_hyperparameters()
-
         cumulative_loss = 0
 
         # Optimize dimensions individually
         for i in range(self.output_dim):
-            length_scales_name = f"{i}/length_scales"
-            sig_amp_name = f"{i}/signal_amplitude"
-            noise_amp = f"{i}/noise_amplitude"
 
             best_loss = np.inf
 
             # Define i-th GP training loss
-            def negative_gp_log_likelihood(signal_amplitude, length_scales, noise_amplitude):
+            def negative_gp_log_likelihood(length_scales, signal_amplitude, noise_amplitude):
 
                 gp = GaussianProcess(kernel=self.kernel_name,
                                      signal_amplitude=signal_amplitude,
@@ -245,48 +189,54 @@ class GPARModel(AbstractModel):
             while j < optimizer_restarts:
                 j += 1
 
-                self.initialize_hyperparameters(vs, index=i, length_scale_init=self.initialization_heuristic)
+                hyperparams = self.initialize_hyperparameters(index=i, length_scale_init=self.initialization_heuristic)
+
+                length_scales, signal_amplitude, noise_amplitude = hyperparams
 
                 loss = np.inf
 
                 try:
                     if optimizer == "l-bfgs-b":
                         # Perform L-BFGS-B optimization
-                        loss = minimise_l_bfgs_b(
-                            lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
-                                                                 length_scales=v[length_scales_name],
-                                                                 noise_amplitude=v[noise_amp]),
-                            vs,
-                            names=[sig_amp_name, length_scales_name, noise_amp],
-                            trace=trace,
-                            iters=iters,
-                            err_level="raise")
+                        loss = bounded_minimize(function=negative_gp_log_likelihood,
+                                                vs=hyperparams,
+                                                parallel_iterations=10,
+                                                max_iterations=iters)
+
                     else:
-                        # Perform Adam optimization
-                        loss = minimise_adam(lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
-                                                                                  length_scales=v[length_scales_name],
-                                                                                  noise_amplitude=v[noise_amp]),
-                                             vs,
-                                             names=[sig_amp_name, length_scales_name, noise_amp],
-                                             iters=iters,
-                                             rate=rate,
-                                             trace=trace)
+
+                        # Get the list of reparametrizations for the hyperparameters
+                        reparams = BoundedVariable.get_reparametrizations(hyperparams)
+
+                        optimizer = tf.optimizers.Adam(rate, epsilon=1e-8)
+
+                        prev_loss = np.inf
+
+                        with trange(iters) as t:
+                            for iteration in t:
+                                with tf.GradientTape(watch_accessed_variables=False) as tape:
+                                    tape.watch(reparams)
+
+                                    loss = negative_gp_log_likelihood(signal_amplitude(), length_scales(),
+                                                                      noise_amplitude())
+
+                                if tf.abs(prev_loss - loss) < tolerance:
+                                    logger.info(f"Loss decreased less than {tolerance}, "
+                                                f"optimisation terminated at iteration {iteration}.")
+                                    break
+
+                                prev_loss = loss
+
+                                gradients = tape.gradient(loss, reparams)
+                                optimizer.apply_gradients(zip(gradients, reparams))
+
+                                t.set_description(f"Loss at iteration {iteration}: {loss:.3f}.")
 
                 except tf.errors.InvalidArgumentError as e:
                     logger.error(str(e))
                     loss = np.nan
 
                 except Exception as e:
-
-                    logger.error(f"Saving: {vs[sig_amp_name]}, --- {vs[noise_amp]}")
-
-                    if not os.path.exists(os.path.dirname("logs/" + length_scales_name)):
-                        os.makedirs(os.path.dirname("logs/" + length_scales_name))
-
-                    np.save("logs/" + length_scales_name, vs[length_scales_name].numpy())
-                    np.save("logs/" + sig_amp_name, vs[sig_amp_name].numpy())
-                    np.save("logs/" + noise_amp, vs[noise_amp].numpy())
-
                     logger.error("Iteration {} failed: {}".format(i, str(e)))
 
                     j = j - 1
@@ -299,9 +249,9 @@ class GPARModel(AbstractModel):
                     best_loss = loss
 
                     # Assign the hyperparameters for each input to the model variables
-                    self.length_scales[i].assign(vs[length_scales_name])
-                    self.signal_amplitudes[i].assign(vs[sig_amp_name])
-                    self.noise_amplitudes[i].assign(vs[noise_amp])
+                    self.length_scales[i].assign(length_scales())
+                    self.signal_amplitudes[i].assign(signal_amplitude())
+                    self.noise_amplitudes[i].assign(noise_amplitude())
 
                     # If we are using "denoising GPAR", then we now need to get the predictive means
                     # for the current output
@@ -342,6 +292,7 @@ class GPARModel(AbstractModel):
                             trace=False,
                             num_target_dimensions=0,
                             iters=1000,
+                            tolerance=1e-5,
                             seed=None,
                             rate=1e-2):
         """
@@ -359,17 +310,12 @@ class GPARModel(AbstractModel):
 
         self._calculate_statistics_for_median_initialization_heuristic(xs, ys)
 
-        vs = self.create_hyperparameters()
-
         # Permutation to use for prediction
         permutation = []
 
         # Fit "auxiliary" dimensions one-by-one
         # We omit the "target" dimensions at the end of the column-space of ys
         for i in range(self.output_dim - num_target_dimensions):
-            length_scales_name = f"{i}/length_scales"
-            sig_amp_name = f"{i}/signal_amplitude"
-            noise_amp = f"{i}/noise_amplitude"
 
             best_loss = np.inf
             best_candidate = 0
@@ -408,33 +354,49 @@ class GPARModel(AbstractModel):
                 while j < optimizer_restarts:
                     j += 1
 
-                    self.initialize_hyperparameters(vs, index=i, length_scale_init=self.initialization_heuristic)
+                    hyperparams = self.initialize_hyperparameters(index=i,
+                                                                  length_scale_init=self.initialization_heuristic)
+
+                    length_scales, signal_amplitude, noise_amplitude = hyperparams
 
                     loss = np.inf
 
                     try:
                         if optimizer == "l-bfgs-b":
                             # Perform L-BFGS-B optimization
-                            loss = minimise_l_bfgs_b(
-                                lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
-                                                                     length_scales=v[length_scales_name],
-                                                                     noise_amplitude=v[noise_amp]),
-                                vs,
-                                names=[sig_amp_name, length_scales_name, noise_amp],
-                                trace=trace,
-                                iters=iters,
-                                err_level="raise")
+                            loss = bounded_minimize(function=negative_gp_log_likelihood,
+                                                    vs=(signal_amplitude, length_scales, noise_amplitude),
+                                                    parallel_iterations=10,
+                                                    max_iterations=iters)
+
                         else:
-                            # Perform Adam optimization
-                            loss = minimise_adam(
-                                lambda v: negative_gp_log_likelihood(signal_amplitude=v[sig_amp_name],
-                                                                     length_scales=v[length_scales_name],
-                                                                     noise_amplitude=v[noise_amp]),
-                                vs,
-                                names=[sig_amp_name, length_scales_name, noise_amp],
-                                iters=iters,
-                                rate=rate,
-                                trace=trace)
+
+                            # Get the list of reparametrizations for the hyperparameters
+                            reparams = BoundedVariable.get_reparametrizations(hyperparams)
+
+                            optimizer = tf.optimizers.Adam(rate, epsilon=1e-8)
+
+                            prev_loss = np.inf
+
+                            with trange(iters) as t:
+                                for iteration in t:
+                                    with tf.GradientTape(watch_accessed_variables=False) as tape:
+                                        tape.watch(reparams)
+
+                                        loss = negative_gp_log_likelihood(signal_amplitude(), length_scales(),
+                                                                          noise_amplitude())
+
+                                    if tf.abs(prev_loss - loss) < tolerance:
+                                        logger.info(f"Loss decreased less than {tolerance}, "
+                                                    f"optimisation terminated at iteration {iteration}.")
+                                        break
+
+                                    prev_loss = loss
+
+                                    gradients = tape.gradient(loss, reparams)
+                                    optimizer.apply_gradients(zip(gradients, reparams))
+
+                                    t.set_description(f"Loss at iteration {iteration}: {loss:.3f}.")
 
                     except tf.errors.InvalidArgumentError as e:
                         logger.error(str(e))
@@ -442,15 +404,6 @@ class GPARModel(AbstractModel):
                         raise e
 
                     except Exception as e:
-
-                        logger.error(f"Saving: {vs[sig_amp_name]}, --- {vs[noise_amp]}")
-
-                        if not os.path.exists(os.path.dirname("logs/" + length_scales_name)):
-                            os.makedirs(os.path.dirname("logs/" + length_scales_name))
-
-                        np.save("logs/" + length_scales_name, vs[length_scales_name].numpy())
-                        np.save("logs/" + sig_amp_name, vs[sig_amp_name].numpy())
-                        np.save("logs/" + noise_amp, vs[noise_amp].numpy())
 
                         logger.error("Iteration {} failed: {}".format(i, str(e)))
 
@@ -465,9 +418,9 @@ class GPARModel(AbstractModel):
                         best_loss = loss
 
                         # Assign the hyperparameters for each input to the model variables
-                        self.length_scales[i].assign(vs[length_scales_name])
-                        self.signal_amplitudes[i].assign(vs[sig_amp_name])
-                        self.noise_amplitudes[i].assign(vs[noise_amp])
+                        self.length_scales[i].assign(length_scales())
+                        self.signal_amplitudes[i].assign(signal_amplitude())
+                        self.noise_amplitudes[i].assign(noise_amplitude())
 
                         # Update permutation
                         best_candidate = candidate_dim

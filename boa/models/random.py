@@ -8,21 +8,11 @@ from boa.core.utils import setup_logger
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/random_model.log")
 
+
 class RandomModel(AbstractModel):
+    def __init__(self, input_dim, output_dim, seed, num_samples, name="random_model", **kwargs):
 
-    def __init__(self,
-                 input_dim,
-                 output_dim,
-                 seed,
-                 num_samples,
-                 name="random_model",
-                 **kwargs):
-
-        super(RandomModel, self).__init__(kernel="rbf",
-                                          input_dim=input_dim,
-                                          output_dim=output_dim,
-                                          name=name,
-                                          **kwargs)
+        super(RandomModel, self).__init__(kernel="rbf", input_dim=input_dim, output_dim=output_dim, name=name, **kwargs)
 
         self.seed = seed
         self._internal_state = seed
