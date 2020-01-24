@@ -76,7 +76,7 @@ def run_experiment(model,
             start_time = time.time()
             try:
                 model = model.condition_on(train[inputs].values, train[outputs].values[:, :], keep_previous=False)
-                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts, optimizer=optimizer)
+                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts, optimizer=optimizer, trace=True)
             except Exception as e:
                 logger.exception("Training failed: {}".format(str(e)))
                 raise e

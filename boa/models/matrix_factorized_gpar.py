@@ -165,7 +165,8 @@ class MatrixFactorizedGPARModel(GPARModel):
             trace=True,
             iters=200,
             rate=1e-2,
-            tolerance=1e-5) -> None:
+            tolerance=1e-5,
+            err_level="catch") -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -214,10 +215,9 @@ class MatrixFactorizedGPARModel(GPARModel):
 
             i += 1
 
-            if self.verbose:
-                print("-------------------------------")
-                print(f"Training iteration {i}")
-                print("-------------------------------")
+            logger.info("-------------------------------")
+            logger.info(f"Training iteration {i}")
+            logger.info("-------------------------------")
 
             # Re-initialize to a random configuration
             hyperparams = self.initialize_hyperparameters(length_scale_init="median")
@@ -230,11 +230,17 @@ class MatrixFactorizedGPARModel(GPARModel):
                 if optimizer == "l-bfgs-b":
 
                     # Perform L-BFGS-B optimization
-                    loss = bounded_minimize(
+                    loss, converged, diverged = bounded_minimize(
                         function=negative_mf_gpar_log_likelihood,
                         vs=hyperparams,
                         parallel_iterations=10,
-                        max_iterations=iters)
+                        max_iterations=iters,
+                        trace=trace)
+
+                    if diverged:
+                        logger.error(f"Model diverged, restarting iteration {iteration}!")
+                        i -= 1
+                        continue
 
                 elif optimizer == "adam":
                     # Get the list of reparametrizations for the hyperparameters
@@ -265,16 +271,27 @@ class MatrixFactorizedGPARModel(GPARModel):
 
             except tf.errors.InvalidArgumentError as e:
                 logger.error(str(e))
-                loss = np.nan
-                raise e
+                i -= 1
+
+                if err_level == "raise":
+                    raise e
+
+                elif err_level == "catch":
+                    continue
+
             except Exception as e:
-                print("Iteration {} failed: {}".format(i, str(e)))
-                raise e
+                logger.error("Iteration {} failed: {}".format(i, str(e)))
+                i -= 1
+
+                if err_level == "raise":
+                    raise e
+
+                elif err_level == "catch":
+                    continue
 
             if loss < best_loss:
 
-                if self.verbose:
-                    print("New best loss: {:.3f}".format(loss))
+                logger.info("New best loss: {:.3f}".format(loss))
 
                 best_loss = loss
                 self.models.clear()
@@ -292,11 +309,11 @@ class MatrixFactorizedGPARModel(GPARModel):
 
                     self.length_scales[j] = tf.concat((input_length_scales[j, :], self.output_length_scales[j]), axis=0)
 
-            elif self.verbose:
-                print("Loss: {:.3f}".format(loss))
+            else:
+                logger.info("Loss: {:.3f}".format(loss))
 
             if np.isnan(loss):
-                print("Loss was NaN, restarting training iteration!")
+                logger.error("Loss was NaN, restarting training iteration!")
                 i -= 1
 
         self.trained.assign(True)

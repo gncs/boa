@@ -50,10 +50,10 @@ class FullyFactorizedGPModel(AbstractModel):
                 tf.Variable(tf.ones(self.input_dim, dtype=tf.float64), name=f"{i}/length_scales", trainable=False))
 
             self.signal_amplitudes.append(
-                tf.Variable((1.0, ), dtype=tf.float64, name=f"{i}/signal_amplitude", trainable=False))
+                tf.Variable((1.0,), dtype=tf.float64, name=f"{i}/signal_amplitude", trainable=False))
 
             self.noise_amplitudes.append(
-                tf.Variable((1.0, ), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
+                tf.Variable((1.0,), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
 
     def initialize_hyperparameters(self, length_scale_init, init_minval=0.1, init_maxval=1.0):
 
@@ -65,20 +65,20 @@ class FullyFactorizedGPModel(AbstractModel):
             ls_rand_range = tf.minimum(self.xs_euclidean_percentiles[2] - self.xs_euclidean_percentiles[0],
                                        self.xs_euclidean_percentiles[4] - self.xs_euclidean_percentiles[2])
 
-            ls_init += tf.random.uniform(shape=(self.input_dim, ),
+            ls_init += tf.random.uniform(shape=(self.input_dim,),
                                          minval=-ls_rand_range,
                                          maxval=ls_rand_range,
                                          dtype=tf.float64)
 
         else:
-            ls_init = tf.random.uniform(shape=(self.input_dim, ),
+            ls_init = tf.random.uniform(shape=(self.input_dim,),
                                         minval=init_minval,
                                         maxval=init_maxval,
                                         dtype=tf.float64)
 
         length_scales = BoundedVariable(ls_init, lower=1e-3, upper=1e2, dtype=tf.float64)
 
-        signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1, ),
+        signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
                                                              minval=init_minval,
                                                              maxval=init_maxval,
                                                              dtype=tf.float64),
@@ -86,7 +86,7 @@ class FullyFactorizedGPModel(AbstractModel):
                                            upper=1e4,
                                            dtype=tf.float64)
 
-        noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1, ),
+        noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
                                                             minval=init_minval,
                                                             maxval=init_maxval,
                                                             dtype=tf.float64),
@@ -95,7 +95,7 @@ class FullyFactorizedGPModel(AbstractModel):
 
         return length_scales, signal_amplitude, noise_amplitude
 
-    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1, iters=1000) -> None:
+    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1, iters=1000, err_level="catch") -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -134,18 +134,35 @@ class FullyFactorizedGPModel(AbstractModel):
                 loss = np.inf
                 try:
                     # Perform L-BFGS-B optimization
-                    loss = bounded_minimize(function=negative_gp_log_likelihood,
-                                            vs=hyperparams,
-                                            parallel_iterations=10,
-                                            max_iterations=iters)
+                    loss, converged, diverged = bounded_minimize(function=negative_gp_log_likelihood,
+                                                                 vs=hyperparams,
+                                                                 parallel_iterations=10,
+                                                                 max_iterations=iters)
+
+                    if diverged:
+                        logger.error(f"Model diverged, restarting iteration {j}!")
+                        j -= 1
+                        continue
 
                 except tf.errors.InvalidArgumentError as e:
                     logger.error(str(e))
-                    loss = np.nan
+                    j -= 1
+
+                    if err_level == "raise":
+                        raise e
+
+                    elif err_level == "catch":
+                        continue
 
                 except Exception as e:
                     logger.exception("Iteration {} failed: {}".format(i + 1, str(e)))
-                    loss = np.nan
+                    j -= 1
+
+                    if err_level == "raise":
+                        raise e
+
+                    elif err_level == "catch":
+                        continue
 
                 if loss < best_loss:
                     logger.info(f"New best objective value for dimension {i}: {loss:.4f}")

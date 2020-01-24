@@ -1,7 +1,9 @@
 import tensorflow as tf
 import tensorflow_probability as tfp
 import logging
-import functools
+
+logger = logging.getLogger()
+logger.setLevel(logging.CRITICAL)
 
 
 class CoreError(Exception):
@@ -24,17 +26,23 @@ def sigmoid_inverse(x):
     return -tf.math.log(1. / x - 1.)
 
 
-def setup_logger(name, level, log_file=None, to_console=False, format="%(levelname)s:%(name)s:%(message)s"):
+def setup_logger(name,
+                 level,
+                 log_file=None,
+                 to_console=False,
+                 format="%(asctime)s:%(levelname)s:%(name)s:%(message)s",
+                 datefmt='%d/%m/%Y %I:%M:%S %p'):
 
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
-    formatter = logging.Formatter(format)
+    formatter = logging.Formatter(format, datefmt=datefmt)
 
     if log_file is not None:
 
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(formatter)
+        file_handler.setLevel(level)
 
         logger.addHandler(file_handler)
 
@@ -42,6 +50,7 @@ def setup_logger(name, level, log_file=None, to_console=False, format="%(levelna
 
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
+        stream_handler.setLevel(level)
 
     return logger
 

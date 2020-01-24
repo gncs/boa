@@ -20,7 +20,8 @@ class BoundedVariable(tf.Module):
         self.lower = tf.convert_to_tensor(lower, dtype=self.dtype)
         self.upper = tf.convert_to_tensor(upper, dtype=self.dtype)
 
-        self.reparameterization = tf.Variable(self.backward_transform(init))
+        self.reparameterization = tf.Variable(self.backward_transform(init),
+                                              dtype=self.dtype)
 
     @tf.Module.with_name_scope
     def forward_transform(self, x):
@@ -50,6 +51,7 @@ class BoundedVariable(tf.Module):
     def __call__(self):
         return self.forward_transform(self.reparameterization)
 
+    # TODO: Maybe there is a nicer way of doing this
     @staticmethod
     def get_all(bounded_vars):
         """

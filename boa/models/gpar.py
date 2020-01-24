@@ -60,10 +60,10 @@ class GPARModel(AbstractModel):
                                 trainable=False))
 
             self.signal_amplitudes.append(
-                tf.Variable((1, ), dtype=tf.float64, name=f"{i}/signal_amplitude", trainable=False))
+                tf.Variable((1,), dtype=tf.float64, name=f"{i}/signal_amplitude", trainable=False))
 
             self.noise_amplitudes.append(
-                tf.Variable((1, ), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
+                tf.Variable((1,), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
 
     def initialize_hyperparameters(self, index, length_scale_init="random", init_minval=0.5, init_maxval=2.0):
 
@@ -79,12 +79,12 @@ class GPARModel(AbstractModel):
             ys_ls_rand_range = tf.minimum(self.ys_euclidean_percentiles[2] - self.ys_euclidean_percentiles[0],
                                           self.ys_euclidean_percentiles[4] - self.ys_euclidean_percentiles[2])
 
-            xs_ls_init += tf.random.uniform(shape=(self.input_dim, ),
+            xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
                                             minval=-xs_ls_rand_range,
                                             maxval=xs_ls_rand_range,
                                             dtype=tf.float64)
 
-            ys_ls_init += tf.random.uniform(shape=(index, ),
+            ys_ls_init += tf.random.uniform(shape=(index,),
                                             minval=-ys_ls_rand_range,
                                             maxval=ys_ls_rand_range,
                                             dtype=tf.float64)
@@ -93,7 +93,7 @@ class GPARModel(AbstractModel):
             ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
 
         else:
-            ls_init = tf.random.uniform(shape=(self.input_dim + index, ),
+            ls_init = tf.random.uniform(shape=(self.input_dim + index,),
                                         minval=init_minval,
                                         maxval=init_maxval,
                                         dtype=tf.float64)
@@ -101,7 +101,7 @@ class GPARModel(AbstractModel):
         # Create bounded variables
         length_scales = BoundedVariable(ls_init, lower=1e-3, upper=1e2, dtype=tf.float64)
 
-        signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1, ),
+        signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
                                                              minval=init_minval,
                                                              maxval=init_maxval,
                                                              dtype=tf.float64),
@@ -109,7 +109,7 @@ class GPARModel(AbstractModel):
                                            upper=1e4,
                                            dtype=tf.float64)
 
-        noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1, ),
+        noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
                                                             minval=init_minval,
                                                             maxval=init_maxval,
                                                             dtype=tf.float64),
@@ -128,7 +128,8 @@ class GPARModel(AbstractModel):
             tolerance=1e-5,
             iters=1000,
             seed=None,
-            rate=1e-2) -> None:
+            rate=1e-2,
+            err_level="catch", ) -> None:
 
         if seed is not None:
             np.random.seed(seed)
@@ -198,10 +199,15 @@ class GPARModel(AbstractModel):
                 try:
                     if optimizer == "l-bfgs-b":
                         # Perform L-BFGS-B optimization
-                        loss = bounded_minimize(function=negative_gp_log_likelihood,
-                                                vs=hyperparams,
-                                                parallel_iterations=10,
-                                                max_iterations=iters)
+                        loss, converged, diverged = bounded_minimize(function=negative_gp_log_likelihood,
+                                                                     vs=hyperparams,
+                                                                     parallel_iterations=10,
+                                                                     max_iterations=iters)
+
+                        if diverged:
+                            logger.error(f"Model diverged, restarting iteration {j}!")
+                            j -= 1
+                            continue
 
                     else:
 
@@ -234,13 +240,23 @@ class GPARModel(AbstractModel):
 
                 except tf.errors.InvalidArgumentError as e:
                     logger.error(str(e))
-                    loss = np.nan
+                    j = j - 1
+
+                    if err_level == "raise":
+                        raise e
+
+                    elif err_level == "catch":
+                        continue
 
                 except Exception as e:
                     logger.error("Iteration {} failed: {}".format(i, str(e)))
-
                     j = j - 1
-                    continue
+
+                    if err_level == "raise":
+                        raise e
+
+                    elif err_level == "catch":
+                        continue
 
                 if loss < best_loss:
 
@@ -294,7 +310,8 @@ class GPARModel(AbstractModel):
                             iters=1000,
                             tolerance=1e-5,
                             seed=None,
-                            rate=1e-2):
+                            rate=1e-2,
+                            error_level="catch"):
         """
         Perform the greedy search for the optimal output ordering described in the GPAR paper.
         """
@@ -364,10 +381,17 @@ class GPARModel(AbstractModel):
                     try:
                         if optimizer == "l-bfgs-b":
                             # Perform L-BFGS-B optimization
-                            loss = bounded_minimize(function=negative_gp_log_likelihood,
-                                                    vs=(signal_amplitude, length_scales, noise_amplitude),
-                                                    parallel_iterations=10,
-                                                    max_iterations=iters)
+                            loss, converged, diverged = bounded_minimize(function=negative_gp_log_likelihood,
+                                                                         vs=(signal_amplitude,
+                                                                             length_scales,
+                                                                             noise_amplitude),
+                                                                         parallel_iterations=10,
+                                                                         max_iterations=iters)
+
+                            if diverged:
+                                logger.error(f"Optimization diverged, restarting iteration {j}!")
+                                j -= 1
+                                continue
 
                         else:
 
@@ -400,15 +424,22 @@ class GPARModel(AbstractModel):
 
                     except tf.errors.InvalidArgumentError as e:
                         logger.error(str(e))
-                        loss = np.nan
-                        raise e
+                        j = j - 1
+
+                        if error_level == "raise":
+                            raise e
+                        elif error_level == "catch":
+                            continue
 
                     except Exception as e:
 
                         logger.error("Iteration {} failed: {}".format(i, str(e)))
-
                         j = j - 1
-                        raise e
+
+                        if error_level == "raise":
+                            raise e
+                        elif error_level == "catch":
+                            continue
 
                     if loss < best_loss:
 
