@@ -31,7 +31,6 @@ setup(
         'scikit-learn',
         'tensorflow',
         'stheno',
-        'varz'
     ],
     zip_safe=False,
 )
