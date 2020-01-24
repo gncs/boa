@@ -238,7 +238,7 @@ class MatrixFactorizedGPARModel(GPARModel):
                         trace=trace)
 
                     if diverged:
-                        logger.error(f"Model diverged, restarting iteration {iteration}!")
+                        logger.error(f"Model diverged, restarting iteration {i}!")
                         i -= 1
                         continue
 
