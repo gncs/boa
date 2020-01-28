@@ -119,13 +119,13 @@ class PermutedGPARModel(GPARModel):
                                             dtype=tf.float64)
 
             # Note the scaling in dimension
-            length_scales.append(BoundedVariable(ls_init, lower=1e-3, upper=1e2))
+            length_scales.append(BoundedVariable(ls_init, lower=3e-2, upper=1e2))
 
             signal_amplitudes.append(
                 BoundedVariable(tf.random.uniform(shape=(1,), minval=init_minval, maxval=init_maxval,
                                                   dtype=tf.float64),
-                                lower=1e-4,
-                                upper=1e4))
+                                lower=1e-2,
+                                upper=1e2))
 
             noise_amplitudes.append(
                 BoundedVariable(tf.random.uniform(shape=(1,), minval=init_minval, maxval=init_maxval,
@@ -144,6 +144,7 @@ class PermutedGPARModel(GPARModel):
             iters=1000,
             start_temp=2.,
             end_temp=1e-10,
+            beta=1.,
             use_bfgs=False,
             hard_forward_permutation=False) -> None:
 
@@ -244,7 +245,12 @@ class PermutedGPARModel(GPARModel):
 
                                 gp_nll = -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize=True)
 
-                                loss += gp_nll
+                                # Frobenius entropy of the soft permutation
+                                perm_entropy = soft_perm * tf.math.log(soft_perm)
+                                perm_entropy = -tf.reduce_sum(perm_entropy)
+
+                                beta = tf.cast(beta, tf.float64)
+                                loss += gp_nll + beta * perm_entropy
 
                         if tf.abs(prev_loss - loss) < tolerance:
                             logger.info(
@@ -257,7 +263,8 @@ class PermutedGPARModel(GPARModel):
                         gradients = tape.gradient(loss, hps)
                         optimizer.apply_gradients(zip(gradients, hps))
 
-                        t.set_description(f"Loss at iteration {iteration}: {loss:.3f}, temperature: {temperature:.5f}")
+                        t.set_description(f"Loss at iteration {iteration}: {loss:.3f}, temperature: {temperature:.5f}, "
+                                          f"NLL: {gp_nll:.3f}, Entropy: {perm_entropy:.3f}")
 
             if loss < best_loss:
 
@@ -271,7 +278,7 @@ class PermutedGPARModel(GPARModel):
                     self.signal_amplitudes[i].assign(signal_amplitudes[i]())
                     self.noise_amplitudes[i].assign(noise_amplitudes[i]())
 
-                    soft_perm, perm = self.permutation_matrix(permutation, 1e-10, sinkhorn_iterations=100)
+                    soft_perm, perm = self.permutation_matrix(permutation, end_temp, sinkhorn_iterations=100)
                     self.permutation.assign(perm)
                     self.soft_perm.assign(soft_perm)
 
