@@ -22,9 +22,15 @@ import tensorflow as tf
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/experiments.log")
 
-AVAILABLE_DATASETS = ["fft", "stencil3d"]
+AVAILABLE_DATASETS = ["fft", "stencil3d", "gemm"]
 AVAILABLE_OPTIMIZERS = ["l-bfgs-b", "adam"]
 AVAILABLE_INITIALIZATION = ["median", "random", "dim_median"]
+
+DATASET_TARGETS = {
+    "fft": ('avg_power', 'cycle', 'total_area'),
+    "stencil3d": ('avg_power', 'cycle', 'total_area'),
+    "gemm": ('avg_power', 'cycle', 'total_area')
+}
 
 LOG_LEVELS = {"info": logging.INFO, "debug": logging.DEBUG, "warn": logging.WARNING}
 
@@ -139,14 +145,14 @@ def prepare_gpar_data(data, targets):
     return data.df, data.input_labels.copy(), output_labels
 
 
-def main(args, seed=27, experiment_json_format="{}_experiments.json", targets=('avg_power', 'cycle', 'total_area')):
+def main(args, seed=27, experiment_json_format="{}_experiments.json"):
     data = load_dataset(path=args.dataset, kind=args.task)
 
     model = None
 
     if args.model == 'ff-gp':
         df, input_labels, output_labels = prepare_ff_gp_data(data)
-        df_aux, input_labels_aux, output_labels_aux = prepare_ff_gp_aux_data(data, targets)
+        df_aux, input_labels_aux, output_labels_aux = prepare_ff_gp_aux_data(data, DATASET_TARGETS[args.task])
 
         model = FullyFactorizedGPModel(kernel=args.kernel,
                                        input_dim=len(input_labels),
@@ -169,7 +175,7 @@ def main(args, seed=27, experiment_json_format="{}_experiments.json", targets=('
                                  verbose=args.verbose)
 
     elif args.model in ["gpar", "mf-gpar", "p-gpar"]:
-        df, input_labels, output_labels = prepare_gpar_data(data, targets)
+        df, input_labels, output_labels = prepare_gpar_data(data, DATASET_TARGETS[args.task])
 
         if args.model == 'gpar':
             model = GPARModel(kernel=args.kernel,

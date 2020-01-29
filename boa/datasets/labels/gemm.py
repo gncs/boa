@@ -9,7 +9,7 @@ input_labels = [
 ]
 
 output_labels = [
-    # 'cycle',
+    'cycle',
     'avg_power',
     'fu_power',
     'avg_fu_dynamic_power',

@@ -29,7 +29,7 @@ logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="
 
 OBJECTIVE_TARGETS = {"fft": ['cycle', 'avg_power', 'total_area'], "stencil3d": []}
 
-AVAILABLE_DATASETS = ["fft", "stencil3d"]
+AVAILABLE_DATASETS = ["fft", "stencil3d", "gemm"]
 
 AVAILABLE_OPTIMIZERS = ["l-bfgs-b", "adam"]
 

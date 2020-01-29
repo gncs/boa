@@ -95,7 +95,7 @@ class FullyFactorizedGPModel(AbstractModel):
 
         return length_scales, signal_amplitude, noise_amplitude
 
-    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1, iters=1000, err_level="catch") -> None:
+    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1, iters=1000, trace=False, err_level="catch") -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
