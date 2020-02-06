@@ -163,8 +163,8 @@ class MatrixFactorizedGPARModel(GPARModel):
             optimizer="adam",
             optimizer_restarts=1,
             trace=True,
-            iters=200,
-            rate=1e-2,
+            iters=1000,
+            rate=1e-1,
             tolerance=1e-5,
             err_level="catch") -> None:
 
@@ -246,10 +246,9 @@ class MatrixFactorizedGPARModel(GPARModel):
                     # Get the list of reparametrizations for the hyperparameters
                     reparams = BoundedVariable.get_reparametrizations(hyperparams, flatten=True)
 
-                    optimizer = tf.optimizers.Adam(rate, epsilon=1e-8)
+                    opt = tf.optimizers.Adam(rate, epsilon=1e-8)
 
                     prev_loss = np.inf
-
                     with trange(iters) as t:
                         for iteration in t:
                             with tf.GradientTape(watch_accessed_variables=False) as tape:
@@ -265,22 +264,12 @@ class MatrixFactorizedGPARModel(GPARModel):
                             prev_loss = loss
 
                             gradients = tape.gradient(loss, reparams)
-                            optimizer.apply_gradients(zip(gradients, reparams))
+                            opt.apply_gradients(zip(gradients, reparams))
 
                             t.set_description(f"Loss at iteration {iteration}: {loss:.3f}.")
 
-            except tf.errors.InvalidArgumentError as e:
-                logger.error(str(e))
-                i -= 1
-
-                if err_level == "raise":
-                    raise e
-
-                elif err_level == "catch":
-                    continue
-
             except Exception as e:
-                logger.error("Iteration {} failed: {}".format(i, str(e)))
+                logger.error(str(e))
                 i -= 1
 
                 if err_level == "raise":

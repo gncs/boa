@@ -27,7 +27,9 @@ from boa.optimization.optimizer import Optimizer
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/bayesopt_experiment_v2.log")
 
-OBJECTIVE_TARGETS = {"fft": ['cycle', 'avg_power', 'total_area'], "stencil3d": []}
+OBJECTIVE_TARGETS = {"fft": ['cycle', 'avg_power', 'total_area'],
+                     "stencil3d": ['cycle', 'avg_power', 'total_area'],
+                     "gemm": ['cycle', 'avg_power', 'total_area']}
 
 AVAILABLE_DATASETS = ["fft", "stencil3d", "gemm"]
 
