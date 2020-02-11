@@ -52,6 +52,8 @@ def setup_logger(name,
         stream_handler.setFormatter(formatter)
         stream_handler.setLevel(level)
 
+        logger.addHandler(stream_handler)
+
     return logger
 
 

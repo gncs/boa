@@ -29,7 +29,7 @@ class GumbelMatching(Distribution):
     @tf.Module.with_name_scope
     def sample(self, as_tuple=False):
         """
-        :param as_tuple: If true, we return a permutation tuple as if we were right-multiplying with the matrix.
+        :param as_tuple: If true, we return a permutation tuple equivalent to right-multiplying with the matrix.
         :return:
         """
 
