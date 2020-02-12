@@ -58,18 +58,18 @@ class DiscreteMatern52(Kernel):
     @_dispatch(B.Numeric, B.Numeric)
     @uprank
     def __call__(self, x, y):
-        res = Dense(self._compute(B.pw_dists2(_round_with_straight_through(x, precision=self.precision),
-                                              _round_with_straight_through(y, precision=self.precision))))
+        res = Dense(self._compute(B.pw_dists(_round_with_straight_through(x, precision=self.precision),
+                                             _round_with_straight_through(y, precision=self.precision))))
 
         return res
 
     @_dispatch(B.Numeric, B.Numeric)
     @uprank
     def elwise(self, x, y):
-        return self._compute(B.ew_dists2(_round_with_straight_through(x, precision=self.precision),
-                                         _round_with_straight_through(y, precision=self.precision)))
+        return self._compute(B.ew_dists(_round_with_straight_through(x, precision=self.precision),
+                                        _round_with_straight_through(y, precision=self.precision)))
 
-    def _compute(self, dists):
+    def _compute(self, dists, rounding_eps=1e-6):
         r1 = 5 ** .5 * dists
         r2 = 5 * dists ** 2 / 3
 

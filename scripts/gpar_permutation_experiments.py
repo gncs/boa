@@ -54,7 +54,7 @@ def run_random_experiment(model,
                           experiment_file_name,
                           matrix_factorized,
                           num_samples,
-                          rounds: int = 5,
+                          rounds,
                           seed: int = 42,
                           verbose=False):
     experiment_file_path = os.path.join(logdir, experiment_file_name)
@@ -92,7 +92,7 @@ def run_random_experiment(model,
         raise Exception(f"Unknown magnitude for the number of random samples to be drawn: {num_samples}!")
 
     logger.info(f"Performing random order search using {num_samples} samples!")
-    for _ in range(num_samples):
+    for sample_number in range(num_samples):
 
         # Draw a new permutation
         perm = uniform_gm.sample(as_tuple=True)
@@ -106,8 +106,8 @@ def run_random_experiment(model,
         for index in range(rounds):
 
             logger.info("-----------------------------------------------------------")
-            logger.info(f"Training round: {index + 1} for training set size {training_set_size}, "
-                        f"permutation: {perm}")
+            logger.info(f"Training round: {index + 1}/{rounds} for training set size {training_set_size}, "
+                        f"permutation #{sample_number + 1}: {perm}")
             logger.info("-----------------------------------------------------------")
 
             experiment = {'index': index,
@@ -230,7 +230,7 @@ def main(args, seed=27, experiment_json_format="{}_size_{}_experiments.json"):
                                         matrix_factorized=args.model == "mf-gpar",
                                         experiment_file_name=experiment_file_name,
                                         seed=seed,
-                                        rounds=5,
+                                        rounds=args.num_rounds,
                                         verbose=args.verbose)
 
     else:
@@ -260,6 +260,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument('--verbose', action="store_true", default=False, help="Turns on verbose logging")
+
+    parser.add_argument("--num_rounds",
+                        type=int,
+                        default=5,
+                        help="Number of rounds to perform for a single setting.")
 
     model_subparsers = parser.add_subparsers(title="model", dest="model", help="Model to fit to the data.")
 
