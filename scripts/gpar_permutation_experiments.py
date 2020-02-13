@@ -164,8 +164,97 @@ def run_random_experiment(model,
     return experiments
 
 
-def prepare_ff_gp_data(data):
-    return data.df, data.input_labels.copy(), data.output_labels.copy()
+def run_greedy_experiment(model,
+                          data,
+                          optimizer,
+                          optimizer_restarts,
+                          inputs,
+                          outputs,
+                          num_target_dims,
+                          training_set_size,
+                          logdir,
+                          matrix_factorized,
+                          experiment_file_name,
+                          seed,
+                          rounds):
+    experiment_file_path = os.path.join(logdir, experiment_file_name)
+
+    # Make sure the directory exists
+    if not os.path.exists(logdir):
+        os.makedirs(logdir)
+
+    experiments = []
+
+    # Set seed for reproducibility
+    np.random.seed(seed)
+    tf.random.set_seed(seed)
+
+    # =========================================================================
+    # Perform Greedy search
+    # =========================================================================
+
+    for index in range(rounds):
+
+        logger.info("-----------------------------------------------------------")
+        logger.info(f"Training round: {index + 1}/{rounds} for training set size {training_set_size}, ")
+        logger.info("-----------------------------------------------------------")
+
+        experiment = {'index': index,
+                      'size': training_set_size,
+                      'inputs': inputs,
+                      'outputs': outputs}
+
+        if matrix_factorized:
+            experiment["latent_size"] = model.latent_dim
+
+        train, test = train_test_split(data, train_size=training_set_size, test_size=200, random_state=seed + index)
+
+        start_time = time.time()
+        try:
+            model = model.condition_on(train[inputs].values, train[outputs].values[:, :], keep_previous=False)
+            model.fit_greedy_ordering(xs=train[inputs].values,
+                                      ys=train[outputs].values[:, :],
+                                      trace=True,
+                                      optimizer_restarts=optimizer_restarts,
+                                      seed=seed + index,
+                                      optimizer=optimizer,
+                                      num_target_dimensions=num_target_dims)
+        except Exception as e:
+            logger.exception("Training failed: {}".format(str(e)))
+            raise e
+
+        experiment['train_time'] = time.time() - start_time
+
+        save_path = f"{DEFAULT_MODEL_SAVE_DIR}/{experiment_file_name}/size_{training_set_size}/model_{index}/model"
+        model.save(save_path)
+        logger.info(f"Saved model to {save_path}!")
+
+        start_time = time.time()
+
+        try:
+            mean, _ = model.predict(test[inputs].values, numpy=True)
+
+        except Exception as e:
+            logger.exception("Prediction failed: {}, saving model!".format(str(e)))
+
+            model.save("models/exceptions/" + experiment_file_name + "/model")
+            raise e
+            # continue
+
+        experiment['predict_time'] = time.time() - start_time
+
+        diff = (test[outputs].values - mean)
+
+        experiment["perm"] = list(model.permutation.numpy())
+        experiment['mean_abs_err'] = np.mean(np.abs(diff), axis=0).tolist()
+        experiment['mean_squ_err'] = np.mean(np.square(diff), axis=0).tolist()
+        experiment['rmse'] = np.sqrt(np.mean(np.square(diff), axis=0)).tolist()
+
+        experiments.append(experiment)
+
+        logger.info("Saving experiments to {}".format(experiment_file_path))
+        with open(experiment_file_path, mode='w') as out_file:
+            json.dump(experiments, out_file, sort_keys=True, indent=4)
 
 
 def prepare_gpar_data(data, targets):
@@ -178,7 +267,7 @@ def prepare_gpar_data(data, targets):
     return data.df, data.input_labels.copy(), output_labels
 
 
-def main(args, seed=27, experiment_json_format="{}_size_{}_experiments.json"):
+def main(args, seed=27, experiment_json_format="{}_size_{}_{}_experiments.json"):
     data = load_dataset(path=args.dataset, kind=args.task)
 
     model = None
@@ -212,9 +301,13 @@ def main(args, seed=27, experiment_json_format="{}_size_{}_experiments.json"):
 
     # If the model uses matrix factorization, then append the latent dimension to the file name
     if args.model in ["mf-gpar"]:
-        experiment_file_name = experiment_json_format.format(f"{args.model}-{args.latent_dim}", args.train_size)
+        experiment_file_name = experiment_json_format.format(f"{args.model}-{args.latent_dim}",
+                                                             args.search_mode,
+                                                             args.train_size)
     else:
-        experiment_file_name = experiment_json_format.format(args.model, args.train_size)
+        experiment_file_name = experiment_json_format.format(args.model,
+                                                             args.search_mode,
+                                                             args.train_size)
 
     if args.search_mode == "random_search":
         results = run_random_experiment(model=model,
@@ -232,6 +325,21 @@ def main(args, seed=27, experiment_json_format="{}_size_{}_experiments.json"):
                                         seed=seed,
                                         rounds=args.num_rounds,
                                         verbose=args.verbose)
+
+    elif args.search_mode == "greedy_search":
+        run_greedy_experiment(model=model,
+                              data=df,
+                              optimizer=args.optimizer,
+                              optimizer_restarts=args.num_optimizer_restarts,
+                              inputs=input_labels,
+                              outputs=output_labels,
+                              num_target_dims=args.num_target_dims,
+                              training_set_size=args.train_size,
+                              logdir=args.logdir,
+                              matrix_factorized=args.model == "mf-gpar",
+                              experiment_file_name=experiment_file_name,
+                              seed=seed,
+                              rounds=args.num_rounds)
 
     else:
         raise NotImplementedError

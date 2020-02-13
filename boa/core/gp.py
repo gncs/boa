@@ -5,6 +5,7 @@ from stheno.tensorflow import EQ, Delta, Matern52, GP, Graph, dense
 from boa import ROOT_DIR
 
 from .utils import CoreError, setup_logger
+from .kernel import DiscreteMatern52, DiscreteEQ
 
 __all__ = ["GaussianProcess", "CoreError"]
 
@@ -21,6 +22,8 @@ class GaussianProcess(tf.Module):
     AVAILABLE_KERNELS = {
         "rbf": EQ,
         "matern52": Matern52,
+        "discrete_matern52": DiscreteMatern52,
+        "discrete_rbf": DiscreteEQ
     }
 
     SIG_AMP = "signal_amplitude"
@@ -33,6 +36,7 @@ class GaussianProcess(tf.Module):
                  length_scales,
                  noise_amplitude,
                  jitter: tf.float64 = 1e-10,
+                 discrete: bool = False,
                  verbose: bool = False,
                  name: str = "gaussian_process",
                  **kwargs):
