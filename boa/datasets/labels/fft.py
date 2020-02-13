@@ -35,8 +35,8 @@ output_labels = [
     'mem_area',
     'num_double_precision_fp_multipliers',
     'num_double_precision_fp_adders',
-    'num_trigonometric_units',
-    'num_bit-wise_operators_32',
-    'num_shifters_32',
+    # 'num_trigonometric_units',
+    # 'num_bit-wise_operators_32',
+    # 'num_shifters_32',
     'num_registers_32',
 ]
