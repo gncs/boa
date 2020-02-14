@@ -245,7 +245,7 @@ def run_greedy_experiment(model,
 
         diff = (test[outputs].values - mean)
 
-        experiment["perm"] = list(model.permutation.numpy())
+        experiment["perm"] = [int(x) for x in model.permutation.numpy()]
         experiment['mean_abs_err'] = np.mean(np.abs(diff), axis=0).tolist()
         experiment['mean_squ_err'] = np.mean(np.square(diff), axis=0).tolist()
         experiment['rmse'] = np.sqrt(np.mean(np.square(diff), axis=0)).tolist()
@@ -302,12 +302,12 @@ def main(args, seed=27, experiment_json_format="{}_size_{}_{}_experiments.json")
     # If the model uses matrix factorization, then append the latent dimension to the file name
     if args.model in ["mf-gpar"]:
         experiment_file_name = experiment_json_format.format(f"{args.model}-{args.latent_dim}",
-                                                             args.search_mode,
-                                                             args.train_size)
+                                                             args.train_size,
+                                                             args.search_mode)
     else:
         experiment_file_name = experiment_json_format.format(args.model,
-                                                             args.search_mode,
-                                                             args.train_size)
+                                                             args.train_size,
+                                                             args.search_mode)
 
     if args.search_mode == "random_search":
         results = run_random_experiment(model=model,
