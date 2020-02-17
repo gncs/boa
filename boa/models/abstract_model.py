@@ -140,6 +140,10 @@ class AbstractModel(tf.keras.Model):
         pass
 
     @abc.abstractmethod
+    def log_prob(self, xs, ys, use_conditioning_data=True, numpy=False):
+        pass
+
+    @abc.abstractmethod
     def get_config(self):
         pass
 

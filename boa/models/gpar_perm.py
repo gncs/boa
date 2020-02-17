@@ -188,7 +188,7 @@ class PermutedGPARModel(GPARModel):
                         ys_to_append = ys[:, :i]
                         gp_input = tf.concat((xs, ys_to_append), axis=1)
 
-                        return -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize=True)
+                        return -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize_with_input=True)
 
                     loss, converged, diverged = bounded_minimize(negative_gp_log_likelihood,
                                                                  vs=(signal_amplitudes[i], length_scales[i],
@@ -243,7 +243,7 @@ class PermutedGPARModel(GPARModel):
                                 ys_to_append = permuted_output[:, :i]
                                 gp_input = tf.concat((xs, ys_to_append), axis=1)
 
-                                gp_nll = -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize=True)
+                                gp_nll = -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize_with_input=True)
 
                                 # Frobenius entropy of the soft permutation
                                 perm_entropy = soft_perm * tf.math.log(soft_perm)

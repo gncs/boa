@@ -182,7 +182,7 @@ class GPARModel(AbstractModel):
                 ys_to_append = ys[:, :i]
                 gp_input = tf.concat((xs, ys_to_append), axis=1)
 
-                return -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize=True)
+                return -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize_with_input=True)
 
             # Robust optimization
             j = 0
@@ -301,8 +301,10 @@ class GPARModel(AbstractModel):
         return cumulative_loss
 
     def fit_greedy_ordering(self,
-                            xs,
-                            ys,
+                            train_xs,
+                            train_ys,
+                            validation_xs,
+                            validation_ys,
                             optimizer="l-bfgs-b",
                             optimizer_restarts=1,
                             trace=False,
@@ -321,11 +323,12 @@ class GPARModel(AbstractModel):
             tf.random.set_seed(seed)
 
         # Pre fitting data perparation
-        xs, ys = self._validate_and_convert_input_output(xs, ys)
+        train_xs, train_ys = self._validate_and_convert_input_output(train_xs, train_ys)
+        validation_xs, validation_ys = self._validate_and_convert_input_output(validation_xs, validation_ys)
 
-        logger.info(f"Training data supplied with xs shape {xs.shape} and ys shape {ys.shape}, training!")
+        logger.info(f"Training data supplied with xs shape {train_xs.shape} and ys shape {train_ys.shape}, training!")
 
-        self._calculate_statistics_for_median_initialization_heuristic(xs, ys)
+        self._calculate_statistics_for_median_initialization_heuristic(train_xs, train_ys)
 
         # Permutation to use for prediction
         permutation = []
@@ -334,7 +337,7 @@ class GPARModel(AbstractModel):
         # We omit the "target" dimensions at the end of the column-space of ys
         for i in range(self.output_dim - num_target_dimensions):
 
-            best_loss = np.inf
+            best_validation_log_prob = np.inf
             best_candidate = 0
 
             logger.info(f"Selecting output {i}!")
@@ -351,7 +354,7 @@ class GPARModel(AbstractModel):
 
                 # Define i-th GP training loss with output candidate_dim
                 # Note the permutation of the dimensions of y
-                def negative_gp_log_likelihood(signal_amplitude, length_scales, noise_amplitude):
+                def negative_gp_log_likelihood(xs, ys, signal_amplitude, length_scales, noise_amplitude, train=True):
 
                     gp = GaussianProcess(kernel=self.kernel_name,
                                          signal_amplitude=signal_amplitude,
@@ -363,7 +366,19 @@ class GPARModel(AbstractModel):
 
                     gp_input = tf.concat((xs, ys_to_append), axis=1)
 
-                    return -gp.log_pdf(gp_input, ys[:, candidate_dim:candidate_dim + 1], normalize=True)
+                    # If we're not training, we condition on the training data
+                    if not train:
+                        train_ys_to_append = tf.gather(train_ys,
+                                                       indices=tf.convert_to_tensor(permutation, dtype=tf.int32),
+                                                       axis=1)
+                        train_gp_input = tf.concat((train_xs, train_ys_to_append), axis=1)
+
+                        gp = gp | (train_gp_input, train_ys[:, candidate_dim:candidate_dim + 1])
+
+                    return -gp.log_pdf(gp_input,
+                                       ys[:, candidate_dim:candidate_dim + 1],
+                                       normalize_with_input=train,
+                                       normalize_with_training_data=not train)
 
                 # Robust optimization
                 j = 0
@@ -376,22 +391,34 @@ class GPARModel(AbstractModel):
 
                     length_scales, signal_amplitude, noise_amplitude = hyperparams
 
-                    loss = np.inf
+                    valid_log_prob = np.inf
 
                     try:
                         if optimizer == "l-bfgs-b":
                             # Perform L-BFGS-B optimization
-                            loss, converged, diverged = bounded_minimize(function=negative_gp_log_likelihood,
-                                                                         vs=(signal_amplitude,
-                                                                             length_scales,
-                                                                             noise_amplitude),
-                                                                         parallel_iterations=10,
-                                                                         max_iterations=iters)
+                            res = bounded_minimize(function=lambda s, l, n: negative_gp_log_likelihood(train_xs,
+                                                                                                       train_ys,
+                                                                                                       s, l, n,
+                                                                                                       train=True),
+                                                   vs=(signal_amplitude,
+                                                       length_scales,
+                                                       noise_amplitude),
+                                                   parallel_iterations=10,
+                                                   max_iterations=iters)
+
+                            loss, _, diverged = res
 
                             if diverged:
                                 logger.error(f"Optimization diverged, restarting iteration {j}!")
                                 j -= 1
                                 continue
+
+                            valid_log_prob = negative_gp_log_likelihood(validation_xs,
+                                                                        validation_ys,
+                                                                        signal_amplitude(),
+                                                                        length_scales(),
+                                                                        noise_amplitude(),
+                                                                        train=False)
 
                         else:
 
@@ -407,8 +434,12 @@ class GPARModel(AbstractModel):
                                     with tf.GradientTape(watch_accessed_variables=False) as tape:
                                         tape.watch(reparams)
 
-                                        loss = negative_gp_log_likelihood(signal_amplitude(), length_scales(),
-                                                                          noise_amplitude())
+                                        loss = negative_gp_log_likelihood(train_xs,
+                                                                          train_ys,
+                                                                          signal_amplitude(),
+                                                                          length_scales(),
+                                                                          noise_amplitude(),
+                                                                          train=True)
 
                                     if tf.abs(prev_loss - loss) < tolerance:
                                         logger.info(f"Loss decreased less than {tolerance}, "
@@ -421,6 +452,13 @@ class GPARModel(AbstractModel):
                                     optimizer.apply_gradients(zip(gradients, reparams))
 
                                     t.set_description(f"Loss at iteration {iteration}: {loss:.3f}.")
+
+                            valid_log_prob = negative_gp_log_likelihood(validation_xs,
+                                                                        validation_ys,
+                                                                        signal_amplitude(),
+                                                                        length_scales(),
+                                                                        noise_amplitude(),
+                                                                        train=False)
 
                     except tf.errors.InvalidArgumentError as e:
                         logger.error(str(e))
@@ -441,12 +479,12 @@ class GPARModel(AbstractModel):
                         elif error_level == "catch":
                             continue
 
-                    if loss < best_loss:
+                    if valid_log_prob < best_validation_log_prob:
 
                         logger.info(f"Output {i}, candidate dimension {candidate_dim}, "
-                                    f"Iteration {j}: New best loss: {loss:.3f}")
+                                    f"Iteration {j}: New best negative log likelihood: {valid_log_prob:.3f}")
 
-                        best_loss = loss
+                        best_validation_log_prob = valid_log_prob
 
                         # Assign the hyperparameters for each input to the model variables
                         self.length_scales[i].assign(length_scales())
@@ -473,8 +511,9 @@ class GPARModel(AbstractModel):
 
         logger.info(f"Permutation discovered: {permutation}. Fitting everything now!")
 
-        self.fit(xs=xs,
-                 ys=ys,
+        # Fit on the joint train and validation set
+        self.fit(xs=tf.concat([train_xs, validation_xs], axis=0),
+                 ys=tf.concat([train_ys, validation_ys], axis=0),
                  optimizer=optimizer,
                  optimizer_restarts=optimizer_restarts,
                  permutation=permutation,
@@ -493,9 +532,7 @@ class GPARModel(AbstractModel):
 
         xs = self._validate_and_convert(xs, output=False)
 
-        train_ys = tf.gather(self.ys, indices=tf.convert_to_tensor(self.permutation, dtype=tf.int32), axis=1)
-
-        inverse_permutation = tf.convert_to_tensor(inv_perm(self.permutation), dtype=tf.int32)
+        train_ys = self.permuted_ys
 
         means = []
         variances = []
@@ -515,14 +552,58 @@ class GPARModel(AbstractModel):
         variances = tf.concat(variances, axis=1)
 
         # Permute stuff back
-        means = tf.gather(means, inverse_permutation, axis=1)
-        variances = tf.gather(variances, inverse_permutation, axis=1)
+        means = self.inverse_permute_output(means)
+        variances = self.inverse_permute_output(variances)
 
         if numpy:
             means = means.numpy()
             variances = variances.numpy()
 
         return means, variances
+
+    def log_prob(self, xs, ys, use_conditioning_data=True, latent=True, numpy=False):
+
+        if len(self.models) < self.output_dim:
+            logger.info("GPs haven't been cached yet, creating them now.")
+            self.create_gps()
+
+        xs, ys = self._validate_and_convert_input_output(xs, ys)
+
+        # Put the ys in the "correct" order
+        ys = self.permute_output(ys)
+
+        # Permute the training data according to the set permutation
+        train_ys = self.permuted_ys
+
+        log_prob = 0.
+
+        for i, model in enumerate(self.models):
+            gp_input = tf.concat([xs, ys[:, :i]], axis=1)
+            gp_train_input = tf.concat([self.xs, train_ys[:, :i]], axis=1)
+
+            cond_model = model | (gp_train_input, train_ys[:, i:i + 1])
+
+            if use_conditioning_data:
+                model_log_prob = cond_model.log_pdf(gp_input, ys[:, i:i + 1],
+                                                    latent=latent,
+                                                    with_jitter=False,
+                                                    normalize_with_training_data=True)
+            else:
+                # Normalize model to the regime on which the models were trained
+                norm_xs = cond_model.normalize_with_training_data(gp_input, output=False)
+                norm_ys = cond_model.normalize_with_training_data(ys[:, i:i + 1], output=True)
+
+                model_log_prob = model.log_pdf(norm_xs,
+                                               norm_ys,
+                                               latent=latent,
+                                               with_jitter=False)
+
+            log_prob = log_prob + model_log_prob
+
+        if numpy:
+            log_prob = log_prob.numpy()
+
+        return log_prob
 
     def create_gps(self):
         self.models.clear()
@@ -534,6 +615,20 @@ class GPARModel(AbstractModel):
                                  noise_amplitude=self.noise_amplitudes[i])
 
             self.models.append(gp)
+
+    def permute_output(self, ys):
+        return tf.gather(ys, indices=tf.convert_to_tensor(self.permutation, dtype=tf.int32), axis=1)
+
+    def inverse_permute_output(self, ys):
+        return tf.gather(ys, indices=self.inverse_permutation, axis=1)
+
+    @property
+    def permuted_ys(self):
+        return self.permute_output(self.ys)
+
+    @property
+    def inverse_permutation(self):
+        return tf.convert_to_tensor(inv_perm(self.permutation), dtype=tf.int32)
 
     @staticmethod
     def restore(save_path):

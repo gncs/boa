@@ -184,7 +184,7 @@ class MatrixFactorizedGPARModel(GPARModel):
 
             gp_input = tf.concat((xs, ys[:, :idx]), axis=1)
 
-            return -gp.log_pdf(gp_input, ys[:, idx:idx + 1], normalize=True)
+            return -gp.log_pdf(gp_input, ys[:, idx:idx + 1], normalize_with_input=True)
 
         # Define the GPAR training loss
         def negative_mf_gpar_log_likelihood(lls_mat, rls_mat, output_length_scales, signal_amplitudes,

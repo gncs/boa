@@ -125,7 +125,7 @@ class GaussianProcess(tf.Module):
 
         return gp
 
-    def __or__(self, inputs, min_std=1e-10) -> tf.Module:
+    def __or__(self, inputs, min_std=1e-10) -> 'GaussianProcess':
         """
         Adds data to the model. The notation is supposed to imitate
         the conditioning operation:
@@ -160,18 +160,34 @@ class GaussianProcess(tf.Module):
 
         return gp
 
-    def log_pdf(self, xs, ys, normalize=False, latent=False, with_jitter=True):
+    def log_pdf(self,
+                xs,
+                ys,
+                normalize_with_input=False,
+                normalize_with_training_data=False,
+                latent=False,
+                with_jitter=True):
 
-        if normalize:
+        if normalize_with_input and normalize_with_training_data:
+            raise CoreError("Data in log_pdf can only be normalized with one scheme only (both were specified True)!")
+
+        if normalize_with_input:
             xs_forward, _ = self._create_transforms(xs)
             ys_forward, _ = self._create_transforms(ys)
 
+        elif normalize_with_training_data:
+            xs_forward, _ = self._create_transforms(self.xs)
+            ys_forward, _ = self._create_transforms(self.ys)
+
         else:
-            xs_forward = self.xs_forward_transform
-            ys_forward = self.ys_forward_transform
+            xs_forward = lambda x: x
+            ys_forward = lambda y: y
 
         xs = xs_forward(xs)
         ys = ys_forward(ys)
+
+        # print("using xs ys")
+        # print(xs, ys)
 
         gp = self.signal
 
@@ -180,6 +196,10 @@ class GaussianProcess(tf.Module):
 
         if with_jitter:
             gp = gp + self.jitter
+
+        # Condition on the training data
+        if self.xs.shape[0] > 0:
+            gp = gp | (xs_forward(self.xs), ys_forward(self.ys))
 
         return gp(xs).logpdf(ys)
 
@@ -230,6 +250,16 @@ class GaussianProcess(tf.Module):
         pred_var = self.ys_backward_transform(pred_var, var=True)
 
         return prediction, pred_var
+
+    def normalize_with_training_data(self, data, output=False):
+
+        # Create the normalizing transforms
+        if output:
+            forward_transform, _ = self._create_transforms(self.ys)
+        else:
+            forward_transform, _ = self._create_transforms(self.xs)
+
+        return forward_transform(data)
 
     @staticmethod
     def _create_transforms(input, min_std=1e-6):

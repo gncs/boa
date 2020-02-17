@@ -116,7 +116,7 @@ class FullyFactorizedGPModel(AbstractModel):
                                      length_scales=length_scales,
                                      noise_amplitude=noise_amplitude)
 
-                return -gp.log_pdf(xs, ys[:, i:i + 1], normalize=True)
+                return -gp.log_pdf(xs, ys[:, i:i + 1], normalize_with_input=True)
 
             # Robust optimization
             j = 0
@@ -212,6 +212,43 @@ class FullyFactorizedGPModel(AbstractModel):
             variances = variances.numpy()
 
         return means, variances
+
+    def log_prob(self, xs, ys, use_conditioning_data=True, latent=True, numpy=False):
+
+        if len(self.models) < self.output_dim:
+            logger.info("GPs haven't been cached yet, creating them now.")
+            self.create_gps()
+
+        xs, ys = self._validate_and_convert_input_output(xs, ys)
+
+        log_prob = 0.
+
+        for i, model in enumerate(self.models):
+
+            cond_model = model | (self.xs, self.ys[:, i:i + 1])
+
+            if use_conditioning_data:
+                model_log_prob = cond_model.log_pdf(xs,
+                                                    ys[:, i:i + 1],
+                                                    latent=latent,
+                                                    with_jitter=False,
+                                                    normalize_with_training_data=True)
+            else:
+                # Normalize model to the regime on which the models were trained
+                norm_xs = cond_model.normalize_with_training_data(xs, output=False)
+                norm_ys = cond_model.normalize_with_training_data(ys[:, i:i + 1], output=True)
+
+                model_log_prob = model.log_pdf(norm_xs,
+                                               norm_ys,
+                                               latent=latent,
+                                               with_jitter=False)
+
+            log_prob = log_prob + model_log_prob
+
+        if numpy:
+            log_prob = log_prob.numpy()
+
+        return log_prob
 
     def create_gps(self):
         self.models.clear()

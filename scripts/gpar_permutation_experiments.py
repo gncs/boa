@@ -50,6 +50,8 @@ def run_random_experiment(model,
                           outputs: Sequence[str],
                           num_target_dims,
                           training_set_size,
+                          validation_set_size,
+                          test_set_size,
                           logdir,
                           experiment_file_name,
                           matrix_factorized,
@@ -57,6 +59,7 @@ def run_random_experiment(model,
                           rounds,
                           seed: int = 42,
                           verbose=False):
+
     experiment_file_path = os.path.join(logdir, experiment_file_name)
 
     # Make sure the directory exists
@@ -68,6 +71,12 @@ def run_random_experiment(model,
     # Set seed for reproducibility
     np.random.seed(seed)
     tf.random.set_seed(seed)
+
+    # Split the data into training and validation set and the held-out test set
+    train_and_validate, test = train_test_split(data,
+                                                train_size=training_set_size + validation_set_size,
+                                                test_size=test_set_size,
+                                                random_state=seed)
 
     # =========================================================================
     # Perform random search
@@ -92,35 +101,49 @@ def run_random_experiment(model,
         raise Exception(f"Unknown magnitude for the number of random samples to be drawn: {num_samples}!")
 
     logger.info(f"Performing random order search using {num_samples} samples!")
-    for sample_number in range(num_samples):
 
-        # Draw a new permutation
-        perm = uniform_gm.sample(as_tuple=True)
+    # We "restart" the search rounds number of times
+    for index in range(rounds):
 
-        # convert numpy.int64 to python int
-        perm = tuple([p.item() for p in perm])
+        experiment = {'index': index,
+                      'size': training_set_size,
+                      'inputs': inputs,
+                      'outputs': outputs}
 
-        # Complete the permutation to all inputs
-        perm = perm + tuple(range(num_permuted_dimensions, len(outputs)))
+        # In each round we do a different train-validate split
+        train, validate = train_test_split(data,
+                                           train_size=training_set_size,
+                                           test_size=validation_set_size,
+                                           random_state=seed + index)
 
-        for index in range(rounds):
+        # We will record the statistics for every permutation selected, and choose the best one of these
+        sample_stats = {}
 
-            logger.info("-----------------------------------------------------------")
+        for sample_number in range(num_samples):
+
+            # Set the seed for reproducibility in a way that we never use the same seed
+            tf.random.set_seed(seed * (index + 1) + sample_number)
+
+            # Draw a new permutation
+            perm = uniform_gm.sample(as_tuple=True)
+
+            # convert numpy.int64 to python int
+            perm = tuple([p.item() for p in perm])
+
+            # Complete the permutation to all inputs
+            perm = perm + tuple(range(num_permuted_dimensions, len(outputs)))
+
+            sample_stat = {"perm": perm}
+
             logger.info(f"Training round: {index + 1}/{rounds} for training set size {training_set_size}, "
-                        f"permutation #{sample_number + 1}: {perm}")
-            logger.info("-----------------------------------------------------------")
-
-            experiment = {'index': index,
-                          'size': training_set_size,
-                          'inputs': inputs,
-                          'outputs': outputs,
-                          "perm": perm}
+                        f"permutation #{sample_number + 1} out of {num_samples}: {perm}")
 
             if matrix_factorized:
-                experiment["latent_size"] = model.latent_dim
+                sample_stat["latent_size"] = model.latent_dim
 
-            train, test = train_test_split(data, train_size=training_set_size, test_size=200, random_state=seed + index)
-
+            # -----------------------------------------------------------------------------
+            # Train model
+            # -----------------------------------------------------------------------------
             start_time = time.time()
             try:
                 model = model.condition_on(train[inputs].values, train[outputs].values[:, perm], keep_previous=False)
@@ -129,37 +152,85 @@ def run_random_experiment(model,
                 logger.exception("Training failed: {}".format(str(e)))
                 raise e
 
-            experiment['train_time'] = time.time() - start_time
+            sample_stat['train_time'] = time.time() - start_time
 
-            save_path = f"{DEFAULT_MODEL_SAVE_DIR}/{experiment_file_name}/size_{training_set_size}/model_{index}/model"
-            model.save(save_path)
-            logger.info(f"Saved model to {save_path}!")
-
+            # -----------------------------------------------------------------------------
+            # Validate model
+            # -----------------------------------------------------------------------------
             start_time = time.time()
-
             try:
-                mean, _ = model.predict(test[inputs].values, numpy=True)
+                mean, _ = model.predict(validate[inputs].values, numpy=True)
+
+                validation_log_prob = model.log_prob(validate[inputs].values,
+                                                     validate[outputs].values[:, perm],
+                                                     use_conditioning_data=True,
+                                                     numpy=True)
 
             except Exception as e:
                 logger.exception("Prediction failed: {}, saving model!".format(str(e)))
 
                 model.save("models/exceptions/" + experiment_file_name + "/model")
                 raise e
-                # continue
 
-            experiment['predict_time'] = time.time() - start_time
+            sample_stat['predict_time'] = time.time() - start_time
 
-            diff = (test[outputs].values - mean)
+            diff = (validate[outputs].values - mean)
 
-            experiment['mean_abs_err'] = np.mean(np.abs(diff), axis=0).tolist()
-            experiment['mean_squ_err'] = np.mean(np.square(diff), axis=0).tolist()
-            experiment['rmse'] = np.sqrt(np.mean(np.square(diff), axis=0)).tolist()
+            sample_stat['mean_abs_err'] = np.mean(np.abs(diff), axis=0).tolist()
+            sample_stat['mean_squ_err'] = np.mean(np.square(diff), axis=0).tolist()
+            sample_stat['rmse'] = np.sqrt(np.mean(np.square(diff), axis=0)).tolist()
 
-            experiments.append(experiment)
+            sample_stats[validation_log_prob] = sample_stat
 
-            logger.info("Saving experiments to {}".format(experiment_file_path))
-            with open(experiment_file_path, mode='w') as out_file:
-                json.dump(experiments, out_file, sort_keys=True, indent=4)
+        experiment["sample_stats"] = sample_stats
+
+        # Find best model, and train it on the joint train and validation set
+        best_log_prob = np.min(list(sample_stats.keys()))
+        best_perm = sample_stats[best_log_prob]
+
+        logger.info(f"Retraining model with best permutation: {best_perm}, log_prob: {best_log_prob}")
+        # -----------------------------------------------------------------------------
+        # Train best model
+        # -----------------------------------------------------------------------------
+        start_time = time.time()
+        try:
+            model = model.condition_on(train_and_validate[inputs].values,
+                                       train_and_validate[outputs].values[:, best_perm],
+                                       keep_previous=False)
+            model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts,
+                                           optimizer=optimizer,
+                                           trace=True)
+        except Exception as e:
+            logger.exception("Training failed: {}".format(str(e)))
+            raise e
+
+        experiment['train_time'] = time.time() - start_time
+
+        # -----------------------------------------------------------------------------
+        # Test best model
+        # -----------------------------------------------------------------------------
+        start_time = time.time()
+        try:
+            mean, _ = model.predict(test[inputs].values, numpy=True)
+        except Exception as e:
+            logger.exception("Prediction failed: {}, saving model!".format(str(e)))
+
+            model.save("models/exceptions/" + experiment_file_name + "/model")
+            raise e
+
+        experiment['predict_time'] = time.time() - start_time
+
+        diff = (test[outputs].values - mean)
+
+        experiment['mean_abs_err'] = np.mean(np.abs(diff), axis=0).tolist()
+        experiment['mean_squ_err'] = np.mean(np.square(diff), axis=0).tolist()
+        experiment['rmse'] = np.sqrt(np.mean(np.square(diff), axis=0)).tolist()
+
+        experiments.append(experiment)
+
+        logger.info("Saving experiments to {}".format(experiment_file_path))
+        with open(experiment_file_path, mode='w') as out_file:
+            json.dump(experiments, out_file, sort_keys=True, indent=4)
 
     return experiments
 
@@ -172,6 +243,8 @@ def run_greedy_experiment(model,
                           outputs,
                           num_target_dims,
                           training_set_size,
+                          validation_set_size,
+                          test_set_size,
                           logdir,
                           matrix_factorized,
                           experiment_file_name,
@@ -188,6 +261,12 @@ def run_greedy_experiment(model,
     # Set seed for reproducibility
     np.random.seed(seed)
     tf.random.set_seed(seed)
+
+    # Split the data into training and validation set and the held-out test set
+    train_and_validate, test = train_test_split(data,
+                                                train_size=training_set_size + validation_set_size,
+                                                test_size=test_set_size,
+                                                random_state=seed)
 
     # =========================================================================
     # Perform Greedy search
@@ -207,13 +286,18 @@ def run_greedy_experiment(model,
         if matrix_factorized:
             experiment["latent_size"] = model.latent_dim
 
-        train, test = train_test_split(data, train_size=training_set_size, test_size=200, random_state=seed + index)
+        train, validate = train_test_split(data,
+                                           train_size=training_set_size,
+                                           test_size=validation_set_size,
+                                           random_state=seed + index)
 
         start_time = time.time()
         try:
             model = model.condition_on(train[inputs].values, train[outputs].values[:, :], keep_previous=False)
-            model.fit_greedy_ordering(xs=train[inputs].values,
-                                      ys=train[outputs].values[:, :],
+            model.fit_greedy_ordering(train_xs=train[inputs].values,
+                                      train_ys=train[outputs].values[:, :],
+                                      validation_xs=validate[inputs].values,
+                                      validation_ys=validate[outputs].values[:, :],
                                       trace=True,
                                       optimizer_restarts=optimizer_restarts,
                                       seed=seed + index,
@@ -267,7 +351,7 @@ def prepare_gpar_data(data, targets):
     return data.df, data.input_labels.copy(), output_labels
 
 
-def main(args, seed=27, experiment_json_format="{}_size_{}_{}_experiments.json"):
+def main(args, seed=27, experiment_json_format="{}_train_{}_valid_{}_{}_experiments.json"):
     data = load_dataset(path=args.dataset, kind=args.task)
 
     model = None
@@ -303,10 +387,12 @@ def main(args, seed=27, experiment_json_format="{}_size_{}_{}_experiments.json")
     if args.model in ["mf-gpar"]:
         experiment_file_name = experiment_json_format.format(f"{args.model}-{args.latent_dim}",
                                                              args.train_size,
+                                                             args.validation_size,
                                                              args.search_mode)
     else:
         experiment_file_name = experiment_json_format.format(args.model,
                                                              args.train_size,
+                                                             args.validation_size,
                                                              args.search_mode)
 
     if args.search_mode == "random_search":
@@ -319,6 +405,8 @@ def main(args, seed=27, experiment_json_format="{}_size_{}_{}_experiments.json")
                                         num_target_dims=args.num_target_dims,
                                         num_samples=args.num_samples,
                                         training_set_size=args.train_size,
+                                        validation_set_size=args.validation_size,
+                                        test_set_size=args.test_size,
                                         logdir=args.logdir,
                                         matrix_factorized=args.model == "mf-gpar",
                                         experiment_file_name=experiment_file_name,
@@ -335,6 +423,8 @@ def main(args, seed=27, experiment_json_format="{}_size_{}_{}_experiments.json")
                               outputs=output_labels,
                               num_target_dims=args.num_target_dims,
                               training_set_size=args.train_size,
+                              validation_set_size=args.validation_size,
+                              test_set_size=args.test_size,
                               logdir=args.logdir,
                               matrix_factorized=args.model == "mf-gpar",
                               experiment_file_name=experiment_file_name,
@@ -454,8 +544,18 @@ if __name__ == "__main__":
         for search_mode in [random_search_mode, greedy_search_mode]:
             search_mode.add_argument("--train_size",
                                      type=int,
-                                     default=50,
+                                     default=100,
                                      help="Number of training examples to use.")
+
+            search_mode.add_argument("--validation_size",
+                                     type=int,
+                                     default=50,
+                                     help="Number of examples to use for validation.")
+
+            search_mode.add_argument("--test_size",
+                                     type=int,
+                                     default=200,
+                                     help="Number of examples to use for the held-out test set.")
 
             search_mode.add_argument("--num_target_dims",
                                      type=int,
