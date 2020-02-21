@@ -1,6 +1,7 @@
 import logging
 
 from tqdm import trange
+from scipy.optimize import linear_sum_assignment
 
 import numpy as np
 import tensorflow as tf
@@ -59,9 +60,9 @@ class PermutedGPARModel(GPARModel):
         temperature = tf.cast(temperature, tf.float64)
 
         # Add Gumbel noise for robustness
-        log_perm_mat = log_mat - tf.math.log(
-            -tf.math.log(tf.random.uniform(shape=log_mat.shape, dtype=tf.float64) + 1e-20))
-        log_perm_mat = log_perm_mat - tf.math.log(temperature)
+        # log_perm_mat = log_mat - tf.math.log(
+        #     -tf.math.log(tf.random.uniform(shape=log_mat.shape, dtype=tf.float64) + 1e-20))
+        log_perm_mat = log_mat - tf.math.log(temperature)
 
         # Perform Sinkhorn normalization
         for _ in range(sinkhorn_iterations):
@@ -178,6 +179,7 @@ class PermutedGPARModel(GPARModel):
                     # Define i-th GP training loss
                     def negative_gp_log_likelihood(signal_amplitude, length_scales, noise_amplitude):
                         gp = GaussianProcess(kernel=self.kernel_name,
+                                             input_dim=self.input_dim + 1,
                                              signal_amplitude=signal_amplitude,
                                              length_scales=length_scales,
                                              noise_amplitude=noise_amplitude)
@@ -201,9 +203,13 @@ class PermutedGPARModel(GPARModel):
                         continue
 
             else:
+                lr = tf.Variable(learn_rate, dtype=tf.float64)
+
                 # Epsilon set to 1e-8 to match Wessel's Varz Adam settings.
-                optimizer = tf.optimizers.Adam(learn_rate, epsilon=1e-8)
+                optimizer = tf.optimizers.Adam(lr, epsilon=1e-8)
                 prev_loss = np.inf
+
+                target_beta = tf.cast(beta, tf.float64)
 
                 with trange(iters) as t:
 
@@ -217,17 +223,33 @@ class PermutedGPARModel(GPARModel):
                             temperature = tf.maximum((end_temp - start_temp) / (iters / 2) * iteration + start_temp,
                                                      end_temp)
 
+                            # Warm-up for beta
+                            beta = tf.minimum(iteration * target_beta / (iters / 2), target_beta)
+
+                            # Learning rate schedule
+                            if iteration == iters // 3:
+                                lr.assign(learn_rate / 3)
+
+                            if iteration == 2 * iters // 3:
+                                lr.assign(learn_rate / 10)
+
                             soft_perm, hard_perm = self.permutation_matrix(permutation,
                                                                            temperature=temperature,
                                                                            sinkhorn_iterations=20)
 
+                            x_ind, y_ind = linear_sum_assignment(soft_perm.numpy())
+                            hard_perm_ = np.zeros(soft_perm.shape)
+                            hard_perm_[x_ind, y_ind] = 1
+                            hard_perm_ = tf.convert_to_tensor(hard_perm_, dtype=tf.float64)
+
                             soft_permuted_ys = tf.matmul(ys, soft_perm)
                             hard_permuted_ys = tf.matmul(ys, hard_perm)
+                            hard_permuted_ys_ = tf.matmul(ys, hard_perm_)
 
                             if hard_forward_permutation:
                                 # Forward pass: use hard permutation
                                 # Backward pass: pretend we used the soft permutation all along
-                                permuted_output = soft_permuted_ys + tf.stop_gradient(hard_permuted_ys - soft_permuted_ys)
+                                permuted_output = soft_permuted_ys + tf.stop_gradient(hard_permuted_ys_ - soft_permuted_ys)
                             else:
                                 permuted_output = soft_permuted_ys
 
@@ -235,6 +257,7 @@ class PermutedGPARModel(GPARModel):
                                 # Define i-th GP training loss
                                 # Create i-th GP
                                 gp = GaussianProcess(kernel=self.kernel_name,
+                                                     input_dim=self.input_dim + i,
                                                      signal_amplitude=signal_amplitudes[i](),
                                                      length_scales=length_scales[i](),
                                                      noise_amplitude=noise_amplitudes[i]())
@@ -249,7 +272,6 @@ class PermutedGPARModel(GPARModel):
                                 perm_entropy = soft_perm * tf.math.log(soft_perm)
                                 perm_entropy = -tf.reduce_sum(perm_entropy)
 
-                                beta = tf.cast(beta, tf.float64)
                                 loss += gp_nll + beta * perm_entropy
 
                         if tf.abs(prev_loss - loss) < tolerance:
@@ -264,7 +286,8 @@ class PermutedGPARModel(GPARModel):
                         optimizer.apply_gradients(zip(gradients, hps))
 
                         t.set_description(f"Loss at iteration {iteration}: {loss:.3f}, temperature: {temperature:.5f}, "
-                                          f"NLL: {gp_nll:.3f}, Entropy: {perm_entropy:.3f}")
+                                          f"NLL: {gp_nll:.3f}, Entropy: {perm_entropy:.3f}, Beta: {beta:.3f}, "
+                                          f"Learning Rate: {lr.value().numpy():.3f}")
 
             if loss < best_loss:
 

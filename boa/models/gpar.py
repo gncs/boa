@@ -172,6 +172,7 @@ class GPARModel(AbstractModel):
             def negative_gp_log_likelihood(length_scales, signal_amplitude, noise_amplitude):
 
                 gp = GaussianProcess(kernel=self.kernel_name,
+                                     input_dim=self.input_dim + i,
                                      signal_amplitude=signal_amplitude,
                                      length_scales=length_scales,
                                      noise_amplitude=noise_amplitude)
@@ -273,6 +274,7 @@ class GPARModel(AbstractModel):
                     # for the current output
                     if self.denoising:
                         gp = GaussianProcess(kernel=self.kernel_name,
+                                             input_dim=self.input_dim + i,
                                              signal_amplitude=self.signal_amplitudes[i],
                                              length_scales=self.length_scales[i],
                                              noise_amplitude=self.noise_amplitudes[i])
@@ -357,6 +359,7 @@ class GPARModel(AbstractModel):
                 def negative_gp_log_likelihood(xs, ys, signal_amplitude, length_scales, noise_amplitude, train=True):
 
                     gp = GaussianProcess(kernel=self.kernel_name,
+                                         input_dim=self.input_dim + i,
                                          signal_amplitude=signal_amplitude,
                                          length_scales=length_scales,
                                          noise_amplitude=noise_amplitude)
@@ -561,7 +564,7 @@ class GPARModel(AbstractModel):
 
         return means, variances
 
-    def log_prob(self, xs, ys, use_conditioning_data=True, latent=True, numpy=False):
+    def log_prob(self, xs, ys, use_conditioning_data=True, latent=False, numpy=False):
 
         if len(self.models) < self.output_dim:
             logger.info("GPs haven't been cached yet, creating them now.")
@@ -610,6 +613,7 @@ class GPARModel(AbstractModel):
 
         for i in range(self.output_dim):
             gp = GaussianProcess(kernel=self.kernel_name,
+                                 input_dim=self.input_dim + i,
                                  signal_amplitude=self.signal_amplitudes[i],
                                  length_scales=self.length_scales[i],
                                  noise_amplitude=self.noise_amplitudes[i])

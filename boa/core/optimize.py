@@ -128,7 +128,6 @@ def _recursive_flatten(xs, index):
 
     for x in xs:
         if isinstance(x, (tf.Variable, tf.Tensor)):
-
             flat = tf.reshape(x, [-1])
             res.append(flat)
 
@@ -149,7 +148,9 @@ def _recursive_flatten(xs, index):
             shapes.append(sub_shapes)
 
         else:
-            raise CoreError(f"Invalid type of argument was supplied to recursive_flatten: {type(x)}")
+            raise CoreError(f"Invalid type of argument was supplied to recursive_flatten: {type(x)}. "
+                            f"Maybe some of the variables are not being tracked in the optimizer, "
+                            f"or do not have gradients?")
 
     return res, index, bounds, shapes
 

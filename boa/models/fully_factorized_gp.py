@@ -112,6 +112,7 @@ class FullyFactorizedGPModel(AbstractModel):
             def negative_gp_log_likelihood(length_scales, signal_amplitude, noise_amplitude):
 
                 gp = GaussianProcess(kernel=self.kernel_name,
+                                     input_dim=self.input_dim,
                                      signal_amplitude=signal_amplitude,
                                      length_scales=length_scales,
                                      noise_amplitude=noise_amplitude)
@@ -255,6 +256,7 @@ class FullyFactorizedGPModel(AbstractModel):
 
         for i in range(self.output_dim):
             gp = GaussianProcess(kernel=self.kernel_name,
+                                 input_dim=self.input_dim,
                                  signal_amplitude=self.signal_amplitudes[i],
                                  length_scales=self.length_scales[i],
                                  noise_amplitude=self.noise_amplitudes[i])

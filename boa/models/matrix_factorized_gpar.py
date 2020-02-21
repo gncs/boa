@@ -178,6 +178,7 @@ class MatrixFactorizedGPARModel(GPARModel):
         def negative_gp_log_likelihood(idx, signal_amplitude, length_scales, noise_amplitude):
 
             gp = GaussianProcess(kernel=self.kernel_name,
+                                 input_dim=self.input_dim + idx,
                                  signal_amplitude=signal_amplitude,
                                  length_scales=length_scales,
                                  noise_amplitude=noise_amplitude)
@@ -323,6 +324,7 @@ class MatrixFactorizedGPARModel(GPARModel):
 
         for i in range(self.output_dim):
             gp = GaussianProcess(kernel=self.kernel_name,
+                                 input_dim=self.input_dim + i,
                                  signal_amplitude=self.signal_amplitudes[i],
                                  length_scales=self.length_scales[i],
                                  noise_amplitude=self.noise_amplitudes[i])

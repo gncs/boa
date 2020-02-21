@@ -179,11 +179,14 @@ class AbstractModel(tf.keras.Model):
         if not hasattr(xs, "__len__"):
             raise ModelError("input must be array-like!")
 
-        xs = tf.convert_to_tensor(xs, dtype=tf.float64)
+        xs = tf.convert_to_tensor(xs)
+        xs = tf.cast(xs, tf.float64)
 
-        # Convert a vector to "row vector"
         if len(xs.shape) == 1:
-            xs = tf.reshape(xs, (1, -1))
+            second_dim = self.output_dim if output else self.input_dim
+
+            # Attempt to convert the xs to the right shape
+            xs = tf.reshape(xs, (-1, second_dim))
 
         # Check if the shapes are correct
         if not len(xs.shape) == 2:
@@ -191,7 +194,9 @@ class AbstractModel(tf.keras.Model):
 
         if (not output and xs.shape[1] != self.input_dim) or \
                 (output and xs.shape[1] != self.output_dim):
-            raise ModelError(f"The second dimension of the input is incorrect: {xs.shape[1]}!")
+            out_text = 'output' if output else 'input'
+            raise ModelError(f"The second dimension of the {out_text} "
+                             f"is incorrect: {xs.shape[1]} (expected {self.output_dim if output else self.input_dim})!")
 
         return xs
 
