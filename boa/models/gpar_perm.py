@@ -198,7 +198,7 @@ class PermutedGPARModel(GPARModel):
                                                                  parallel_iterations=10)
 
                     if diverged:
-                        logger.error(f"Model diverged, restarting iteration {j}!")
+                        logger.error(f"Model diverged, restarting iteration {j} (loss was {loss:.3f})!")
                         j -= 1
                         continue
 

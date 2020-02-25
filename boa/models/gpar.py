@@ -203,10 +203,11 @@ class GPARModel(AbstractModel):
                         loss, converged, diverged = bounded_minimize(function=negative_gp_log_likelihood,
                                                                      vs=hyperparams,
                                                                      parallel_iterations=10,
-                                                                     max_iterations=iters)
+                                                                     max_iterations=iters,
+                                                                     trace=False)
 
                         if diverged:
-                            logger.error(f"Model diverged, restarting iteration {j}!")
+                            logger.error(f"Model diverged, restarting iteration {j}! (loss was {loss:.3f})")
                             j -= 1
                             continue
 
@@ -412,7 +413,7 @@ class GPARModel(AbstractModel):
                             loss, _, diverged = res
 
                             if diverged:
-                                logger.error(f"Optimization diverged, restarting iteration {j}!")
+                                logger.error(f"Optimization diverged, restarting iteration {j}! (loss was {loss:.3f})")
                                 j -= 1
                                 continue
 

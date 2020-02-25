@@ -49,6 +49,7 @@ def run_experiment(model,
                    logdir,
                    experiment_file_name,
                    matrix_factorized,
+                   iters: int,
                    rounds: int = 5,
                    seed: int = 42,
                    verbose=False):
@@ -82,7 +83,10 @@ def run_experiment(model,
             start_time = time.time()
             try:
                 model = model.condition_on(train[inputs].values, train[outputs].values[:, :], keep_previous=False)
-                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts, optimizer=optimizer, trace=True)
+                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts,
+                                               optimizer=optimizer,
+                                               trace=True,
+                                               iters=iters)
             except Exception as e:
                 logger.exception("Training failed: {}".format(str(e)))
                 raise e
@@ -167,6 +171,7 @@ def main(args, seed=27, experiment_json_format="{}_experiments.json"):
                                  optimizer_restarts=args.num_optimizer_restarts,
                                  inputs=input_labels,
                                  outputs=output_labels,
+                                 iters=args.iters,
                                  matrix_factorized=False,
                                  logdir=args.logdir,
                                  experiment_file_name=experiment_json_format.format(args.model),
@@ -214,6 +219,7 @@ def main(args, seed=27, experiment_json_format="{}_experiments.json"):
                                  optimizer_restarts=args.num_optimizer_restarts,
                                  inputs=input_labels,
                                  outputs=output_labels,
+                                 iters=args.iters,
                                  logdir=args.logdir,
                                  matrix_factorized=args.model == "mf-gpar",
                                  experiment_file_name=experiment_file_name,
@@ -304,6 +310,11 @@ if __name__ == "__main__":
                           choices=AVAILABLE_INITIALIZATION,
                           default=AVAILABLE_INITIALIZATION[0],
                           help="Initialization heuristic for the hyperparameters of the models.")
+
+        mode.add_argument("--iters",
+                          type=int,
+                          default=1000,
+                          help="Number of training iterations to allow either for L-BFGS-B or Adam.")
 
     args = parser.parse_args()
 

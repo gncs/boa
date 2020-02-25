@@ -656,7 +656,7 @@ def run_hierarchical_bayesopt_experiment(model,
 
         best_log_prob = tf.reduce_max(observed_log_probs)
 
-        experiment["perm"] = best_perm
+        experiment["perm"] = [int(b) for b in best_perm]
 
         # ---------------------------------------------------------------------
         # Step 4: Retrain the model on the joint training-validation set
