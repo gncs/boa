@@ -757,7 +757,7 @@ def prepare_gpar_data(data, targets):
     return data.df, data.input_labels.copy(), output_labels
 
 
-def main(args, seed=27, experiment_json_format="{}_train_{}_valid_{}_{}_{}_experiments.json"):
+def main(args, seed=27, experiment_json_format="{}_train_{}_valid_{}_{}_{}_{}_experiments.json"):
     data = load_dataset(path=args.dataset, kind=args.task)
 
     model = None
@@ -790,6 +790,7 @@ def main(args, seed=27, experiment_json_format="{}_train_{}_valid_{}_{}_{}_exper
     experiment_file_name = ""
 
     dist_kind_string = args.distance_kind if search_mode == "hbo" else ""
+    only_median_string = "only_median" if search_mode == "hbo" and args.median_heuristic_only else ""
 
     # If the model uses matrix factorization, then append the latent dimension to the file name
     if args.model in ["mf-gpar"]:
@@ -797,13 +798,15 @@ def main(args, seed=27, experiment_json_format="{}_train_{}_valid_{}_{}_{}_exper
                                                              args.train_size,
                                                              args.validation_size,
                                                              args.search_mode,
-                                                             dist_kind_string)
+                                                             dist_kind_string,
+                                                             only_median_string)
     else:
         experiment_file_name = experiment_json_format.format(args.model,
                                                              args.train_size,
                                                              args.validation_size,
                                                              args.search_mode,
-                                                             dist_kind_string)
+                                                             dist_kind_string,
+                                                             only_median_string)
 
     if args.search_mode == "random_search":
         results = run_random_experiment(model=model,

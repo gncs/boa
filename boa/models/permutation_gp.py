@@ -41,7 +41,7 @@ class PermutationGPModel(AbstractModel):
 
         self.length_scale = tf.Variable(1., dtype=tf.float64, name="length_scale")
         self.signal_amplitude = tf.Variable(1., dtype=tf.float64, name="signal_amplitude")
-        self.noise_amplitude = tf.Variable(1e-2, dtype=tf.float64, name="noise_amplitude")
+        self.noise_amplitude = tf.Variable(1e-1, dtype=tf.float64, name="noise_amplitude")
 
     def initialize_hyperparameters(self, init_minval=0.1, init_maxval=1.):
         length_scale = BoundedVariable(tf.random.uniform(shape=(1,),
@@ -68,7 +68,7 @@ class PermutationGPModel(AbstractModel):
                                           upper=1e2,
                                           dtype=tf.float64)
 
-        return length_scale, signal_amplitude, noise_amplitude
+        return length_scale, signal_amplitude, tf.cast(1e-1) #noise_amplitude
 
     def fit(self, xs, ys, optimizer='l-bfgs-b', optimizer_restarts=1, iters=1000, trace=False,
             err_level="catch", median_heuristic_only=False) -> None:
@@ -121,8 +121,8 @@ class PermutationGPModel(AbstractModel):
 
             try:
 
-                loss, converged, diverged = bounded_minimize(function=negative_perm_gp_log_likelihood,
-                                                             vs=hyperparams,
+                loss, converged, diverged = bounded_minimize(function=lambda l, s: negative_perm_gp_log_likelihood(l, s, noise_amplitude),
+                                                             vs=(length_scale, signal_amplitude),
                                                              parallel_iterations=10,
                                                              max_iterations=iters)
 
@@ -159,7 +159,7 @@ class PermutationGPModel(AbstractModel):
                 # Reassign variables
                 self.length_scale.assign(length_scale()[0])
                 self.signal_amplitude.assign(signal_amplitude()[0])
-                self.noise_amplitude.assign(noise_amplitude()[0])
+                # self.noise_amplitude.assign(noise_amplitude()[0])
 
                 print(self.length_scale)
                 print(self.signal_amplitude)
