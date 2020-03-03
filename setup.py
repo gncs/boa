@@ -30,6 +30,8 @@ setup(
         'matplotlib',
         'scikit-learn',
         'tensorflow',
+        'tensorflow-probability',
+        'tqdm',
         'stheno',
     ],
     zip_safe=False,
