@@ -5,7 +5,7 @@ from stheno.tensorflow import EQ, Delta, Matern52, GP, Graph, dense
 from boa import ROOT_DIR
 
 from .utils import CoreError, setup_logger
-from .kernel import DiscreteMatern52, DiscreteEQ, KendallTauEQ, KendallTauMatern52
+from .kernel import DiscreteMatern52, DiscreteEQ, PermutationEQ, PermutationMatern52
 
 __all__ = ["GaussianProcess", "CoreError"]
 
@@ -24,8 +24,8 @@ class GaussianProcess(tf.Module):
         "matern52": Matern52,
         "discrete_matern52": DiscreteMatern52,
         "discrete_rbf": DiscreteEQ,
-        "tau_rbf": KendallTauEQ,
-        "tau_matern52": KendallTauMatern52
+        "perm_eq": PermutationEQ,
+        "perm_matern52": PermutationMatern52
     }
 
     SIG_AMP = "signal_amplitude"
@@ -38,6 +38,7 @@ class GaussianProcess(tf.Module):
                  signal_amplitude,
                  length_scales,
                  noise_amplitude,
+                 kernel_args={},
                  jitter: tf.float64 = 1e-10,
                  verbose: bool = False,
                  name: str = "gaussian_process",
@@ -48,7 +49,8 @@ class GaussianProcess(tf.Module):
         # Check if the specified kernel is available
         if kernel in self.AVAILABLE_KERNELS:
             self.kernel_name = kernel
-            self.kernel = self.AVAILABLE_KERNELS[kernel]()
+            self.kernel_args = kernel_args
+            self.kernel = self.AVAILABLE_KERNELS[kernel](**kernel_args)
         else:
             raise CoreError(f"Specified kernel '{kernel}' not available!")
 
@@ -303,12 +305,14 @@ class DiscreteGaussianProcess(GaussianProcess):
                  kernel: str,
                  input_dim: int,
                  signal_amplitude,
+                 kernel_args = {},
                  jitter: tf.float64 = 1e-10,
                  verbose: bool = False,
                  name: str = "discrete_gaussian_process",
                  **kwargs):
 
         super().__init__(kernel=kernel,
+                         kernel_args=kernel_args,
                          input_dim=input_dim,
                          name=name,
                          signal_amplitude=signal_amplitude,

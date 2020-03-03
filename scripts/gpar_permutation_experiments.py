@@ -34,6 +34,8 @@ AVAILABLE_INITIALIZATION = ["median", "random", "dim_median"]
 
 AVAILABLE_RANDOM_SEARCH_OPTIONS = ["linear", "log-linear", "quadratic"]
 
+AVAILABLE_HBO_DISTANCE_KINDS = ["kendall", "inverse_weighted_kendall", "weighted_kendall", "spearman"]
+
 DATASET_TARGETS = {
     "fft": ('avg_power', 'cycle', 'total_area'),
     "stencil3d": ('avg_power', 'cycle', 'total_area'),
@@ -392,6 +394,7 @@ def run_hierarchical_bayesopt_experiment(model,
                                          experiment_file_name,
                                          seed,
                                          rounds,
+                                         distance_kind,
                                          xi=0.01):
     experiment_file_path = os.path.join(logdir, experiment_file_name)
 
@@ -536,7 +539,8 @@ def run_hierarchical_bayesopt_experiment(model,
             # Only use the non-target dimensions
             train_permutations.append(warmup_stat['perm'][:-num_target_dims])
 
-        perm_gp = PermutationGPModel(kernel='tau_rbf',
+        perm_gp = PermutationGPModel(kernel='perm_eq',
+                                     distance_kind=distance_kind,
                                      input_dim=num_permuted_dimensions)
 
         logger.info("Fitting hyperparameters of the permutation surrogate model")
@@ -995,6 +999,11 @@ if __name__ == "__main__":
         hier_bayesopt_search_mode.add_argument("--num_bayesopt_candidates",
                                                type=int,
                                                default=10000,
+                                               help="Number of candidate permutations to be generated.")
+
+        hier_bayesopt_search_mode.add_argument("--distance_kind",
+                                               choices=AVAILABLE_HBO_DISTANCE_KINDS,
+                                               default=AVAILABLE_HBO_DISTANCE_KINDS[0],
                                                help="Number of candidate permutations to be generated.")
 
         for search_mode in [random_search_mode, greedy_search_mode, hier_bayesopt_search_mode]:

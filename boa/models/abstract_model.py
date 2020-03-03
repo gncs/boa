@@ -23,6 +23,7 @@ class AbstractModel(tf.keras.Model):
                  kernel: str,
                  input_dim: int,
                  output_dim: int,
+                 kernel_args = {},
                  parallel: bool = False,
                  verbose: bool = False,
                  name: str = "abstract_model",
@@ -46,6 +47,7 @@ class AbstractModel(tf.keras.Model):
         # Check if the specified kernel is available
         if kernel in GaussianProcess.AVAILABLE_KERNELS:
             self.kernel_name = kernel
+            self.kernel_args = kernel_args
         else:
             raise ModelError("Specified kernel {} not available!".format(kernel))
 
