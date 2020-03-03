@@ -32,12 +32,15 @@ class PermutationGPModel(AbstractModel):
                  name: str = "permutation_gp_model",
                  **kwargs):
         super().__init__(kernel=kernel,
+                         kernel_args={"kind": distance_kind},
                          input_dim=input_dim,
                          output_dim=1,
                          parallel=False,
                          verbose=False,
                          name=name,
                          **kwargs)
+
+        self.distance_kind = distance_kind
 
         self.length_scale = tf.Variable(1., dtype=tf.float64, name="length_scale")
         self.signal_amplitude = tf.Variable(1., dtype=tf.float64, name="signal_amplitude")
@@ -271,7 +274,7 @@ class PermutationGPModel(AbstractModel):
         return {
             "name": self.name,
             "kernel": self.kernel_name,
-            "kernel_args": self.kernel_args,
+            "distance_kind": self.distance_kind,
             "input_dim": self.input_dim,
         }
 

@@ -592,7 +592,9 @@ def run_hierarchical_bayesopt_experiment(model,
 
             # Generate the whole neighbourhood around the candidates
             candidates = flatten(list(map(lambda p: generate_neighbourhood(p, dist=dist), candidates)))
-            return candidates
+
+            # Eliminate duplicates
+            return list(set(candidates))
 
         for sample_number in range(num_bayesopt_steps):
 
