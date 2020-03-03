@@ -757,7 +757,7 @@ def prepare_gpar_data(data, targets):
     return data.df, data.input_labels.copy(), output_labels
 
 
-def main(args, seed=27, experiment_json_format="{}_train_{}_valid_{}_{}_experiments.json"):
+def main(args, seed=27, experiment_json_format="{}_train_{}_valid_{}_{}_{}_experiments.json"):
     data = load_dataset(path=args.dataset, kind=args.task)
 
     model = None
@@ -789,17 +789,21 @@ def main(args, seed=27, experiment_json_format="{}_train_{}_valid_{}_{}_experime
     # Perform experiments
     experiment_file_name = ""
 
+    dist_kind_string = args.distance_kind if search_mode == "hbo" else ""
+
     # If the model uses matrix factorization, then append the latent dimension to the file name
     if args.model in ["mf-gpar"]:
         experiment_file_name = experiment_json_format.format(f"{args.model}-{args.latent_dim}",
                                                              args.train_size,
                                                              args.validation_size,
-                                                             args.search_mode)
+                                                             args.search_mode,
+                                                             dist_kind_string)
     else:
         experiment_file_name = experiment_json_format.format(args.model,
                                                              args.train_size,
                                                              args.validation_size,
-                                                             args.search_mode)
+                                                             args.search_mode,
+                                                             dist_kind_string)
 
     if args.search_mode == "random_search":
         results = run_random_experiment(model=model,
@@ -857,6 +861,7 @@ def main(args, seed=27, experiment_json_format="{}_train_{}_valid_{}_{}_experime
                                              experiment_file_name=experiment_file_name,
                                              seed=seed,
                                              rounds=args.num_rounds,
+                                             distance_kind=args.distance_kind,
                                              xi=args.xi)
 
     else:
