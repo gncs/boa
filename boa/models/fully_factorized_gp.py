@@ -9,7 +9,7 @@ import numpy as np
 
 from boa.core.gp import GaussianProcess
 from boa.core.utils import setup_logger
-from .abstract_model import AbstractModel
+from .abstract_model import AbstractModel, ModelError
 
 from boa.core.variables import BoundedVariable
 from boa.core.optimize import bounded_minimize
@@ -95,7 +95,8 @@ class FullyFactorizedGPModel(AbstractModel):
 
         return length_scales, signal_amplitude, noise_amplitude
 
-    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1, iters=1000, trace=False, err_level="catch") -> None:
+    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1, iters=1000, trace=False,
+            err_level="catch") -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -214,7 +215,10 @@ class FullyFactorizedGPModel(AbstractModel):
 
         return means, variances
 
-    def log_prob(self, xs, ys, use_conditioning_data=True, latent=True, numpy=False):
+    def log_prob(self, xs, ys, use_conditioning_data=True, latent=True, numpy=False, target_dims=None):
+
+        if target_dims is not None and not isinstance(target_dims, (tuple, list)):
+            raise ModelError("target_dims must be a list or a tuple!")
 
         if len(self.models) < self.output_dim:
             logger.info("GPs haven't been cached yet, creating them now.")
@@ -225,6 +229,9 @@ class FullyFactorizedGPModel(AbstractModel):
         log_prob = 0.
 
         for i, model in enumerate(self.models):
+
+            if i not in target_dims:
+                continue
 
             cond_model = model | (self.xs, self.ys[:, i:i + 1])
 

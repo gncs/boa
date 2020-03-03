@@ -565,7 +565,10 @@ class GPARModel(AbstractModel):
 
         return means, variances
 
-    def log_prob(self, xs, ys, use_conditioning_data=True, latent=False, numpy=False):
+    def log_prob(self, xs, ys, use_conditioning_data=True, latent=False, numpy=False, target_dims=None):
+
+        if target_dims is not None and not isinstance(target_dims, (tuple, list)):
+            raise ModelError("target_dims must be a list or a tuple!")
 
         if len(self.models) < self.output_dim:
             logger.info("GPs haven't been cached yet, creating them now.")
@@ -582,6 +585,10 @@ class GPARModel(AbstractModel):
         log_prob = 0.
 
         for i, model in enumerate(self.models):
+
+            if i not in target_dims:
+                continue
+
             gp_input = tf.concat([xs, ys[:, :i]], axis=1)
             gp_train_input = tf.concat([self.xs, train_ys[:, :i]], axis=1)
 
