@@ -71,7 +71,7 @@ class PermutationGPModel(AbstractModel):
                                           upper=1e2,
                                           dtype=tf.float64)
 
-        return length_scale, signal_amplitude, tf.cast(1e-1) #noise_amplitude
+        return length_scale, signal_amplitude, tf.cast(1e-1, tf.float64) #noise_amplitude
 
     def fit(self, xs, ys, optimizer='l-bfgs-b', optimizer_restarts=1, iters=1000, trace=False,
             err_level="catch", median_heuristic_only=False) -> None:
