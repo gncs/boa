@@ -225,8 +225,9 @@ class GPARModel(AbstractModel):
                                 with tf.GradientTape(watch_accessed_variables=False) as tape:
                                     tape.watch(reparams)
 
-                                    loss = negative_gp_log_likelihood(signal_amplitude(), length_scales(),
-                                                                      noise_amplitude())
+                                    loss = negative_gp_log_likelihood(signal_amplitude=signal_amplitude(),
+                                                                      length_scales=length_scales(),
+                                                                      noise_amplitude=noise_amplitude())
 
                                 if tf.abs(prev_loss - loss) < tolerance:
                                     logger.info(f"Loss decreased less than {tolerance}, "
