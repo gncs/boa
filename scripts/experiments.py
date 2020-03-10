@@ -22,14 +22,15 @@ import tensorflow as tf
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/experiments.log")
 
-AVAILABLE_DATASETS = ["fft", "stencil3d", "gemm"]
+AVAILABLE_DATASETS = ["fft", "stencil3d", "gemm", "smaug"]
 AVAILABLE_OPTIMIZERS = ["l-bfgs-b", "adam"]
 AVAILABLE_INITIALIZATION = ["median", "random", "dim_median"]
 
 DATASET_TARGETS = {
     "fft": ('avg_power', 'cycle', 'total_area'),
     "stencil3d": ('avg_power', 'cycle', 'total_area'),
-    "gemm": ('avg_power', 'cycle', 'total_area')
+    "gemm": ('avg_power', 'cycle', 'total_area'),
+    "smaug": ('total_energy', 'total_time', 'total_area')
 }
 
 LOG_LEVELS = {"info": logging.INFO, "debug": logging.DEBUG, "warn": logging.WARNING}
