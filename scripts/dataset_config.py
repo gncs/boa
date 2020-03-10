@@ -20,18 +20,9 @@ dataset_ingredient = Ingredient("dataset")
 
 @dataset_ingredient.config
 def data_config():
-
     name = "fft"
 
     dataset_base_path = f"{ROOT_DIR}/../resources/"
-
-    label_names_dict = {
-        'avg_power': 'Avg Power [mW]',
-        'total_area': r'Total Area [$\mu$M$^2$]',
-        'cycle': 'Cycle',
-        "total_energy": "Total Energy",
-        "total_time": "Total Time"
-    }
 
     if name == "fft":
         targets = ('avg_power', 'cycle', 'total_area')
@@ -82,6 +73,28 @@ def data_config():
             'num_registers_32',
         ]
 
+        input_transforms = {
+                           'cache_size': np.log,
+                           'cache_assoc': np.log,
+                           'cache_line_sz': np.log,
+                           'cache_queue_size': np.log,
+                           'tlb_page_size': np.log,
+                           'tlb_max_outstanding_walks': np.log,
+                           'tlb_assoc': np.log,
+                           'l2cache_size': np.log,
+                           },
+        output_transforms = {
+            'avg_mem_power': np.log,
+            'avg_mem_dynamic_power': np.log,
+            'avg_fu_dynamic_power': np.log,
+            'avg_fu_power': np.log,
+            'avg_fu_leakage_power': np.log,
+            'total_area': np.log,
+            'fu_area': np.log,
+            'mem_area': np.log,
+            'avg_power': np.log
+        }
+
     elif name == "stencil3d":
         targets = ('avg_power', 'cycle', 'total_area')
         dataset_path = f"{dataset_base_path}/stencil3d_dataset.csv"
@@ -121,6 +134,22 @@ def data_config():
             # 'num_shifter',
             'num_register',
         ]
+        input_transforms = {
+                               'cycle_time': np.log,
+                               'cache_size': np.log,
+                               'cache_assoc': np.log,
+                               'cache_hit_latency': np.log,
+                               'l2cache_size': np.log,
+                               'tlb_hit_latency': np.log,
+                               'tlb_entries': np.log
+                           },
+        output_transforms = {
+            'cycle': np.log,
+            'avg_power': np.log,
+            'avg_mem_power': np.log,
+            'avg_mem_dynamic_power': np.log,
+
+        }
 
     elif name == "gemm":
         targets = ('avg_power', 'cycle', 'total_area')
@@ -162,6 +191,27 @@ def data_config():
             'num_register',
         ]
 
+        input_transforms = {
+                               'cycle_time': np.log,
+                               'cache_size': np.log,
+                               'cache_assoc': np.log,
+                               'cache_hit_latency': np.log,
+                               'l2cache_size': np.log,
+                               'tlb_hit_latency': np.log,
+                               'tlb_entries': np.log
+                           },
+        output_transforms = {
+            'cycle': np.log,
+            'avg_power': np.log,
+            'fu_power': np.log,
+            'avg_fu_dynamic_power': np.log,
+            'avg_mem_power': np.log,
+            'avg_mem_dynamic_power': np.log,
+            'total_area': np.log,
+            'mem_area': np.log,
+            'fu_area': np.log
+        }
+
     elif name == "smaug":
         targets = ('total_energy', 'total_time', 'total_area')
         dataset_path = f"{dataset_base_path}/smaug_dataset.csv"
@@ -200,6 +250,30 @@ def data_config():
             "num_shifter",
             "num_register"
         ]
+
+        input_transforms = {
+                               'num_threads': np.log,
+                               'l2_assoc': np.log,
+                               'accel_clock_time': np.log,
+                               'num_accels': np.log,
+                               'l2_size': np.log,
+                           },
+        output_transforms = {
+            'total_time': np.log,
+            'total_energy': np.log,
+            'fu_energy': np.log,
+            'spad_energy': np.log,
+            'llc_leakage_energy': np.log,
+            'llc_dynamic_energy': np.log,
+            'total_area': np.log,
+            'fu_area': np.log,
+            'mem_area': np.log,
+            'num_multiplier': np.log,
+            'num_adder': np.log,
+            'num_bit_wise': np.log,
+            'num_shifter': np.log,
+            'num_register': np.log
+        }
 
 
 DataTuple = namedtuple('DataTuple', field_names=['df', 'input_labels', 'output_labels'])
