@@ -61,16 +61,16 @@ def experiment_config(dataset):
     matrix_factorized = False
 
     if model == "ff-gp":
-        log_path = f"{log_dir}/{model}_experiments.json"
+        log_path = f"{log_dir}/{model}/{current_time}/{model}_experiments.json"
 
     elif model == "gpar":
-        log_path = f"{log_dir}/{model}_experiments.json"
+        log_path = f"{log_dir}/{model}/{current_time}/{model}_experiments.json"
 
     elif model == "mf_gpar":
         # Effective dimension of the factorization.
         latent_dim = 5
         matrix_factorized = True
-        log_path = f"{log_dir}/{model}-{latent_dim}_experiments.json"
+        log_path = f"{log_dir}/{model}-{latent_dim}/{current_time}/{model}-{latent_dim}_experiments.json"
 
 
 AVAILABLE_DATASETS = ["fft", "stencil3d", "gemm", "smaug"]

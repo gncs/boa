@@ -74,25 +74,25 @@ def data_config():
         ]
 
         input_transforms = {
-                           'cache_size': np.log,
-                           'cache_assoc': np.log,
-                           'cache_line_sz': np.log,
-                           'cache_queue_size': np.log,
-                           'tlb_page_size': np.log,
-                           'tlb_max_outstanding_walks': np.log,
-                           'tlb_assoc': np.log,
-                           'l2cache_size': np.log,
-                           },
+           'cache_size': "log",
+           'cache_assoc': "log",
+           'cache_line_sz': "log",
+           'cache_queue_size': "log",
+           'tlb_page_size': "log",
+           'tlb_max_outstanding_walks': "log",
+           'tlb_assoc': "log",
+           'l2cache_size': "log",
+        }
         output_transforms = {
-            'avg_mem_power': np.log,
-            'avg_mem_dynamic_power': np.log,
-            'avg_fu_dynamic_power': np.log,
-            'avg_fu_power': np.log,
-            'avg_fu_leakage_power': np.log,
-            'total_area': np.log,
-            'fu_area': np.log,
-            'mem_area': np.log,
-            'avg_power': np.log
+            'avg_mem_power': "log",
+            'avg_mem_dynamic_power': "log",
+            'avg_fu_dynamic_power': "log",
+            'avg_fu_power': "log",
+            'avg_fu_leakage_power': "log",
+            'total_area': "log",
+            'fu_area': "log",
+            'mem_area': "log",
+            'avg_power': "log"
         }
 
     elif name == "stencil3d":
@@ -135,19 +135,19 @@ def data_config():
             'num_register',
         ]
         input_transforms = {
-                               'cycle_time': np.log,
-                               'cache_size': np.log,
-                               'cache_assoc': np.log,
-                               'cache_hit_latency': np.log,
-                               'l2cache_size': np.log,
-                               'tlb_hit_latency': np.log,
-                               'tlb_entries': np.log
-                           },
+           'cycle_time': "log",
+           'cache_size': "log",
+           'cache_assoc': "log",
+           'cache_hit_latency': "log",
+           'l2cache_size': "log",
+           'tlb_hit_latency': "log",
+           'tlb_entries': "log"
+        }
         output_transforms = {
-            'cycle': np.log,
-            'avg_power': np.log,
-            'avg_mem_power': np.log,
-            'avg_mem_dynamic_power': np.log,
+            'cycle': "log",
+            'avg_power': "log",
+            'avg_mem_power': "log",
+            'avg_mem_dynamic_power': "log",
 
         }
 
@@ -192,24 +192,24 @@ def data_config():
         ]
 
         input_transforms = {
-                               'cycle_time': np.log,
-                               'cache_size': np.log,
-                               'cache_assoc': np.log,
-                               'cache_hit_latency': np.log,
-                               'l2cache_size': np.log,
-                               'tlb_hit_latency': np.log,
-                               'tlb_entries': np.log
-                           },
+           'cycle_time': "log",
+           'cache_size': "log",
+           'cache_assoc': "log",
+           'cache_hit_latency': "log",
+           'l2cache_size': "log",
+           'tlb_hit_latency': "log",
+           'tlb_entries': "log"
+        }
         output_transforms = {
-            'cycle': np.log,
-            'avg_power': np.log,
-            'fu_power': np.log,
-            'avg_fu_dynamic_power': np.log,
-            'avg_mem_power': np.log,
-            'avg_mem_dynamic_power': np.log,
-            'total_area': np.log,
-            'mem_area': np.log,
-            'fu_area': np.log
+            'cycle': "log",
+            'avg_power': "log",
+            'fu_power': "log",
+            'avg_fu_dynamic_power': "log",
+            'avg_mem_power': "log",
+            'avg_mem_dynamic_power': "log",
+            'total_area': "log",
+            'mem_area': "log",
+            'fu_area': "log"
         }
 
     elif name == "smaug":
@@ -252,27 +252,27 @@ def data_config():
         ]
 
         input_transforms = {
-                               'num_threads': np.log,
-                               'l2_assoc': np.log,
-                               'accel_clock_time': np.log,
-                               'num_accels': np.log,
-                               'l2_size': np.log,
-                           },
+           'num_threads': "log",
+           'l2_assoc': "log",
+           'accel_clock_time': "log",
+           'num_accels': "log",
+           'l2_size': "log",
+        }
         output_transforms = {
-            'total_time': np.log,
-            'total_energy': np.log,
-            'fu_energy': np.log,
-            'spad_energy': np.log,
-            'llc_leakage_energy': np.log,
-            'llc_dynamic_energy': np.log,
-            'total_area': np.log,
-            'fu_area': np.log,
-            'mem_area': np.log,
-            'num_multiplier': np.log,
-            'num_adder': np.log,
-            'num_bit_wise': np.log,
-            'num_shifter': np.log,
-            'num_register': np.log
+            'total_time': "log",
+            'total_energy': "log",
+            'fu_energy': "log",
+            'spad_energy': "log",
+            'llc_leakage_energy': "log",
+            'llc_dynamic_energy': "log",
+            'total_area': "log",
+            'fu_area': "log",
+            'mem_area': "log",
+            'num_multiplier': "log",
+            'num_adder': "log",
+            'num_bit_wise': "log",
+            'num_shifter': "log",
+            'num_register': "log"
         }
 
 

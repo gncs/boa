@@ -8,10 +8,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from boa.core.utils import setup_logger
 from boa.core.gp import GaussianProcess
-
-from boa.datasets.loader import load_dataset
 
 from boa.objective.abstract import AbstractObjective
 
@@ -25,26 +22,77 @@ from boa.acquisition.smsego import SMSEGO
 from boa.optimization.data import Data, generate_data, FileHandler
 from boa.optimization.optimizer import Optimizer
 
-logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/bayesopt_experiment_v2.log")
+from boa import ROOT_DIR
 
-OBJECTIVE_TARGETS = {"fft": ['cycle', 'avg_power', 'total_area'],
-                     "stencil3d": ['cycle', 'avg_power', 'total_area'],
-                     "gemm": ['cycle', 'avg_power', 'total_area']}
+from sacred import Experiment
+import datetime
 
-AVAILABLE_DATASETS = ["fft", "stencil3d", "gemm"]
+from .dataset_config import prepare_ff_gp_data, prepare_gpar_data, load_dataset, dataset_ingredient
+
+ex = Experiment("bayesopt_experiment", ingredients=[dataset_ingredient])
+
+
+@ex.config
+def bayesopt_config(dataset):
+    task = "fft"
+    model = "gpar"
+    verbose = True
+
+    # Number of experiments to perform
+    rounds = 5
+
+    # BayesOpt iterations
+    max_num_iterations = 120
+    batch_size = 1
+
+    targets = dataset.targets
+
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    # Path to the directory to which we will write the log files
+    log_dir = f"{ROOT_DIR}/../logs/{task}/bayesopt/"
+    save_dir = f"{ROOT_DIR}/../models/{task}/bayesopt/{current_time}/"
+
+    # GP kernel to use.
+    kernel = "matern52"
+
+    # Number of random initializations to try in a single training cycle.
+    num_optimizer_restarts = 5
+
+    # Optimization algorithm to use when fitting the models' hyperparameters.
+    optimizer = "l-bfgs-b"
+
+    # Initialization heuristic for the hyperparameters of the models.
+    initialization = "median"
+
+    # Number of training iterations to allow either for L-BFGS-B or Adam.
+    iters = 1000
+
+    matrix_factorized = False
+
+    if model == "ff-gp":
+        log_path = f"{log_dir}/{model}/{current_time}/{{}}.json"
+
+    elif model == "gpar":
+        log_path = f"{log_dir}/{model}/{current_time}/{{}}.json"
+
+    elif model == "mf_gpar":
+        # Effective dimension of the factorization.
+        latent_dim = 5
+        matrix_factorized = True
+        log_path = f"{log_dir}/{model}-{latent_dim}/{current_time}/{{}}.json"
+
+    elif model == "random":
+        num_samples = 10
+
+        log_path = f"{log_dir}/{model}-{num_samples}/{current_time}/{{}}.json"
+
 
 AVAILABLE_OPTIMIZERS = ["l-bfgs-b", "adam"]
 
 AVAILABLE_INITIALIZATION = ["median", "random", "dim_median"]
 
-DEFAULT_OPTIMIZER_CONFIG = {
-    'max_num_iterations': 120,
-    'batch_size': 1,
-    'verbose': True,
-}
-
 tf.config.experimental.set_visible_devices([], 'GPU')
-logger.info("USING CPU ONLY!")
 
 
 class Objective(AbstractObjective):
@@ -111,168 +159,77 @@ def get_default_acq_config(df: pd.DataFrame, objective_labels) -> dict:
     return {'gain': 1, 'epsilon': 0.01, 'reference': max_values, 'output_slice': (-3, None)}
 
 
-def prepare_ff_gp_data(data):
-    return data.df, data.input_labels.copy(), data.output_labels.copy()
-
-
-def prepare_gpar_data(data, targets):
-    output_labels = data.output_labels.copy()
-
-    for target in targets:
-        output_labels.remove(target)
-        output_labels.append(target)
-
-    return data.df, data.input_labels.copy(), output_labels
-
-
-def main(args):
-    dataset = load_dataset(path=args.dataset, kind=args.task)
+@ex.automain
+def main(model,
+         kernel,
+         initialization,
+         targets,
+         optimizer,
+         max_num_iterations,
+         num_optimizer_restarts,
+         batch_size,
+         verbose,
+         save_dir,
+         _seed,
+         latent_dim=None,
+         num_samples=None):
+    dataset = load_dataset()
 
     # Setup acquisition function
-    acq_config = get_default_acq_config(dataset.df, objective_labels=OBJECTIVE_TARGETS[args.task])
+    acq_config = get_default_acq_config(dataset.df, objective_labels=targets)
     smsego_acq = SMSEGO(**acq_config)
 
     # Setup optimizer
-    optimizer = Optimizer(**DEFAULT_OPTIMIZER_CONFIG)
+    bo_optimizer = Optimizer(max_num_iterations=max_num_iterations,
+                             batch_size=batch_size,
+                             verbose=verbose)
 
     # Setup models
-    if args.model == "random":
+    if model == "random":
         df, input_labels, output_labels = prepare_ff_gp_data(dataset)
 
-        model = RandomModel(input_dim=len(input_labels),
-                            output_dim=len(output_labels),
-                            seed=args.seed,
-                            num_samples=args.num_samples,
-                            verbose=args.verbose)
+        surrogate_model = RandomModel(input_dim=len(input_labels),
+                                      output_dim=len(output_labels),
+                                      seed=_seed,
+                                      num_samples=num_samples,
+                                      verbose=verbose)
 
-    if args.model == "ff-gp":
+    if model == "ff-gp":
         df, input_labels, output_labels = prepare_ff_gp_data(dataset)
 
-        model = FullyFactorizedGPModel(kernel=args.kernel,
-                                       input_dim=len(input_labels),
-                                       output_dim=len(output_labels),
-                                       initialization_heuristic=args.initialization,
-                                       verbose=args.verbose)
-    elif args.model in ["gpar", "mf-gpar"]:
-        df, input_labels, output_labels = prepare_gpar_data(dataset, targets=OBJECTIVE_TARGETS[args.task])
-        if args.model == "gpar":
-            model = GPARModel(kernel=args.kernel,
-                              input_dim=len(input_labels),
-                              output_dim=len(output_labels),
-                              initialization_heuristic=args.initialization,
-                              verbose=args.verbose)
+        surrogate_model = FullyFactorizedGPModel(kernel=kernel,
+                                                 input_dim=len(input_labels),
+                                                 output_dim=len(output_labels),
+                                                 initialization_heuristic=initialization,
+                                                 verbose=verbose)
+    elif model in ["gpar", "mf-gpar"]:
+        df, input_labels, output_labels = prepare_gpar_data(dataset, targets=targets)
+        if model == "gpar":
+            surrogate_model = GPARModel(kernel=kernel,
+                                        input_dim=len(input_labels),
+                                        output_dim=len(output_labels),
+                                        initialization_heuristic=initialization,
+                                        verbose=verbose)
 
-        elif args.model == "mf-gpar":
-            model = MatrixFactorizedGPARModel(kernel=args.kernel,
-                                              input_dim=len(input_labels),
-                                              output_dim=len(output_labels),
-                                              latent_dim=args.latent_dim,
-                                              initialization_heuristic=args.initialization,
-                                              verbose=args.verbose)
+        elif model == "mf-gpar":
+            surrogate_model = MatrixFactorizedGPARModel(kernel=kernel,
+                                                        input_dim=len(input_labels),
+                                                        output_dim=len(output_labels),
+                                                        latent_dim=latent_dim,
+                                                        initialization_heuristic=initialization,
+                                                        verbose=verbose)
 
     # Run the optimization
     for seed in range(5):
         results = optimize(objective=Objective(df=df, input_labels=input_labels, output_labels=output_labels),
-                           model=model,
-                           model_optimizer=args.optimizer,
-                           model_optimizer_restarts=args.num_optimizer_restarts,
-                           optimizer=optimizer,
+                           model=surrogate_model,
+                           model_optimizer=optimizer,
+                           model_optimizer_restarts=num_optimizer_restarts,
+                           optimizer=bo_optimizer,
                            acq=smsego_acq,
                            seed=seed,
-                           verbose=args.verbose)
+                           verbose=verbose)
 
-        model_name = args.model
-        model_name += f"_{args.latent_dim}" if args.model == "mf-gpar" else ""
-
-        save_dir = args.logdir + "/bayesopt/" + model_name
         os.makedirs(save_dir, exist_ok=True)
         handler = FileHandler(path=save_dir + f"/{seed}.json")
         handler.save(results)
-
-
-if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument('--dataset', '-D', type=str, required=True, help="Path to the dataset.")
-
-    parser.add_argument('--task',
-                        '-T',
-                        choices=AVAILABLE_DATASETS,
-                        required=True,
-                        help="Task for which we are providing the dataset.")
-
-    parser.add_argument('--logdir',
-                        type=str,
-                        default="logs",
-                        help="Path to the directory to which we will write the log files "
-                             "for the experiment.")
-
-    parser.add_argument('--verbose', action="store_true", default=False, help="Turns on verbose logging")
-
-    model_subparsers = parser.add_subparsers(title="model", dest="model", help="Model to fit to the data.")
-
-    model_subparsers.required = True
-
-    # =========================================================================
-    # Random Model
-    # =========================================================================
-
-    random_mode = model_subparsers.add_parser("random",
-                                              formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                              description="Use a random model")
-
-    random_mode.add_argument("--seed", type=int, default=42)
-    random_mode.add_argument("--num_samples", type=int, default=10)
-
-    # =========================================================================
-    # Fully factorized GP
-    # =========================================================================
-
-    ff_gp_mode = model_subparsers.add_parser("ff-gp",
-                                             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                             description="Use a fully factorized GP model.")
-
-    # =========================================================================
-    # GPAR
-    # =========================================================================
-
-    gpar_mode = model_subparsers.add_parser("gpar",
-                                            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                            description="Use a GPAR model.")
-
-    # =========================================================================
-    # Matrix factorized GPAR
-    # =========================================================================
-
-    mf_gpar_mode = model_subparsers.add_parser("mf-gpar",
-                                               formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                               description="use a GPAR Model with factorized length scale matrix")
-
-    mf_gpar_mode.add_argument("--latent_dim", type=int, default=5, help="Effective dimension of the factorization.")
-
-    # Add common options to models
-    for mode in [random_mode, ff_gp_mode, gpar_mode, mf_gpar_mode]:
-        mode.add_argument("--kernel",
-                          choices=GaussianProcess.AVAILABLE_KERNELS,
-                          default="matern52",
-                          help="GP kernel to use.")
-
-        mode.add_argument("--num_optimizer_restarts",
-                          type=int,
-                          default=3,
-                          help="Number of random initializations to try in a single training cycle.")
-
-        mode.add_argument("--optimizer",
-                          choices=AVAILABLE_OPTIMIZERS,
-                          default=AVAILABLE_OPTIMIZERS[0],
-                          help="Optimization algorithm to use when fitting the models' hyperparameters.")
-
-        mode.add_argument("--initialization",
-                          choices=AVAILABLE_INITIALIZATION,
-                          default=AVAILABLE_INITIALIZATION[0],
-                          help="Initialization heuristic for the hyperparameters of the models.")
-
-    args = parser.parse_args()
-
-    main(args)

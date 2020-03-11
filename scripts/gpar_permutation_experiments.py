@@ -107,7 +107,7 @@ def experiment_config(dataset):
     matrix_factorized = False
 
     if model == "gpar":
-        log_dir = f"{log_dir}/{search_mode}/{model}/"
+        log_dir = f"{log_dir}/{search_mode}/{model}/{current_time}/"
         log_path = f"{log_dir}/train_{train_size}_valid_" \
                    f"{validation_size}_{(distance_kind + '_') if search_mode == 'hbo' else ''}_" \
                    f"{'median_only_' if median_heuristic_only else ''}experiments.json"
@@ -116,7 +116,7 @@ def experiment_config(dataset):
         # Effective dimension of the factorization.
         latent_dim = 5
         matrix_factorized = True
-        log_dir = f"{log_dir}/{search_mode}/{model}-{latent_dim}/"
+        log_dir = f"{log_dir}/{search_mode}/{model}-{latent_dim}/{current_time}/"
         log_path = f"{log_dir}/train_{train_size}_valid_" \
                    f"{validation_size}{('_' + distance_kind) if search_mode == 'hbo' else ''}" \
                    f"{'_median_only' if median_heuristic_only else ''}_experiments.json"
