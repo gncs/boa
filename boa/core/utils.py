@@ -2,6 +2,8 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import logging
 
+import numpy as np
+
 logger = logging.getLogger()
 logger.setLevel(logging.CRITICAL)
 
@@ -10,6 +12,44 @@ class CoreError(Exception):
     """
     Base error thrown by modules in the core
     """
+
+
+def transform_df(df, transforms):
+
+    for label, tr in transforms.items():
+
+        if tr == 'log':
+            transform = np.log
+
+        else:
+            transform = lambda x: x
+
+        df[label] = df[label].apply(transform)
+
+    return df
+
+
+def back_transform(data, labels, transforms):
+
+    if len(data.shape) == 1:
+        data = data.reshape([-1, 1])
+
+    if data.shape[1] != len(labels):
+        raise CoreError(f"Number of label dimensions ({data.shape[1]}), "
+                        f"must match length of label list ({len(labels)} given!")
+
+    for i, (col, label) in enumerate(zip(data.T, labels)):
+
+        if label in transforms:
+            if transforms[label] == 'log':
+                transform = np.exp
+
+        else:
+            transform = lambda x: x
+
+        data[:, i] = transform(col)
+
+    return data
 
 
 def inv_perm(perm):

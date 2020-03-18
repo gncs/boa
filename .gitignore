@@ -1,4 +1,6 @@
 # Logs folder
+models/
+logs/
 logs-old/
 *.log
 

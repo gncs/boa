@@ -27,7 +27,7 @@ from boa import ROOT_DIR
 from sacred import Experiment
 import datetime
 
-from .dataset_config import prepare_ff_gp_data, prepare_gpar_data, load_dataset, dataset_ingredient
+from dataset_config import prepare_ff_gp_data, prepare_gpar_data, load_dataset, dataset_ingredient
 
 ex = Experiment("bayesopt_experiment", ingredients=[dataset_ingredient])
 

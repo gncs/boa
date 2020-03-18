@@ -14,7 +14,7 @@ from boa.models.gpar import GPARModel
 from boa.models.matrix_factorized_gpar import MatrixFactorizedGPARModel
 from boa.models.gpar_perm import PermutedGPARModel
 
-from boa.core import GaussianProcess
+from boa.core import GaussianProcess, transform_df, back_transform
 from boa import ROOT_DIR
 
 import tensorflow as tf
@@ -33,6 +33,9 @@ def experiment_config(dataset):
     task = "fft"
     model = "gpar"
     verbose = True
+
+    use_input_transforms = True
+    use_output_transforms = False
 
     # Number of experiments to perform
     rounds = 5
@@ -61,16 +64,20 @@ def experiment_config(dataset):
     matrix_factorized = False
 
     if model == "ff-gp":
-        log_path = f"{log_dir}/{model}/{current_time}/{model}_experiments.json"
+        log_dir = f"{log_dir}/{model}/{current_time}/"
+        log_path = f"{log_dir}/{model}_experiments.json"
 
     elif model == "gpar":
-        log_path = f"{log_dir}/{model}/{current_time}/{model}_experiments.json"
+        log_dir = f"{log_dir}/{model}/{current_time}/"
+        log_path = f"{log_dir}/{model}_experiments.json"
 
     elif model == "mf_gpar":
         # Effective dimension of the factorization.
         latent_dim = 5
         matrix_factorized = True
-        log_path = f"{log_dir}/{model}-{latent_dim}/{current_time}/{model}-{latent_dim}_experiments.json"
+
+        log_dir = f"{log_dir}/{model}-{latent_dim}/{current_time}/"
+        log_path = f"{log_dir}/{model}-{latent_dim}_experiments.json"
 
 
 AVAILABLE_DATASETS = ["fft", "stencil3d", "gemm", "smaug"]
@@ -84,11 +91,12 @@ tf.config.experimental.set_visible_devices([], 'GPU')
 @ex.capture
 def run_experiment(model,
                    data,
-                   inputs: Sequence[str],
-                   outputs: Sequence[str],
 
+                   dataset,
                    optimizer,
-                   optimizer_restarts,
+                   num_optimizer_restarts,
+                   use_input_transforms,
+                   use_output_transforms,
                    log_dir,
                    log_path,
                    save_dir,
@@ -116,17 +124,33 @@ def run_experiment(model,
                 _log.info(f"Training round: {index + 1} for training set size {size}")
                 _log.info("-----------------------------------------------------------")
 
-            experiment = {'index': index, 'size': size, 'inputs': inputs, 'outputs': outputs}
+            experiment = {'index': index,
+                          'size': size,
+                          'inputs': dataset["input_labels"],
+                          'outputs': dataset["output_labels"],
+                          'input_transformed': use_input_transforms,
+                          'output_transformed': use_output_transforms}
 
             if matrix_factorized:
                 experiment["latent_size"] = model.latent_dim
 
             train, test = train_test_split(data, train_size=size, test_size=200, random_state=_seed + index)
 
+            # Transform inputs
+            if use_input_transforms:
+                train = transform_df(train, dataset["input_transforms"])
+                test = transform_df(test, dataset["input_transforms"])
+
+            # Transform outputs
+            if use_output_transforms:
+                train = transform_df(train, dataset["output_transforms"])
+
             start_time = time.time()
             try:
-                model = model.condition_on(train[inputs].values, train[outputs].values[:, :], keep_previous=False)
-                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts,
+                model = model.condition_on(train[dataset["input_labels"]].values,
+                                                 train[dataset["output_labels"]].values[:, :],
+                                           keep_previous=False)
+                model.fit_to_conditioning_data(optimizer_restarts=num_optimizer_restarts,
                                                optimizer=optimizer,
                                                trace=True,
                                                err_level="raise",
@@ -144,7 +168,11 @@ def run_experiment(model,
             start_time = time.time()
 
             try:
-                mean, _ = model.predict(test[inputs].values, numpy=True)
+                mean, _ = model.predict(test[dataset["input_labels"]].values, numpy=True)
+
+                # Back-transfrom predictions!
+                if use_output_transforms:
+                    mean = back_transform(mean, dataset["output_labels"], dataset["output_transforms"])
 
             except Exception as e:
                 _log.exception("Prediction failed: {}, saving model!".format(str(e)))
@@ -152,7 +180,7 @@ def run_experiment(model,
 
             experiment['predict_time'] = time.time() - start_time
 
-            diff = (test[outputs].values - mean)
+            diff = (test[dataset["output_labels"]].values - mean)
 
             experiment['mean_abs_err'] = np.mean(np.abs(diff), axis=0).tolist()
             experiment['mean_squ_err'] = np.mean(np.square(diff), axis=0).tolist()
@@ -168,45 +196,44 @@ def run_experiment(model,
 
 
 @ex.automain
-def main(model, kernel, initialization, verbose, latent_dim=None):
+def main(dataset, model, kernel, initialization, verbose, latent_dim=None):
     data = load_dataset()
 
     if model == 'ff-gp':
-        df, input_labels, output_labels = prepare_ff_gp_data(data)
+        df = prepare_ff_gp_data(data)
         df_aux, input_labels_aux, output_labels_aux = prepare_ff_gp_aux_data(data=data)
 
         surrogate_model = FullyFactorizedGPModel(kernel=kernel,
-                                                 input_dim=len(input_labels),
-                                                 output_dim=len(output_labels),
+                                                 input_dim=len(dataset["input_labels"]),
+                                                 output_dim=len(dataset["output_labels"]),
                                                  initialization_heuristic=initialization,
                                                  verbose=verbose)
 
     elif model in ["gpar", "mf-gpar", "p-gpar"]:
-        df, input_labels, output_labels = prepare_gpar_data(data)
+        df = prepare_gpar_data(data)
 
         if model == 'gpar':
             surrogate_model = GPARModel(kernel=kernel,
-                                        input_dim=len(input_labels),
-                                        output_dim=len(output_labels),
+                                        input_dim=len(dataset["input_labels"]),
+                                        output_dim=len(dataset["output_labels"]),
                                         initialization_heuristic=initialization,
                                         verbose=verbose)
 
         elif model == 'mf-gpar':
             surrogate_model = MatrixFactorizedGPARModel(kernel=kernel,
-                                                        input_dim=len(input_labels),
-                                                        output_dim=len(output_labels),
+                                                        input_dim=len(dataset["input_labels"]),
+                                                        output_dim=len(dataset["output_labels"]),
                                                         latent_dim=latent_dim,
                                                         initialization_heuristic=initialization,
                                                         verbose=verbose)
 
         elif model == 'p-gpar':
             surrogate_model = PermutedGPARModel(kernel=kernel,
-                                                input_dim=len(input_labels),
-                                                output_dim=len(output_labels),
+                                                input_dim=len(dataset["input_labels"]),
+                                                output_dim=len(dataset["output_labels"]),
                                                 initialization_heuristic=initialization,
                                                 verbose=verbose)
 
     results = run_experiment(model=surrogate_model,
-                             data=df,
-                             inputs=input_labels,
-                             outputs=output_labels)
+                             data=df)
+
