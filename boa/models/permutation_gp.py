@@ -14,12 +14,13 @@ from boa.core.utils import setup_logger
 from .abstract_model import AbstractModel
 
 from boa.core.kernel import perm_pointwise_distance
+from boa import ROOT_DIR
 
 from not_tf_opt import BoundedVariable, minimize
 
 __all__ = ["PermutationGPModel"]
 
-logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/permutation_gp.log")
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/permutation_gp.log")
 
 
 class PermutationGPModel(AbstractModel):

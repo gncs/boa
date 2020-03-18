@@ -56,7 +56,7 @@ def experiment_config(dataset):
     optimizer = "l-bfgs-b"
 
     # Initialization heuristic for the hyperparameters of the models.
-    initialization = "median"
+    initialization = "dim_median"
 
     # Number of training iterations to allow either for L-BFGS-B or Adam.
     iters = 1000

@@ -11,7 +11,9 @@ from .gpar import GPARModel
 
 from not_tf_opt import minimize, BoundedVariable
 
-logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/perm_gpar.log")
+from boa import ROOT_DIR
+
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/perm_gpar.log")
 
 
 class PermutedGPARModel(GPARModel):

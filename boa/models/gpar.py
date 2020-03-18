@@ -12,7 +12,9 @@ from boa.core import GaussianProcess, setup_logger, inv_perm
 
 from not_tf_opt import minimize, BoundedVariable
 
-logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/gpar.log")
+from boa import ROOT_DIR
+
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/gpar.log")
 
 
 class GPARModel(AbstractModel):
@@ -73,14 +75,14 @@ class GPARModel(AbstractModel):
         if length_scale_init == "median":
 
             # Center on the medians, treat the inputs and the outputs separately
-            xs_ls_init = self.xs_euclidean_percentiles[2]
-            ys_ls_init = self.ys_euclidean_percentiles[2]
+            xs_ls_init = self.xs_euclidean_percentiles[4]
+            ys_ls_init = self.ys_euclidean_percentiles[4]
 
-            xs_ls_rand_range = tf.minimum(self.xs_euclidean_percentiles[2] - self.xs_euclidean_percentiles[0],
-                                          self.xs_euclidean_percentiles[4] - self.xs_euclidean_percentiles[2])
+            xs_ls_rand_range = tf.minimum(self.xs_euclidean_percentiles[3] - self.xs_euclidean_percentiles[1],
+                                          self.xs_euclidean_percentiles[5] - self.xs_euclidean_percentiles[3])
 
-            ys_ls_rand_range = tf.minimum(self.ys_euclidean_percentiles[2] - self.ys_euclidean_percentiles[0],
-                                          self.ys_euclidean_percentiles[4] - self.ys_euclidean_percentiles[2])
+            ys_ls_rand_range = tf.minimum(self.ys_euclidean_percentiles[3] - self.ys_euclidean_percentiles[1],
+                                          self.ys_euclidean_percentiles[5] - self.ys_euclidean_percentiles[3])
 
             xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
                                             minval=-xs_ls_rand_range,
@@ -95,32 +97,79 @@ class GPARModel(AbstractModel):
             # Once the inputs and outputs have been initialized separately, concatenate them
             ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
 
+            ls_lower_bound = tf.concat(
+                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_euclidean_percentiles[0] / 4.,
+                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_euclidean_percentiles[0] / 4.],
+                axis=0)
+
+            ls_upper_bound = tf.concat(
+                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_euclidean_percentiles[-1] * 32.,
+                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_euclidean_percentiles[-1] * 32.],
+                axis=0)
+
+        elif length_scale_init == "dim_median":
+            # Center on the medians, treat the inputs and the outputs separately
+            xs_ls_init = self.xs_per_dim_percentiles[4, :]
+            ys_ls_init = self.ys_per_dim_percentiles[4, :index]
+
+            xs_ls_rand_range = tf.minimum(self.xs_per_dim_percentiles[3, :] - self.xs_per_dim_percentiles[1, :],
+                                          self.xs_per_dim_percentiles[5, :] - self.xs_per_dim_percentiles[3, :])
+
+            ys_ls_rand_range = tf.minimum(self.ys_per_dim_percentiles[3, :] - self.ys_per_dim_percentiles[1, :],
+                                          self.ys_per_dim_percentiles[5, :] - self.ys_per_dim_percentiles[3, :])
+
+            xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
+                                            minval=-xs_ls_rand_range,
+                                            maxval=xs_ls_rand_range,
+                                            dtype=tf.float64)
+
+            ys_ls_init += tf.random.uniform(shape=(index,),
+                                            minval=-ys_ls_rand_range[:index],
+                                            maxval=ys_ls_rand_range[:index],
+                                            dtype=tf.float64)
+
+            # Once the inputs and outputs have been initialized separately, concatenate them
+            ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
+
+            ls_lower_bound = tf.concat(
+                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_per_dim_percentiles[0, :] / 4.,
+                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_per_dim_percentiles[0, :index] / 4.],
+                axis=0)
+
+            ls_upper_bound = tf.concat(
+                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_per_dim_percentiles[-1, :] * 32.,
+                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_per_dim_percentiles[-1, :index] * 32.],
+                axis=0)
+
         else:
             ls_init = tf.random.uniform(shape=(self.input_dim + index,),
                                         minval=init_minval,
                                         maxval=init_maxval,
                                         dtype=tf.float64)
 
+            ls_lower_bound = 1e-2
+            ls_upper_bound = 1e2
+
         # Create bounded variables
         length_scales = BoundedVariable(ls_init,
-                                        lower=1e-3,
-                                        upper=1e2,
+                                        lower=ls_lower_bound,
+                                        upper=ls_upper_bound,
                                         dtype=tf.float64)
 
         signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
                                                              minval=init_minval,
                                                              maxval=init_maxval,
                                                              dtype=tf.float64),
-                                           lower=1e-4,
+                                           lower=1e-1,
                                            upper=1e2,
                                            dtype=tf.float64)
 
         noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
-                                                            minval=init_minval,
-                                                            maxval=init_maxval,
+                                                            minval=0.1 * init_minval,
+                                                            maxval=0.1 * init_maxval,
                                                             dtype=tf.float64),
-                                          lower=1e-6,
-                                          upper=1e2)
+                                          lower=1e-3,
+                                          upper=1e1)
 
         return length_scales, signal_amplitude, noise_amplitude
 
@@ -135,6 +184,7 @@ class GPARModel(AbstractModel):
             iters=1000,
             seed=None,
             rate=1e-2,
+            debugging_trace=False,
             err_level="catch", ) -> None:
 
         if seed is not None:
@@ -204,41 +254,45 @@ class GPARModel(AbstractModel):
                 # =================================================================
                 # Debugging stuff
                 # =================================================================
-                gp = GaussianProcess(kernel=self.kernel_name,
-                                     input_dim=self.input_dim + i,
-                                     signal_amplitude=signal_amplitude(),
-                                     length_scales=length_scales(),
-                                     noise_amplitude=noise_amplitude())
+                if debugging_trace:
+                    gp = GaussianProcess(kernel=self.kernel_name,
+                                         input_dim=self.input_dim + i,
+                                         signal_amplitude=signal_amplitude(),
+                                         length_scales=length_scales(),
+                                         noise_amplitude=noise_amplitude())
 
-                # ys_to_append = pred_ys if self.denoising else ys[:, :i]
+                    # ys_to_append = pred_ys if self.denoising else ys[:, :i]
 
-                # Permute the output
-                ys_to_append = ys[:, :i]
-                gp_input = tf.concat((xs, ys_to_append), axis=1)
+                    # Permute the output
+                    ys_to_append = ys[:, :i]
+                    gp_input = tf.concat((xs, ys_to_append), axis=1)
 
-                fwd, _ = gp._create_transforms(gp_input)
+                    fwd, _ = gp._create_transforms(gp_input)
 
-                K = dense(gp.kernel(fwd(gp_input)))
-                print(f"x percentiles: {self.xs_euclidean_percentiles}")
-                print(f"y percentiles: {self.ys_euclidean_percentiles}")
+                    K = dense((gp.signal + gp.noise + gp.jitter).kernel(fwd(gp_input)))
+                    # print(f"x percentiles: {self.xs_euclidean_percentiles}")
+                    # print(f"y percentiles: {self.ys_euclidean_percentiles}")
+                    #
+                    # print(f"x dim percentiles: {self.xs_per_dim_percentiles}")
+                    # print(f"y dim percentiles: {self.ys_per_dim_percentiles}")
 
-                # print(f"Kernel matrix: {K}")
+                    # print(f"Kernel matrix: {K}")
 
-                eigvals, _ = tf.linalg.eig(K)
-                eigvals = tf.cast(eigvals, tf.float64)
-                print(f"Eigenvalues: {eigvals.numpy()}")
+                    eigvals, _ = tf.linalg.eig(K)
+                    eigvals = tf.cast(eigvals, tf.float64)
+                    print(f"Eigenvalues: {eigvals.numpy()}")
 
-                # Largest eigenvalue divided by the smallest
-                condition_number = eigvals[-1] / eigvals[0]
+                    # Largest eigenvalue divided by the smallest
+                    condition_number = eigvals[-1] / eigvals[0]
 
-                # Effective degrees of freedom
-                edof = tf.reduce_sum(eigvals / (eigvals + noise_amplitude()))
+                    # Effective degrees of freedom
+                    edof = tf.reduce_sum(eigvals / (eigvals + noise_amplitude()))
 
-                print(f"Condition number before opt: {condition_number}")
-                print(f"Effective degrees of freedom before opt: {edof}")
-                print(f"Length Scales: {length_scales().numpy()}")
-                print(f"Noise coeff: {noise_amplitude()}")
-                print(f"Signal coeff: {signal_amplitude()}")
+                    print(f"Condition number before opt: {condition_number}")
+                    print(f"Effective degrees of freedom before opt: {edof}")
+                    print(f"Length Scales: {length_scales().numpy()}")
+                    print(f"Noise coeff: {noise_amplitude()}")
+                    print(f"Signal coeff: {signal_amplitude()}")
                 # =================================================================
                 # End of Debugging stuff
                 # =================================================================
@@ -257,39 +311,42 @@ class GPARModel(AbstractModel):
                         # =================================================================
                         # Debugging stuff
                         # =================================================================
-                        gp = GaussianProcess(kernel=self.kernel_name,
-                                             input_dim=self.input_dim + i,
-                                             signal_amplitude=signal_amplitude(),
-                                             length_scales=length_scales(),
-                                             noise_amplitude=noise_amplitude())
+                        if debugging_trace:
+                            gp = GaussianProcess(kernel=self.kernel_name,
+                                                 input_dim=self.input_dim + i,
+                                                 signal_amplitude=signal_amplitude(),
+                                                 length_scales=length_scales(),
+                                                 noise_amplitude=noise_amplitude())
 
-                        # ys_to_append = pred_ys if self.denoising else ys[:, :i]
+                            # ys_to_append = pred_ys if self.denoising else ys[:, :i]
 
-                        # Permute the output
-                        ys_to_append = ys[:, :i]
-                        gp_input = tf.concat((xs, ys_to_append), axis=1)
+                            # Permute the output
+                            ys_to_append = ys[:, :i]
+                            gp_input = tf.concat((xs, ys_to_append), axis=1)
 
-                        fwd, _ = gp._create_transforms(gp_input)
+                            fwd, _ = gp._create_transforms(gp_input)
 
-                        K = dense(gp.kernel(fwd(gp_input)))
+                            K = dense((gp.signal + gp.noise + gp.jitter).kernel(fwd(gp_input)))
 
-                        # print(f"Kernel matrix: {K}")
+                            # print(f"Kernel matrix: {K}")
 
-                        eigvals, _ = tf.linalg.eig(K)
-                        eigvals = tf.cast(eigvals, tf.float64)
+                            eigvals, _ = tf.linalg.eig(K)
+                            eigvals = tf.cast(eigvals, tf.float64)
 
-                        # Largest eigenvalue divided by the smallest
-                        condition_number = eigvals[-1] / eigvals[0]
+                            # Largest eigenvalue divided by the smallest
+                            condition_number = eigvals[-1] / eigvals[0]
 
-                        # Effective degrees of freedom
-                        edof = tf.reduce_sum(eigvals / (eigvals + noise_amplitude()))
+                            # Effective degrees of freedom
+                            edof = tf.reduce_sum(eigvals / (eigvals + noise_amplitude()))
 
-                        print(f"Condition number after opt: {condition_number}")
-                        print(f"Effective degrees of freedom after opt: {edof}")
-                        print(f"Length Scales: {length_scales().numpy()}")
-                        print(f"Noise coeff: {noise_amplitude()}")
-                        print(f"Signal coeff: {signal_amplitude()}")
-                        print("=" * 40)
+                            print("-" * 40)
+                            print(f"Eigenvalues after opt: {eigvals.numpy()}")
+                            print(f"Condition number after opt: {condition_number}")
+                            print(f"Effective degrees of freedom after opt: {edof}")
+                            print(f"Length Scales: {length_scales().numpy()}")
+                            print(f"Noise coeff: {noise_amplitude()}")
+                            print(f"Signal coeff: {signal_amplitude()}")
+                            print("=" * 40)
                         # =================================================================
                         # End of Debugging stuff
                         # =================================================================

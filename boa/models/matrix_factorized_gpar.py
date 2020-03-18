@@ -14,7 +14,9 @@ from boa.core.gp import GaussianProcess
 
 from not_tf_opt import BoundedVariable, minimize
 
-logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/mf_gpar.log")
+from boa import ROOT_DIR
+
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/mf_gpar.log")
 
 
 class MatrixFactorizedGPARModel(GPARModel):

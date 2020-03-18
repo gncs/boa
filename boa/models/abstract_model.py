@@ -39,7 +39,9 @@ class AbstractModel(tf.keras.Model):
         :param kwargs:
         """
 
-        super(AbstractModel, self).__init__(name=name, **kwargs)
+        super(AbstractModel, self).__init__(name=name,
+                                            dtype=tf.float64,
+                                            **kwargs)
 
         self.models = []
 
@@ -220,8 +222,8 @@ class AbstractModel(tf.keras.Model):
         # ---------------------------------------------
         percentiles = [0, 10, 30, 50, 70, 90, 100]
 
-        self.xs_euclidean_percentiles = calculate_euclidean_distance_percentiles(xs, percentiles)
-        self.ys_euclidean_percentiles = calculate_euclidean_distance_percentiles(ys, percentiles)
+        self.xs_euclidean_percentiles = tf.cast(calculate_euclidean_distance_percentiles(xs, percentiles), self.dtype)
+        self.ys_euclidean_percentiles = tf.cast(calculate_euclidean_distance_percentiles(ys, percentiles), self.dtype)
 
-        self.xs_per_dim_percentiles = calculate_per_dimension_distance_percentiles(xs, percentiles)
-        self.ys_per_dim_percentiles = calculate_per_dimension_distance_percentiles(ys, percentiles)
+        self.xs_per_dim_percentiles = tf.cast(calculate_per_dimension_distance_percentiles(xs, percentiles), self.dtype)
+        self.ys_per_dim_percentiles = tf.cast(calculate_per_dimension_distance_percentiles(ys, percentiles), self.dtype)

@@ -10,12 +10,13 @@ import numpy as np
 from boa.core.gp import GaussianProcess
 from boa.core.utils import setup_logger
 from .abstract_model import AbstractModel, ModelError
+from boa import ROOT_DIR
 
 from not_tf_opt import minimize, BoundedVariable
 
 __all__ = ["FullyFactorizedGPModel"]
 
-logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/ff_gp.log")
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/ff_gp.log")
 
 
 class FullyFactorizedGPModel(AbstractModel):
