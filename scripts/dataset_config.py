@@ -296,7 +296,7 @@ def load_dataset(dataset_path, separator, input_labels, output_labels) -> DataTu
 
 @dataset_ingredient.capture
 def prepare_ff_gp_data(data, input_labels, output_labels):
-    return data.df, input_labels, output_labels
+    return data.df
 
 
 @dataset_ingredient.capture
@@ -306,7 +306,7 @@ def prepare_ff_gp_aux_data(data, targets, input_labels, output_labels):
     for x in targets:
         inputs.remove(x)
 
-    return data.df, inputs, targets
+    return data.df
 
 
 @dataset_ingredient.capture
@@ -317,4 +317,4 @@ def prepare_gpar_data(data, targets, input_labels, output_labels):
         output_labels.remove(target)
         output_labels.append(target)
 
-    return data.df, input_labels.copy(), output_labels
+    return data.df

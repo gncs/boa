@@ -26,7 +26,7 @@ import tensorflow_probability as tfp
 import datetime
 from sacred import Experiment
 
-from .dataset_config import dataset_ingredient, load_dataset, prepare_gpar_data
+from dataset_config import dataset_ingredient, load_dataset, prepare_gpar_data
 
 ex = Experiment("gpar_permutation_experiment", ingredients=[dataset_ingredient])
 

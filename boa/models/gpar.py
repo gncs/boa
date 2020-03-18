@@ -65,7 +65,9 @@ class GPARModel(AbstractModel):
             self.noise_amplitudes.append(
                 tf.Variable((1,), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
 
-    def initialize_hyperparameters(self, index, length_scale_init="random", init_minval=0.5, init_maxval=2.0):
+    def initialize_hyperparameters(self, index,
+                                   length_scale_init="random",
+                                   init_minval=0.5, init_maxval=2.0):
 
         if length_scale_init == "median":
 
@@ -99,14 +101,17 @@ class GPARModel(AbstractModel):
                                         dtype=tf.float64)
 
         # Create bounded variables
-        length_scales = BoundedVariable(ls_init, lower=1e-3, upper=1e2, dtype=tf.float64)
+        length_scales = BoundedVariable(ls_init,
+                                        lower=1e-3,
+                                        upper=1e2,
+                                        dtype=tf.float64)
 
         signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
                                                              minval=init_minval,
                                                              maxval=init_maxval,
                                                              dtype=tf.float64),
                                            lower=1e-4,
-                                           upper=1e4,
+                                           upper=1e2,
                                            dtype=tf.float64)
 
         noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
@@ -114,7 +119,7 @@ class GPARModel(AbstractModel):
                                                             maxval=init_maxval,
                                                             dtype=tf.float64),
                                           lower=1e-6,
-                                          upper=1e4)
+                                          upper=1e2)
 
         return length_scales, signal_amplitude, noise_amplitude
 
