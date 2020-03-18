@@ -11,8 +11,7 @@ from boa.core.gp import GaussianProcess
 from boa.core.utils import setup_logger
 from .abstract_model import AbstractModel, ModelError
 
-from boa.core.variables import BoundedVariable
-from boa.core.optimize import bounded_minimize
+from not_tf_opt import minimize, BoundedVariable
 
 __all__ = ["FullyFactorizedGPModel"]
 
@@ -136,10 +135,10 @@ class FullyFactorizedGPModel(AbstractModel):
                 loss = np.inf
                 try:
                     # Perform L-BFGS-B optimization
-                    loss, converged, diverged = bounded_minimize(function=negative_gp_log_likelihood,
-                                                                 vs=hyperparams,
-                                                                 parallel_iterations=10,
-                                                                 max_iterations=iters)
+                    loss, converged, diverged = minimize(function=negative_gp_log_likelihood,
+                                                         vs=hyperparams,
+                                                         parallel_iterations=10,
+                                                         max_iterations=iters)
 
                     if diverged:
                         logger.error(f"Model diverged, restarting iteration {j}! (loss was {loss:.3f})")

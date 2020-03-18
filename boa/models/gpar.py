@@ -5,11 +5,12 @@ from tqdm import trange
 import numpy as np
 import tensorflow as tf
 
+from stheno.tensorflow import dense
+
 from .abstract_model import AbstractModel, ModelError
 from boa.core import GaussianProcess, setup_logger, inv_perm
 
-from boa.core.variables import BoundedVariable
-from boa.core.optimize import bounded_minimize
+from not_tf_opt import minimize, BoundedVariable
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/gpar.log")
 
@@ -200,17 +201,98 @@ class GPARModel(AbstractModel):
 
                 length_scales, signal_amplitude, noise_amplitude = hyperparams
 
+                # =================================================================
+                # Debugging stuff
+                # =================================================================
+                gp = GaussianProcess(kernel=self.kernel_name,
+                                     input_dim=self.input_dim + i,
+                                     signal_amplitude=signal_amplitude(),
+                                     length_scales=length_scales(),
+                                     noise_amplitude=noise_amplitude())
+
+                # ys_to_append = pred_ys if self.denoising else ys[:, :i]
+
+                # Permute the output
+                ys_to_append = ys[:, :i]
+                gp_input = tf.concat((xs, ys_to_append), axis=1)
+
+                fwd, _ = gp._create_transforms(gp_input)
+
+                K = dense(gp.kernel(fwd(gp_input)))
+                print(f"x percentiles: {self.xs_euclidean_percentiles}")
+                print(f"y percentiles: {self.ys_euclidean_percentiles}")
+
+                # print(f"Kernel matrix: {K}")
+
+                eigvals, _ = tf.linalg.eig(K)
+                eigvals = tf.cast(eigvals, tf.float64)
+                print(f"Eigenvalues: {eigvals.numpy()}")
+
+                # Largest eigenvalue divided by the smallest
+                condition_number = eigvals[-1] / eigvals[0]
+
+                # Effective degrees of freedom
+                edof = tf.reduce_sum(eigvals / (eigvals + noise_amplitude()))
+
+                print(f"Condition number before opt: {condition_number}")
+                print(f"Effective degrees of freedom before opt: {edof}")
+                print(f"Length Scales: {length_scales().numpy()}")
+                print(f"Noise coeff: {noise_amplitude()}")
+                print(f"Signal coeff: {signal_amplitude()}")
+                # =================================================================
+                # End of Debugging stuff
+                # =================================================================
+
                 loss = np.inf
 
                 try:
                     if optimizer == "l-bfgs-b":
                         # Perform L-BFGS-B optimization
-                        loss, converged, diverged = bounded_minimize(function=negative_gp_log_likelihood,
-                                                                     vs=hyperparams,
-                                                                     parallel_iterations=10,
-                                                                     max_iterations=iters,
-                                                                     trace=False)
+                        loss, converged, diverged = minimize(function=negative_gp_log_likelihood,
+                                                             vs=hyperparams,
+                                                             parallel_iterations=10,
+                                                             max_iterations=iters,
+                                                             trace=False)
 
+                        # =================================================================
+                        # Debugging stuff
+                        # =================================================================
+                        gp = GaussianProcess(kernel=self.kernel_name,
+                                             input_dim=self.input_dim + i,
+                                             signal_amplitude=signal_amplitude(),
+                                             length_scales=length_scales(),
+                                             noise_amplitude=noise_amplitude())
+
+                        # ys_to_append = pred_ys if self.denoising else ys[:, :i]
+
+                        # Permute the output
+                        ys_to_append = ys[:, :i]
+                        gp_input = tf.concat((xs, ys_to_append), axis=1)
+
+                        fwd, _ = gp._create_transforms(gp_input)
+
+                        K = dense(gp.kernel(fwd(gp_input)))
+
+                        # print(f"Kernel matrix: {K}")
+
+                        eigvals, _ = tf.linalg.eig(K)
+                        eigvals = tf.cast(eigvals, tf.float64)
+
+                        # Largest eigenvalue divided by the smallest
+                        condition_number = eigvals[-1] / eigvals[0]
+
+                        # Effective degrees of freedom
+                        edof = tf.reduce_sum(eigvals / (eigvals + noise_amplitude()))
+
+                        print(f"Condition number after opt: {condition_number}")
+                        print(f"Effective degrees of freedom after opt: {edof}")
+                        print(f"Length Scales: {length_scales().numpy()}")
+                        print(f"Noise coeff: {noise_amplitude()}")
+                        print(f"Signal coeff: {signal_amplitude()}")
+                        print("=" * 40)
+                        # =================================================================
+                        # End of Debugging stuff
+                        # =================================================================
                         if diverged:
                             logger.error(f"Model diverged, restarting iteration {j}! (loss was {loss:.3f})")
                             j -= 1
@@ -406,15 +488,15 @@ class GPARModel(AbstractModel):
                     try:
                         if optimizer == "l-bfgs-b":
                             # Perform L-BFGS-B optimization
-                            res = bounded_minimize(function=lambda s, l, n: negative_gp_log_likelihood(train_xs,
-                                                                                                       train_ys,
-                                                                                                       s, l, n,
-                                                                                                       train=True),
-                                                   vs=(signal_amplitude,
-                                                       length_scales,
-                                                       noise_amplitude),
-                                                   parallel_iterations=10,
-                                                   max_iterations=iters)
+                            res = minimize(function=lambda s, l, n: negative_gp_log_likelihood(train_xs,
+                                                                                               train_ys,
+                                                                                               s, l, n,
+                                                                                               train=True),
+                                           vs=(signal_amplitude,
+                                               length_scales,
+                                               noise_amplitude),
+                                           parallel_iterations=10,
+                                           max_iterations=iters)
 
                             loss, _, diverged = res
 

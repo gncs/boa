@@ -15,8 +15,7 @@ from .abstract_model import AbstractModel
 
 from boa.core.kernel import perm_pointwise_distance
 
-from boa.core.variables import BoundedVariable
-from boa.core.optimize import bounded_minimize
+from not_tf_opt import BoundedVariable, minimize
 
 __all__ = ["PermutationGPModel"]
 
@@ -71,7 +70,7 @@ class PermutationGPModel(AbstractModel):
                                           upper=1e2,
                                           dtype=tf.float64)
 
-        return length_scale, signal_amplitude, tf.cast(1e-1, tf.float64) #noise_amplitude
+        return length_scale, signal_amplitude, tf.cast(1e-1, tf.float64)  # noise_amplitude
 
     def fit(self, xs, ys, optimizer='l-bfgs-b', optimizer_restarts=1, iters=1000, trace=False,
             err_level="catch", median_heuristic_only=False) -> None:
@@ -124,10 +123,11 @@ class PermutationGPModel(AbstractModel):
 
             try:
 
-                loss, converged, diverged = bounded_minimize(function=lambda l, s: negative_perm_gp_log_likelihood(l, s, noise_amplitude),
-                                                             vs=(length_scale, signal_amplitude),
-                                                             parallel_iterations=10,
-                                                             max_iterations=iters)
+                loss, converged, diverged = minimize(
+                    function=lambda l, s: negative_perm_gp_log_likelihood(l, s, noise_amplitude),
+                    vs=(length_scale, signal_amplitude),
+                    parallel_iterations=10,
+                    max_iterations=iters)
 
                 if diverged:
                     logger.error(f"Model diverged, restarting iteration {j}!")

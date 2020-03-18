@@ -3,6 +3,7 @@ import tensorflow_probability as tfp
 import logging
 
 import numpy as np
+import pandas as pd
 
 logger = logging.getLogger()
 logger.setLevel(logging.CRITICAL)
@@ -24,7 +25,8 @@ def transform_df(df, transforms):
         else:
             transform = lambda x: x
 
-        df[label] = df[label].apply(transform)
+        transformed = df[label].apply(transform)
+        df.loc[:, label] = transformed
 
     return df
 
@@ -106,7 +108,7 @@ def normalize(x, min_std=1e-10):
     return (x - mean) / std
 
 
-def distance_matrix(xs):
+def distance_matrix(xs, eps=1e-7):
     """
     Calculate the pairwise distances between the rows of the input data-points and
     return the square matrix D_ij = || X_i - X_j ||
@@ -127,7 +129,7 @@ def distance_matrix(xs):
 
     dist_matrix = norms + cross_terms + tf.transpose(norms)
 
-    return dist_matrix
+    return tf.sqrt(dist_matrix + eps)
 
 
 def dim_distance_matrix(xs):
@@ -135,6 +137,8 @@ def dim_distance_matrix(xs):
     dist_mats = []
 
     xs = normalize(xs)
+
+    diffs = xs[None, :, None, :] - xs[:, None, :, None]
 
     for k in range(xs.shape[1]):
 
@@ -156,10 +160,9 @@ def calculate_euclidean_distance_percentiles(xs, percents):
 
     euclidean_dist_mat = distance_matrix(xs)
 
-    # Filter 0s
-    euclidean_dists = tf.gather_nd(euclidean_dist_mat, tf.where(euclidean_dist_mat != 0.))
-
-    return tfp.stats.percentile(euclidean_dists, percents, axis=0)
+    return tfp.stats.percentile(tf.reshape(euclidean_dist_mat, [-1]),
+                                percents,
+                                axis=0)
 
 
 def calculate_per_dimension_distance_percentiles(xs, percents):

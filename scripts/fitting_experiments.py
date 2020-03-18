@@ -116,7 +116,7 @@ def run_experiment(model,
     np.random.seed(_seed)
     tf.random.set_seed(_seed)
 
-    for size in [25, 50, 100, 150, 200]:
+    for size in [25, 100, 150, 200]:
         for index in range(rounds):
 
             if verbose:

@@ -12,8 +12,7 @@ from .gpar import GPARModel
 from boa.core.utils import setup_logger
 from boa.core.gp import GaussianProcess
 
-from boa.core.variables import BoundedVariable
-from boa.core.optimize import bounded_minimize
+from not_tf_opt import BoundedVariable, minimize
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/mf_gpar.log")
 
@@ -231,7 +230,7 @@ class MatrixFactorizedGPARModel(GPARModel):
                 if optimizer == "l-bfgs-b":
 
                     # Perform L-BFGS-B optimization
-                    loss, converged, diverged = bounded_minimize(
+                    loss, converged, diverged = minimize(
                         function=negative_mf_gpar_log_likelihood,
                         vs=hyperparams,
                         parallel_iterations=10,

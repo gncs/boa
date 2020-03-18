@@ -5,8 +5,9 @@ import tensorflow as tf
 from .abstract_model import AbstractModel
 
 from boa.core.utils import setup_logger
+from boa import ROOT_DIR
 
-logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/random_model.log")
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/random_model.log")
 
 
 class RandomModel(AbstractModel):

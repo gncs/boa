@@ -1,7 +1,6 @@
 import abc
 import logging
 import json
-import os
 
 import tensorflow as tf
 
@@ -219,12 +218,10 @@ class AbstractModel(tf.keras.Model):
         # ---------------------------------------------
         # Calculate stuff for the median heuristic
         # ---------------------------------------------
-        percentiles = [10, 30, 50, 70, 90]
+        percentiles = [0, 10, 30, 50, 70, 90, 100]
 
         self.xs_euclidean_percentiles = calculate_euclidean_distance_percentiles(xs, percentiles)
         self.ys_euclidean_percentiles = calculate_euclidean_distance_percentiles(ys, percentiles)
-        logging.debug(f"Input Euclidean distance percentiles (10, 30, 50, 70, 90): {self.xs_euclidean_percentiles}")
-        logging.debug(f"Output Euclidean distance percentiles (10, 30, 50, 70, 90): {self.ys_euclidean_percentiles}")
 
         self.xs_per_dim_percentiles = calculate_per_dimension_distance_percentiles(xs, percentiles)
         self.ys_per_dim_percentiles = calculate_per_dimension_distance_percentiles(ys, percentiles)

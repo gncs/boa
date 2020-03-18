@@ -7,9 +7,9 @@ import numpy as np
 import tensorflow as tf
 
 from boa.core import GaussianProcess, setup_logger
-from boa.core.variables import BoundedVariable
-from boa.core.optimize import bounded_minimize
 from .gpar import GPARModel
+
+from not_tf_opt import minimize, BoundedVariable
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/perm_gpar.log")
 
@@ -192,10 +192,10 @@ class PermutedGPARModel(GPARModel):
 
                         return -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize_with_input=True)
 
-                    loss, converged, diverged = bounded_minimize(negative_gp_log_likelihood,
-                                                                 vs=(signal_amplitudes[i], length_scales[i],
-                                                                     noise_amplitudes[i]),
-                                                                 parallel_iterations=10)
+                    loss, converged, diverged = minimize(negative_gp_log_likelihood,
+                                                         vs=(signal_amplitudes[i], length_scales[i],
+                                                             noise_amplitudes[i]),
+                                                         parallel_iterations=10)
 
                     if diverged:
                         logger.error(f"Model diverged, restarting iteration {j} (loss was {loss:.3f})!")
@@ -249,7 +249,8 @@ class PermutedGPARModel(GPARModel):
                             if hard_forward_permutation:
                                 # Forward pass: use hard permutation
                                 # Backward pass: pretend we used the soft permutation all along
-                                permuted_output = soft_permuted_ys + tf.stop_gradient(hard_permuted_ys_ - soft_permuted_ys)
+                                permuted_output = soft_permuted_ys + tf.stop_gradient(
+                                    hard_permuted_ys_ - soft_permuted_ys)
                             else:
                                 permuted_output = soft_permuted_ys
 
