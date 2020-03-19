@@ -8,4 +8,5 @@ sacred
 matplotlib
 seaborn
 pandas
+jupyter
 
