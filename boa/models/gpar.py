@@ -70,7 +70,9 @@ class GPARModel(AbstractModel):
 
     def initialize_hyperparameters(self, index,
                                    length_scale_init="random",
-                                   init_minval=0.5, init_maxval=2.0):
+                                   init_minval=0.5, init_maxval=2.0,
+                                   signal_lower_bound=1e-2,
+                                   signal_upper_bound=1e1):
 
         if length_scale_init == "median":
 
@@ -160,16 +162,16 @@ class GPARModel(AbstractModel):
                                                              minval=init_minval,
                                                              maxval=init_maxval,
                                                              dtype=tf.float64),
-                                           lower=1e-1,
-                                           upper=1e2,
+                                           lower=signal_lower_bound,
+                                           upper=signal_upper_bound,
                                            dtype=tf.float64)
 
         noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
                                                             minval=0.1 * init_minval,
                                                             maxval=0.1 * init_maxval,
                                                             dtype=tf.float64),
-                                          lower=1e-3,
-                                          upper=1e1)
+                                          lower=0.1 * signal_lower_bound,
+                                          upper=0.1 * signal_upper_bound)
 
         return length_scales, signal_amplitude, noise_amplitude
 
@@ -180,7 +182,7 @@ class GPARModel(AbstractModel):
             optimizer_restarts=1,
             permutation=None,
             trace=False,
-            tolerance=1e-5,
+            tolerance=1e-4,
             iters=1000,
             seed=None,
             rate=1e-2,
