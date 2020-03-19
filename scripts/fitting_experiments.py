@@ -208,7 +208,6 @@ def main(dataset, model, kernel, initialization, verbose, latent_dim=None):
 
     if model == 'ff-gp':
         df = prepare_ff_gp_data(data)
-        df_aux, input_labels_aux, output_labels_aux = prepare_ff_gp_aux_data(data=data)
 
         surrogate_model = FullyFactorizedGPModel(kernel=kernel,
                                                  input_dim=len(dataset["input_labels"]),
