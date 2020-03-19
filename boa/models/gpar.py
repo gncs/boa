@@ -134,7 +134,7 @@ class GPARModel(AbstractModel):
                                             dtype=tf.float64)
 
             # We need to multiply the lengthscales by sqrt(N) to correct for the number of dimensions
-            dim_coeff = tf.sqrt(self.input_dim + index)
+            dim_coeff = tf.sqrt(tf.cast(self.input_dim + index, tf.float64))
 
             # Once the inputs and outputs have been initialized separately, concatenate them
             ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0) * dim_coeff
