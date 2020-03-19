@@ -30,26 +30,29 @@ def transform_df(df, transforms):
     return df
 
 
-def back_transform(data, labels, transforms):
-    if len(data.shape) == 1:
-        data = data.reshape([-1, 1])
+def back_transform(mean, variance, labels, transforms):
+    if len(mean.shape) == 1:
+        data = mean.reshape([-1, 1])
 
-    if data.shape[1] != len(labels):
-        raise CoreError(f"Number of label dimensions ({data.shape[1]}), "
+    if len(variance.shape) == 1:
+        data = variance.reshape([-1, 1])
+
+    if mean.shape[1] != len(labels):
+        raise CoreError(f"Number of label dimensions ({mean.shape[1]}), "
                         f"must match length of label list ({len(labels)} given!")
 
-    for i, (col, label) in enumerate(zip(data.T, labels)):
+    for i, (m, v, label) in enumerate(zip(mean.T, variance.T, labels)):
 
         if label in transforms:
             if transforms[label] == 'log':
-                transform = np.exp
+                # We need to transform according to a log-Normal's statistics
+                new_mean = np.exp(m)
+                new_variance = (np.exp(v) - 1) * np.exp(2 * m + v)
 
-        else:
-            transform = lambda x: x
+                mean[:, i] = new_mean
+                variance[:, i] = new_variance
 
-        data[:, i] = transform(col)
-
-    return data
+    return mean, variance
 
 
 def inv_perm(perm):

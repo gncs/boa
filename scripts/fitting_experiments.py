@@ -116,7 +116,7 @@ def run_experiment(model,
     np.random.seed(_seed)
     tf.random.set_seed(_seed)
 
-    for size in [25, 100, 150, 200]:
+    for size in [25, 50, 100, 150, 200]:
         for index in range(rounds):
 
             if verbose:
@@ -148,7 +148,7 @@ def run_experiment(model,
             start_time = time.time()
             try:
                 model = model.condition_on(train[dataset["input_labels"]].values,
-                                                 train[dataset["output_labels"]].values[:, :],
+                                           train[dataset["output_labels"]].values[:, :],
                                            keep_previous=False)
                 model.fit_to_conditioning_data(optimizer_restarts=num_optimizer_restarts,
                                                optimizer=optimizer,
@@ -168,11 +168,15 @@ def run_experiment(model,
             start_time = time.time()
 
             try:
-                mean, _ = model.predict(test[dataset["input_labels"]].values, numpy=True)
+                mean, variance = model.predict(test[dataset["input_labels"]].values, numpy=True)
 
                 # Back-transfrom predictions!
+                # *Note*: If we are using a log-transform, the back-transformed mean is actually
+                # Going to be the median, exp(mu) NOT the expected value exp(mu + var/2)!
                 if use_output_transforms:
-                    mean = back_transform(mean, dataset["output_labels"], dataset["output_transforms"])
+                    mean, variance = back_transform(mean, variance,
+                                                    dataset["output_labels"],
+                                                    dataset["output_transforms"])
 
             except Exception as e:
                 _log.exception("Prediction failed: {}, saving model!".format(str(e)))
@@ -185,6 +189,9 @@ def run_experiment(model,
             experiment['mean_abs_err'] = np.mean(np.abs(diff), axis=0).tolist()
             experiment['mean_squ_err'] = np.mean(np.square(diff), axis=0).tolist()
             experiment['rmse'] = np.sqrt(np.mean(np.square(diff), axis=0)).tolist()
+
+            experiment['std_mean_squ_err'] = np.mean(np.square(diff) / variance, axis=0).tolist()
+            experiment['std_mean_abs_err'] = np.mean(np.abs(diff) / np.sqrt(variance + 1e-7), axis=0).tolist()
 
             experiments.append(experiment)
 
@@ -236,4 +243,3 @@ def main(dataset, model, kernel, initialization, verbose, latent_dim=None):
 
     results = run_experiment(model=surrogate_model,
                              data=df)
-
