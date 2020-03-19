@@ -32,10 +32,10 @@ def transform_df(df, transforms):
 
 def back_transform(mean, variance, labels, transforms):
     if len(mean.shape) == 1:
-        data = mean.reshape([-1, 1])
+        mean = mean.reshape([-1, 1])
 
     if len(variance.shape) == 1:
-        data = variance.reshape([-1, 1])
+        variance = variance.reshape([-1, 1])
 
     if mean.shape[1] != len(labels):
         raise CoreError(f"Number of label dimensions ({mean.shape[1]}), "

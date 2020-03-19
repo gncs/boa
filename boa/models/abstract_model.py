@@ -15,8 +15,7 @@ class ModelError(Exception):
     """Base error thrown by models"""
 
 
-class AbstractModel(tf.keras.Model):
-    __metaclass__ = abc.ABCMeta
+class AbstractModel(tf.keras.Model, abc.ABC):
 
     def __init__(self,
                  kernel: str,

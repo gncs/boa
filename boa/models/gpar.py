@@ -77,14 +77,14 @@ class GPARModel(AbstractModel):
         if length_scale_init == "median":
 
             # Center on the medians, treat the inputs and the outputs separately
-            xs_ls_init = self.xs_euclidean_percentiles[4]
-            ys_ls_init = self.ys_euclidean_percentiles[4]
+            xs_ls_init = self.xs_euclidean_percentiles[3]
+            ys_ls_init = self.ys_euclidean_percentiles[3]
 
-            xs_ls_rand_range = tf.minimum(self.xs_euclidean_percentiles[3] - self.xs_euclidean_percentiles[1],
-                                          self.xs_euclidean_percentiles[5] - self.xs_euclidean_percentiles[3])
+            xs_ls_rand_range = tf.minimum(self.xs_euclidean_percentiles[3] - self.xs_euclidean_percentiles[2],
+                                          self.xs_euclidean_percentiles[4] - self.xs_euclidean_percentiles[3])
 
-            ys_ls_rand_range = tf.minimum(self.ys_euclidean_percentiles[3] - self.ys_euclidean_percentiles[1],
-                                          self.ys_euclidean_percentiles[5] - self.ys_euclidean_percentiles[3])
+            ys_ls_rand_range = tf.minimum(self.ys_euclidean_percentiles[3] - self.ys_euclidean_percentiles[2],
+                                          self.ys_euclidean_percentiles[4] - self.ys_euclidean_percentiles[3])
 
             xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
                                             minval=-xs_ls_rand_range,
@@ -105,14 +105,14 @@ class GPARModel(AbstractModel):
                 axis=0)
 
             ls_upper_bound = tf.concat(
-                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_euclidean_percentiles[-1] * 32.,
-                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_euclidean_percentiles[-1] * 32.],
+                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_euclidean_percentiles[-1] * 64.,
+                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_euclidean_percentiles[-1] * 64.],
                 axis=0)
 
         elif length_scale_init == "dim_median":
             # Center on the medians, treat the inputs and the outputs separately
-            xs_ls_init = self.xs_per_dim_percentiles[4, :]
-            ys_ls_init = self.ys_per_dim_percentiles[4, :index]
+            xs_ls_init = self.xs_per_dim_percentiles[3, :]
+            ys_ls_init = self.ys_per_dim_percentiles[3, :index]
 
             xs_ls_rand_range = tf.minimum(self.xs_per_dim_percentiles[3, :] - self.xs_per_dim_percentiles[1, :],
                                           self.xs_per_dim_percentiles[5, :] - self.xs_per_dim_percentiles[3, :])
@@ -139,8 +139,8 @@ class GPARModel(AbstractModel):
                 axis=0)
 
             ls_upper_bound = tf.concat(
-                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_per_dim_percentiles[-1, :] * 32.,
-                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_per_dim_percentiles[-1, :index] * 32.],
+                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_per_dim_percentiles[-1, :] * 64.,
+                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_per_dim_percentiles[-1, :index] * 64.],
                 axis=0)
 
         else:
@@ -182,7 +182,7 @@ class GPARModel(AbstractModel):
             optimizer_restarts=1,
             permutation=None,
             trace=False,
-            tolerance=1e-4,
+            tolerance=1e-5,
             iters=1000,
             seed=None,
             rate=1e-2,
