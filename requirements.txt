@@ -8,4 +8,7 @@ sacred
 matplotlib
 seaborn
 pandas
+pytest
+pytest-cov
+coveralls
 

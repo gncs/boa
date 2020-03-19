@@ -72,7 +72,10 @@ class GPARModel(AbstractModel):
                                    length_scale_init="random",
                                    init_minval=0.5, init_maxval=2.0,
                                    signal_lower_bound=1e-2,
-                                   signal_upper_bound=1e1):
+                                   signal_upper_bound=1e1,
+                                   ls_base_lower_bound=1e-2,
+                                   ls_base_upper_bound=5e2,
+                                   noise_scale_factor=0.1):
 
         if length_scale_init == "median":
 
@@ -130,18 +133,21 @@ class GPARModel(AbstractModel):
                                             maxval=ys_ls_rand_range[:index],
                                             dtype=tf.float64)
 
+            # We need to multiply the lengthscales by sqrt(N) to correct for the number of dimensions
+            dim_coeff = tf.sqrt(self.input_dim + index)
+
             # Once the inputs and outputs have been initialized separately, concatenate them
-            ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
+            ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0) * dim_coeff
 
             ls_lower_bound = tf.concat(
                 [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_per_dim_percentiles[0, :] / 4.,
                  tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_per_dim_percentiles[0, :index] / 4.],
-                axis=0)
+                axis=0) * dim_coeff
 
             ls_upper_bound = tf.concat(
                 [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_per_dim_percentiles[-1, :] * 64.,
                  tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_per_dim_percentiles[-1, :index] * 64.],
-                axis=0)
+                axis=0) * dim_coeff
 
         else:
             ls_init = tf.random.uniform(shape=(self.input_dim + index,),
@@ -149,13 +155,13 @@ class GPARModel(AbstractModel):
                                         maxval=init_maxval,
                                         dtype=tf.float64)
 
-            ls_lower_bound = 1e-2
-            ls_upper_bound = 1e3
+            ls_lower_bound = ls_base_lower_bound
+            ls_upper_bound = ls_base_upper_bound
 
         # Create bounded variables
         length_scales = BoundedVariable(ls_init,
-                                        lower=tf.maximum(ls_lower_bound, 1e-2),
-                                        upper=tf.minimum(ls_upper_bound, 1e3),
+                                        lower=tf.maximum(ls_lower_bound, ls_base_lower_bound),
+                                        upper=tf.minimum(ls_upper_bound, ls_base_upper_bound),
                                         dtype=tf.float64)
 
         signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
@@ -167,11 +173,11 @@ class GPARModel(AbstractModel):
                                            dtype=tf.float64)
 
         noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
-                                                            minval=0.1 * init_minval,
-                                                            maxval=0.1 * init_maxval,
+                                                            minval=noise_scale_factor * init_minval,
+                                                            maxval=noise_scale_factor * init_maxval,
                                                             dtype=tf.float64),
-                                          lower=0.1 * signal_lower_bound,
-                                          upper=0.1 * signal_upper_bound)
+                                          lower=noise_scale_factor * signal_lower_bound,
+                                          upper=noise_scale_factor * signal_upper_bound)
 
         return length_scales, signal_amplitude, noise_amplitude
 
