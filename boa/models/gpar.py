@@ -150,12 +150,12 @@ class GPARModel(AbstractModel):
                                         dtype=tf.float64)
 
             ls_lower_bound = 1e-2
-            ls_upper_bound = 1e2
+            ls_upper_bound = 1e3
 
         # Create bounded variables
         length_scales = BoundedVariable(ls_init,
-                                        lower=ls_lower_bound,
-                                        upper=ls_upper_bound,
+                                        lower=tf.maximum(ls_lower_bound, 1e-2),
+                                        upper=tf.minimum(ls_upper_bound, 1e3),
                                         dtype=tf.float64)
 
         signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),

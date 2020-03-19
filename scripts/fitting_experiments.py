@@ -56,7 +56,7 @@ def experiment_config(dataset):
     optimizer = "l-bfgs-b"
 
     # Initialization heuristic for the hyperparameters of the models.
-    initialization = "dim_median"
+    initialization = "median"
 
     # Number of training iterations to allow either for L-BFGS-B or Adam.
     iters = 1000
@@ -192,6 +192,8 @@ def run_experiment(model,
 
             experiment['std_mean_squ_err'] = np.mean(np.square(diff) / variance, axis=0).tolist()
             experiment['std_mean_abs_err'] = np.mean(np.abs(diff) / np.sqrt(variance + 1e-7), axis=0).tolist()
+            experiment['mean_predictive_variance'] = np.mean(variance)
+            experiment['mean_predictive_std'] = np.mean(np.sqrt(variance + 1e-7))
 
             experiments.append(experiment)
 
