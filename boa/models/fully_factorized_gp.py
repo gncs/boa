@@ -9,14 +9,14 @@ import numpy as np
 
 from boa.core.gp import GaussianProcess
 from boa.core.utils import setup_logger
-from .abstract_model import AbstractModel
+from .abstract_model import AbstractModel, ModelError
+from boa import ROOT_DIR
 
-from boa.core.variables import BoundedVariable
-from boa.core.optimize import bounded_minimize
+from not_tf_opt import minimize, BoundedVariable
 
 __all__ = ["FullyFactorizedGPModel"]
 
-logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/ff_gp.log")
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/ff_gp.log")
 
 
 class FullyFactorizedGPModel(AbstractModel):
@@ -95,7 +95,8 @@ class FullyFactorizedGPModel(AbstractModel):
 
         return length_scales, signal_amplitude, noise_amplitude
 
-    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1, iters=1000, trace=False, err_level="catch") -> None:
+    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1, iters=1000, trace=False,
+            err_level="catch") -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -112,6 +113,7 @@ class FullyFactorizedGPModel(AbstractModel):
             def negative_gp_log_likelihood(length_scales, signal_amplitude, noise_amplitude):
 
                 gp = GaussianProcess(kernel=self.kernel_name,
+                                     input_dim=self.input_dim,
                                      signal_amplitude=signal_amplitude,
                                      length_scales=length_scales,
                                      noise_amplitude=noise_amplitude)
@@ -134,13 +136,13 @@ class FullyFactorizedGPModel(AbstractModel):
                 loss = np.inf
                 try:
                     # Perform L-BFGS-B optimization
-                    loss, converged, diverged = bounded_minimize(function=negative_gp_log_likelihood,
-                                                                 vs=hyperparams,
-                                                                 parallel_iterations=10,
-                                                                 max_iterations=iters)
+                    loss, converged, diverged = minimize(function=negative_gp_log_likelihood,
+                                                         vs=hyperparams,
+                                                         parallel_iterations=10,
+                                                         max_iterations=iters)
 
                     if diverged:
-                        logger.error(f"Model diverged, restarting iteration {j}!")
+                        logger.error(f"Model diverged, restarting iteration {j}! (loss was {loss:.3f})")
                         j -= 1
                         continue
 
@@ -213,7 +215,10 @@ class FullyFactorizedGPModel(AbstractModel):
 
         return means, variances
 
-    def log_prob(self, xs, ys, use_conditioning_data=True, latent=True, numpy=False):
+    def log_prob(self, xs, ys, use_conditioning_data=True, latent=True, numpy=False, target_dims=None):
+
+        if target_dims is not None and not isinstance(target_dims, (tuple, list)):
+            raise ModelError("target_dims must be a list or a tuple!")
 
         if len(self.models) < self.output_dim:
             logger.info("GPs haven't been cached yet, creating them now.")
@@ -224,6 +229,9 @@ class FullyFactorizedGPModel(AbstractModel):
         log_prob = 0.
 
         for i, model in enumerate(self.models):
+
+            if i not in target_dims:
+                continue
 
             cond_model = model | (self.xs, self.ys[:, i:i + 1])
 
@@ -255,6 +263,7 @@ class FullyFactorizedGPModel(AbstractModel):
 
         for i in range(self.output_dim):
             gp = GaussianProcess(kernel=self.kernel_name,
+                                 input_dim=self.input_dim,
                                  signal_amplitude=self.signal_amplitudes[i],
                                  length_scales=self.length_scales[i],
                                  noise_amplitude=self.noise_amplitudes[i])

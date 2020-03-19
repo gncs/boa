@@ -1,9 +1,11 @@
 # Logs folder
+models/
 logs/
+logs-old/
 *.log
 
 # Temporary model files
-models/
+models-old/
 notebooks/
 notebooks/models/
 

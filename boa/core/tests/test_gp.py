@@ -30,7 +30,7 @@ class TestGaussianProcess(TestCase):
         self.xs = np.array([-0.25, 0, 0.1]).reshape(-1, 1)
         self.ys = f(self.xs)
 
-        self.gp = GaussianProcess(kernel="rbf", signal_amplitude=1, length_scales=1, noise_amplitude=0.01)
+        self.gp = GaussianProcess(kernel="rbf", input_dim=1, signal_amplitude=1, length_scales=1, noise_amplitude=0.01)
 
     def test_init(self):
 
@@ -39,47 +39,48 @@ class TestGaussianProcess(TestCase):
         # ----------------------------------------------------------------
         with self.assertRaises(CoreError):
 
-            gp = GaussianProcess(kernel="bla", signal_amplitude=1, length_scales=1, noise_amplitude=0.01)
+            gp = GaussianProcess(kernel="bla", input_dim=1, signal_amplitude=1, length_scales=1, noise_amplitude=0.01)
 
         # ----------------------------------------------------------------
         # Kernel parameters must be strictly positive
         # ----------------------------------------------------------------
         with self.assertRaises(CoreError):
             # signal amplitude negative
-            gp = GaussianProcess(kernel="rbf", signal_amplitude=-1, length_scales=1, noise_amplitude=0.01)
+            gp = GaussianProcess(kernel="rbf", input_dim=1, signal_amplitude=-1, length_scales=1, noise_amplitude=0.01)
 
         with self.assertRaises(CoreError):
             # length_scales negative
-            gp = GaussianProcess(kernel="rbf", signal_amplitude=1, length_scales=-1, noise_amplitude=0.01)
+            gp = GaussianProcess(kernel="rbf", input_dim=1, signal_amplitude=1, length_scales=-1, noise_amplitude=0.01)
 
         with self.assertRaises(CoreError):
             # noise amplitude negative
-            gp = GaussianProcess(kernel="rbf", signal_amplitude=1, length_scales=1, noise_amplitude=-0.01)
+            gp = GaussianProcess(kernel="rbf", input_dim=1, signal_amplitude=1, length_scales=1, noise_amplitude=-0.01)
 
         with self.assertRaises(CoreError):
             # signal amplitude zero
-            gp = GaussianProcess(kernel="rbf", signal_amplitude=0, length_scales=1, noise_amplitude=0.01)
+            gp = GaussianProcess(kernel="rbf", input_dim=1, signal_amplitude=0, length_scales=1, noise_amplitude=0.01)
 
         with self.assertRaises(CoreError):
             # one length scales zero
             length_scales = np.ones(6)
             length_scales[3] = 0
 
-            gp = GaussianProcess(kernel="rbf", signal_amplitude=1, length_scales=length_scales, noise_amplitude=0.01)
+            gp = GaussianProcess(kernel="rbf", input_dim=1, signal_amplitude=1, length_scales=length_scales, noise_amplitude=0.01)
 
         with self.assertRaises(CoreError):
             # noise amplitude zero
-            gp = GaussianProcess(kernel="rbf", signal_amplitude=1, length_scales=1, noise_amplitude=0)
+            gp = GaussianProcess(kernel="rbf", input_dim=1, signal_amplitude=1, length_scales=1, noise_amplitude=0)
 
         with self.assertRaises(CoreError):
             # jitter amplitude zero
-            gp = GaussianProcess(kernel="rbf", signal_amplitude=1, length_scales=1, noise_amplitude=0.01, jitter=0)
+            gp = GaussianProcess(kernel="rbf", input_dim=1, signal_amplitude=1, length_scales=1, noise_amplitude=0.01, jitter=0)
 
         # ----------------------------------------------------------------
         # Lengths scales must be at most rank-1
         # ----------------------------------------------------------------
         with self.assertRaises(CoreError):
             gp = GaussianProcess(kernel="rbf",
+                                 input_dim=1,
                                  signal_amplitude=1,
                                  length_scales=tf.ones((4, 4), dtype=tf.float64),
                                  noise_amplitude=1)

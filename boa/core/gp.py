@@ -5,7 +5,7 @@ from stheno.tensorflow import EQ, Delta, Matern52, GP, Graph, dense
 from boa import ROOT_DIR
 
 from .utils import CoreError, setup_logger
-from .kernel import DiscreteMatern52, DiscreteEQ
+from .kernel import DiscreteMatern52, DiscreteEQ, PermutationEQ, PermutationMatern52
 
 __all__ = ["GaussianProcess", "CoreError"]
 
@@ -23,7 +23,9 @@ class GaussianProcess(tf.Module):
         "rbf": EQ,
         "matern52": Matern52,
         "discrete_matern52": DiscreteMatern52,
-        "discrete_rbf": DiscreteEQ
+        "discrete_rbf": DiscreteEQ,
+        "perm_eq": PermutationEQ,
+        "perm_matern52": PermutationMatern52
     }
 
     SIG_AMP = "signal_amplitude"
@@ -32,11 +34,12 @@ class GaussianProcess(tf.Module):
 
     def __init__(self,
                  kernel: str,
+                 input_dim: int,
                  signal_amplitude,
                  length_scales,
                  noise_amplitude,
+                 kernel_args={},
                  jitter: tf.float64 = 1e-10,
-                 discrete: bool = False,
                  verbose: bool = False,
                  name: str = "gaussian_process",
                  **kwargs):
@@ -46,7 +49,8 @@ class GaussianProcess(tf.Module):
         # Check if the specified kernel is available
         if kernel in self.AVAILABLE_KERNELS:
             self.kernel_name = kernel
-            self.kernel = self.AVAILABLE_KERNELS[kernel]()
+            self.kernel_args = kernel_args
+            self.kernel = self.AVAILABLE_KERNELS[kernel](**kernel_args)
         else:
             raise CoreError(f"Specified kernel '{kernel}' not available!")
 
@@ -77,11 +81,13 @@ class GaussianProcess(tf.Module):
 
         self.verbose = verbose
 
-        self.input_dim = self.length_scales.shape[0]
+        self.input_dim = input_dim
 
         # Create model parts
         self.graph = Graph()
 
+        # Need special handling for the kernel length scale, because, the default
+        # Stheno stretch behaviour divides the inputs to the kernel: k(x / l, y / l)
         signal_kernel = self.signal_amplitude * self.kernel.stretch(self.length_scales)
 
         noise_kernel = self.noise_amplitude * Delta()
@@ -110,6 +116,7 @@ class GaussianProcess(tf.Module):
         """
 
         gp = GaussianProcess(kernel=self.kernel_name,
+                             input_dim=self.input_dim,
                              signal_amplitude=self.signal_amplitude,
                              length_scales=self.length_scales,
                              noise_amplitude=self.noise_amplitude,
@@ -288,5 +295,55 @@ class GaussianProcess(tf.Module):
                 return x * (std**2)
             else:
                 return (x * std) + mean
+
+        return forward, backward
+
+
+class DiscreteGaussianProcess(GaussianProcess):
+
+    def __init__(self,
+                 kernel: str,
+                 input_dim: int,
+                 signal_amplitude,
+                 kernel_args = {},
+                 jitter: tf.float64 = 1e-10,
+                 verbose: bool = False,
+                 name: str = "discrete_gaussian_process",
+                 **kwargs):
+
+        super().__init__(kernel=kernel,
+                         kernel_args=kernel_args,
+                         input_dim=input_dim,
+                         name=name,
+                         signal_amplitude=signal_amplitude,
+                         jitter=jitter,
+                         verbose=verbose,
+                         **kwargs)
+
+    @staticmethod
+    def _create_transforms(input, min_std=1e-6, input_normalizable=False):
+        if input.shape[0] == 0:
+            return lambda x, var=False: x, lambda x, var=False: x
+
+        # Calculate data statistics
+        mean, var = tf.nn.moments(input, axes=[0], keepdims=True)
+        std = tf.maximum(tf.sqrt(var), min_std)
+
+        if input_normalizable:
+            def forward(x, var=False):
+                if var:
+                    return x / (std**2)
+                else:
+                    return (x - mean) / std
+
+            def backward(x, var=False):
+                if var:
+                    return x * (std ** 2)
+                else:
+                    return (x * std) + mean
+
+        else:
+            forward = lambda x, var=False: x
+            backward = lambda x, var=False: x
 
         return forward, backward
