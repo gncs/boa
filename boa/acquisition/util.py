@@ -1,6 +1,10 @@
 import numpy as np
 
 
+class AcquisitionError(Exception):
+    pass
+
+
 def get_frontier(points: np.ndarray) -> np.ndarray:
     """
     Return Pareto-optimal points.

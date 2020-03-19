@@ -12,10 +12,11 @@ from .gpar import GPARModel
 from boa.core.utils import setup_logger
 from boa.core.gp import GaussianProcess
 
-from boa.core.variables import BoundedVariable
-from boa.core.optimize import bounded_minimize
+from not_tf_opt import BoundedVariable, minimize
 
-logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file="logs/mf_gpar.log")
+from boa import ROOT_DIR
+
+logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/mf_gpar.log")
 
 
 class MatrixFactorizedGPARModel(GPARModel):
@@ -178,6 +179,7 @@ class MatrixFactorizedGPARModel(GPARModel):
         def negative_gp_log_likelihood(idx, signal_amplitude, length_scales, noise_amplitude):
 
             gp = GaussianProcess(kernel=self.kernel_name,
+                                 input_dim=self.input_dim + idx,
                                  signal_amplitude=signal_amplitude,
                                  length_scales=length_scales,
                                  noise_amplitude=noise_amplitude)
@@ -230,7 +232,7 @@ class MatrixFactorizedGPARModel(GPARModel):
                 if optimizer == "l-bfgs-b":
 
                     # Perform L-BFGS-B optimization
-                    loss, converged, diverged = bounded_minimize(
+                    loss, converged, diverged = minimize(
                         function=negative_mf_gpar_log_likelihood,
                         vs=hyperparams,
                         parallel_iterations=10,
@@ -238,7 +240,7 @@ class MatrixFactorizedGPARModel(GPARModel):
                         trace=trace)
 
                     if diverged:
-                        logger.error(f"Model diverged, restarting iteration {i}!")
+                        logger.error(f"Model diverged, restarting iteration {i}! (loss was {loss:.3f})")
                         i -= 1
                         continue
 
@@ -323,6 +325,7 @@ class MatrixFactorizedGPARModel(GPARModel):
 
         for i in range(self.output_dim):
             gp = GaussianProcess(kernel=self.kernel_name,
+                                 input_dim=self.input_dim + i,
                                  signal_amplitude=self.signal_amplitudes[i],
                                  length_scales=self.length_scales[i],
                                  noise_amplitude=self.noise_amplitudes[i])

@@ -1,7 +1,6 @@
 import abc
 import logging
 import json
-import os
 
 import tensorflow as tf
 
@@ -16,13 +15,13 @@ class ModelError(Exception):
     """Base error thrown by models"""
 
 
-class AbstractModel(tf.keras.Model):
-    __metaclass__ = abc.ABCMeta
+class AbstractModel(tf.keras.Model, abc.ABC):
 
     def __init__(self,
                  kernel: str,
                  input_dim: int,
                  output_dim: int,
+                 kernel_args = {},
                  parallel: bool = False,
                  verbose: bool = False,
                  name: str = "abstract_model",
@@ -39,13 +38,16 @@ class AbstractModel(tf.keras.Model):
         :param kwargs:
         """
 
-        super(AbstractModel, self).__init__(name=name, **kwargs)
+        super(AbstractModel, self).__init__(name=name,
+                                            dtype=tf.float64,
+                                            **kwargs)
 
         self.models = []
 
         # Check if the specified kernel is available
         if kernel in GaussianProcess.AVAILABLE_KERNELS:
             self.kernel_name = kernel
+            self.kernel_args = kernel_args
         else:
             raise ModelError("Specified kernel {} not available!".format(kernel))
 
@@ -179,11 +181,14 @@ class AbstractModel(tf.keras.Model):
         if not hasattr(xs, "__len__"):
             raise ModelError("input must be array-like!")
 
-        xs = tf.convert_to_tensor(xs, dtype=tf.float64)
+        xs = tf.convert_to_tensor(xs)
+        xs = tf.cast(xs, tf.float64)
 
-        # Convert a vector to "row vector"
         if len(xs.shape) == 1:
-            xs = tf.reshape(xs, (1, -1))
+            second_dim = self.output_dim if output else self.input_dim
+
+            # Attempt to convert the xs to the right shape
+            xs = tf.reshape(xs, (-1, second_dim))
 
         # Check if the shapes are correct
         if not len(xs.shape) == 2:
@@ -191,7 +196,9 @@ class AbstractModel(tf.keras.Model):
 
         if (not output and xs.shape[1] != self.input_dim) or \
                 (output and xs.shape[1] != self.output_dim):
-            raise ModelError(f"The second dimension of the input is incorrect: {xs.shape[1]}!")
+            out_text = 'output' if output else 'input'
+            raise ModelError(f"The second dimension of the {out_text} "
+                             f"is incorrect: {xs.shape[1]} (expected {self.output_dim if output else self.input_dim})!")
 
         return xs
 
@@ -212,12 +219,10 @@ class AbstractModel(tf.keras.Model):
         # ---------------------------------------------
         # Calculate stuff for the median heuristic
         # ---------------------------------------------
-        percentiles = [10, 30, 50, 70, 90]
+        percentiles = [0, 10, 30, 50, 70, 90, 100]
 
-        self.xs_euclidean_percentiles = calculate_euclidean_distance_percentiles(xs, percentiles)
-        self.ys_euclidean_percentiles = calculate_euclidean_distance_percentiles(ys, percentiles)
-        logging.debug(f"Input Euclidean distance percentiles (10, 30, 50, 70, 90): {self.xs_euclidean_percentiles}")
-        logging.debug(f"Output Euclidean distance percentiles (10, 30, 50, 70, 90): {self.ys_euclidean_percentiles}")
+        self.xs_euclidean_percentiles = tf.cast(calculate_euclidean_distance_percentiles(xs, percentiles), self.dtype)
+        self.ys_euclidean_percentiles = tf.cast(calculate_euclidean_distance_percentiles(ys, percentiles), self.dtype)
 
-        self.xs_per_dim_percentiles = calculate_per_dimension_distance_percentiles(xs, percentiles)
-        self.ys_per_dim_percentiles = calculate_per_dimension_distance_percentiles(ys, percentiles)
+        self.xs_per_dim_percentiles = tf.cast(calculate_per_dimension_distance_percentiles(xs, percentiles), self.dtype)
+        self.ys_per_dim_percentiles = tf.cast(calculate_per_dimension_distance_percentiles(ys, percentiles), self.dtype)

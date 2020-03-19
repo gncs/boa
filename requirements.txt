@@ -1,0 +1,12 @@
+-e .
+tensorflow==2.1.0
+tensorflow-probability==0.9.0
+scikit-learn
+not-tf-opt
+stheno
+sacred
+matplotlib
+seaborn
+pandas
+jupyter
+
