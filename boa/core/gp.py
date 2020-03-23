@@ -2,9 +2,7 @@ import logging
 import tensorflow as tf
 from stheno.tensorflow import EQ, Delta, Matern52, GP, Graph, dense
 
-from boa import ROOT_DIR
-
-from .utils import CoreError, tensor_hash
+from .utils import CoreError, tensor_hash, standardize
 from .kernel import DiscreteMatern52, DiscreteEQ, PermutationEQ, PermutationMatern52
 
 __all__ = ["GaussianProcess", "CoreError"]
@@ -38,7 +36,6 @@ class GaussianProcess(tf.Module):
                  noise_amplitude,
                  kernel_args={},
                  jitter: tf.float64 = 1e-10,
-                 verbose: bool = False,
                  name: str = "gaussian_process",
                  **kwargs):
 
@@ -76,8 +73,6 @@ class GaussianProcess(tf.Module):
 
         if tf.reduce_any(self.length_scales <= 0):
             raise CoreError(f"All length scale amplitudes must be strictly positive! {self.length_scales} was given.")
-
-        self.verbose = verbose
 
         self.input_dim = input_dim
 
@@ -129,7 +124,7 @@ class GaussianProcess(tf.Module):
             if self.xs.shape[0] > 0:
                 mean, var = tf.nn.moments(self.xs, axis=[0], keepdims=True)
             else:
-                mean, var = 0., 1.
+                mean, var = tf.cast(0., tf.float64), tf.cast(1., tf.float64)
 
             self._xs_mean = mean
             self._xs_std = tf.maximum(tf.sqrt(var + eps), min_std)
@@ -147,7 +142,7 @@ class GaussianProcess(tf.Module):
             if self.ys.shape[0] > 0:
                 mean, var = tf.nn.moments(self.ys, axis=[0], keepdims=True)
             else:
-                mean, var = 0., 1.
+                mean, var = tf.cast(0., tf.float64), tf.cast(1., tf.float64)
 
             self._ys_mean = mean
             self._ys_std = tf.maximum(tf.sqrt(var + eps), min_std)
@@ -206,8 +201,7 @@ class GaussianProcess(tf.Module):
                              signal_amplitude=self.signal_amplitude,
                              length_scales=self.length_scales,
                              noise_amplitude=self.noise_amplitude,
-                             jitter=self.jitter_amplitude,
-                             verbose=self.verbose)
+                             jitter=self.jitter_amplitude)
 
         # Copy data
         gp.xs = self.xs
@@ -250,23 +244,15 @@ class GaussianProcess(tf.Module):
                 xs,
                 ys,
                 predictive=False,
-                log_normal=False,
-                eps=1e-7,
-                min_std=1e-8):
+                log_normal=False):
 
         if predictive:
             xs = self.standardize_predictive_input(xs)
             ys = self.standardize_predictive_output(ys)
 
         else:
-            xs_mean, xs_var = tf.nn.moments(xs, axes=[0], keepdims=True)
-            xs_std = tf.maximum(tf.sqrt(xs + eps), min_std)
-
-            ys_mean, ys_var = tf.nn.moments(ys, axes=[0], keepdims=True)
-            ys_std = tf.maximum(tf.sqrt(ys + eps), min_std)
-
-            xs = (xs - xs_mean) / xs_std
-            ys = (ys - ys_mean) / ys_std
+            xs = standardize(xs)
+            ys = standardize(ys)
 
         gp = self.signal
 
@@ -274,8 +260,9 @@ class GaussianProcess(tf.Module):
             gp = gp + self.noise + self.jitter
 
         # Condition on the training data
-        if self.xs.shape[0] > 0:
-            gp = gp | (self.xs_standardized, self.ys_standardized)
+        else:
+            if self.xs.shape[0] > 0:
+                gp = gp | (self.xs_standardized, self.ys_standardized)
 
         log_pdf = gp(xs).logpdf(ys)
 

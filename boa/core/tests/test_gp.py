@@ -94,13 +94,30 @@ def test_conditioning(gp, data):
     assert gp.ys.shape[0] == 0
 
 
-def test_log_pdf(self):
+def test_gp_data_standardization():
+
+    test_xs = tf.random.uniform(shape=(10, 3))
+    test_ys = tf.random.uniform(shape=(10, 1))
+
+    gp = GaussianProcess(kernel='rbf',
+                         input_dim=3,
+                         signal_amplitude=1.,
+                         length_scales=1.,
+                         noise_amplitude=0.1)
+
+    mean, std = gp.xs_mean_and_std
+
+    gp = gp | (test_xs[:5, :], test_ys[:5, :])
+
+    print(gp.xs_mean_and_std)
+
+def test_log_pdf():
     pass
 
 
-def test_sample(self):
+def test_sample():
     pass
 
 
-def test_predict(self):
+def test_predict():
     pass

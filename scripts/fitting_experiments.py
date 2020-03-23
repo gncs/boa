@@ -56,7 +56,7 @@ def experiment_config(dataset):
     optimizer = "l-bfgs-b"
 
     # Initialization heuristic for the hyperparameters of the models.
-    initialization = "median"
+    initialization = "l2_median"
 
     # Number of training iterations to allow either for L-BFGS-B or Adam.
     iters = 1000
@@ -94,6 +94,7 @@ def run_experiment(model,
 
                    dataset,
                    optimizer,
+                   initialization,
                    num_optimizer_restarts,
                    use_input_transforms,
                    use_output_transforms,
@@ -159,6 +160,7 @@ def run_experiment(model,
                                            train[dataset["output_labels"]].values[:, :],
                                            keep_previous=False)
                 model.fit(ys_transforms=ys_transforms,
+                          length_scale_init_mode=initialization,
                           optimizer_restarts=num_optimizer_restarts,
                           optimizer=optimizer,
                           trace=True,
@@ -214,7 +216,7 @@ def run_experiment(model,
 
 
 @ex.automain
-def main(dataset, model, kernel, initialization, verbose, latent_dim=None):
+def main(dataset, model, kernel, verbose, latent_dim=None):
     data = load_dataset()
 
     if model == 'ff-gp':
@@ -223,7 +225,6 @@ def main(dataset, model, kernel, initialization, verbose, latent_dim=None):
         surrogate_model = FullyFactorizedGPModel(kernel=kernel,
                                                  input_dim=len(dataset["input_labels"]),
                                                  output_dim=len(dataset["output_labels"]),
-                                                 initialization_heuristic=initialization,
                                                  verbose=verbose)
 
     elif model in ["gpar", "mf-gpar", "p-gpar"]:
@@ -233,7 +234,6 @@ def main(dataset, model, kernel, initialization, verbose, latent_dim=None):
             surrogate_model = GPARModel(kernel=kernel,
                                         input_dim=len(dataset["input_labels"]),
                                         output_dim=len(dataset["output_labels"]),
-                                        initialization_heuristic=initialization,
                                         verbose=verbose)
 
         elif model == 'mf-gpar':
@@ -241,14 +241,12 @@ def main(dataset, model, kernel, initialization, verbose, latent_dim=None):
                                                         input_dim=len(dataset["input_labels"]),
                                                         output_dim=len(dataset["output_labels"]),
                                                         latent_dim=latent_dim,
-                                                        initialization_heuristic=initialization,
                                                         verbose=verbose)
 
         elif model == 'p-gpar':
             surrogate_model = PermutedGPARModel(kernel=kernel,
                                                 input_dim=len(dataset["input_labels"]),
                                                 output_dim=len(dataset["output_labels"]),
-                                                initialization_heuristic=initialization,
                                                 verbose=verbose)
 
     results = run_experiment(model=surrogate_model,

@@ -96,7 +96,7 @@ def setup_logger(name,
     return logger
 
 
-def normalize(x, min_std=1e-10):
+def standardize(x, min_std=1e-10):
     # Calculate data statistics
     mean, var = tf.nn.moments(x, axes=[0], keepdims=True)
     std = tf.maximum(tf.sqrt(var), min_std)
@@ -116,7 +116,7 @@ def distance_matrix(xs, eps=1e-7):
     which can be computed efficiently using some nice broadcasting.
     """
 
-    xs = normalize(xs)
+    xs = standardize(xs)
 
     # Calculate L2 norm of each row in the matrix
     norms = tf.reduce_sum(xs * xs, axis=1, keepdims=True)
@@ -129,7 +129,7 @@ def distance_matrix(xs, eps=1e-7):
 
 
 def dim_distance_matrix(xs):
-    xs = normalize(xs)
+    xs = standardize(xs)
 
     diffs = tf.abs(xs[None, :, :] - xs[:, None, :])
 
@@ -168,7 +168,7 @@ def tensor_hash(tensor):
     :return:
     """
 
-    if not isinstance(tensor, (tf.Tensor, tf.EagerTensor, tf.Variable)):
+    if not isinstance(tensor, (tf.Tensor, tf.Variable)):
         raise CoreError(f"tensor must be a TF tensor, but had type {type(tensor)}!")
 
     return hash(tensor.numpy().tostring())

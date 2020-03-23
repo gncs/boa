@@ -52,143 +52,14 @@ class FullyFactorizedGPModel(AbstractModel):
             self.noise_amplitudes.append(
                 tf.Variable((1.0,), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
 
-    def create_data_getter(self, xs, ys):
+    def gp_input(self, index):
+        return self.xs
 
-        xs, ys = self._validate_and_convert_input_output(xs, ys)
+    def gp_input_dim(self, index):
+        return self.input_dim
 
-        def get_data(i):
-            return xs, ys[:, i:i + 1]
-
-        return get_data
-
-    def initialize_hyperparameters(self, length_scale_init, init_minval=0.1, init_maxval=1.0):
-
-        if length_scale_init == "median":
-
-            # Center on the median
-            ls_init = self.xs_euclidean_percentiles[2]
-
-            ls_rand_range = tf.minimum(self.xs_euclidean_percentiles[2] - self.xs_euclidean_percentiles[0],
-                                       self.xs_euclidean_percentiles[4] - self.xs_euclidean_percentiles[2])
-
-            ls_init += tf.random.uniform(shape=(self.input_dim,),
-                                         minval=-ls_rand_range,
-                                         maxval=ls_rand_range,
-                                         dtype=tf.float64)
-
-        else:
-            ls_init = tf.random.uniform(shape=(self.input_dim,),
-                                        minval=init_minval,
-                                        maxval=init_maxval,
-                                        dtype=tf.float64)
-
-        length_scales = BoundedVariable(ls_init, lower=1e-3, upper=1e2, dtype=tf.float64)
-
-        signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
-                                                             minval=init_minval,
-                                                             maxval=init_maxval,
-                                                             dtype=tf.float64),
-                                           lower=1e-4,
-                                           upper=1e4,
-                                           dtype=tf.float64)
-
-        noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
-                                                            minval=init_minval,
-                                                            maxval=init_maxval,
-                                                            dtype=tf.float64),
-                                          lower=1e-6,
-                                          upper=1e4)
-
-        return length_scales, signal_amplitude, noise_amplitude
-
-    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1, iters=1000, trace=False,
-            err_level="catch") -> None:
-
-        xs, ys = self._validate_and_convert_input_output(xs, ys)
-
-        logger.info(f"Training data supplied with xs shape {xs.shape} and ys shape {ys.shape}, training!")
-
-        self._calculate_statistics_for_median_initialization_heuristic(xs, ys)
-
-        # Optimize each dimension individually
-        for i in range(self.output_dim):
-
-            best_loss = np.inf
-
-            # Training objective
-            def negative_gp_log_likelihood(length_scales, signal_amplitude, noise_amplitude):
-
-                gp = GaussianProcess(kernel=self.kernel_name,
-                                     input_dim=self.input_dim,
-                                     signal_amplitude=signal_amplitude,
-                                     length_scales=length_scales,
-                                     noise_amplitude=noise_amplitude)
-
-                return -gp.log_pdf(xs, ys[:, i:i + 1], normalize_with_input=True)
-
-            # Robust optimization
-            j = 0
-            while j < optimizer_restarts:
-
-                j += 1
-
-                # Reinitialize parameters
-                hyperparams = self.initialize_hyperparameters(length_scale_init=self.initialization_heuristic)
-
-                length_scales, signal_amplitude, noise_amplitude = hyperparams
-
-                logger.info(f"Dimension {i} Optimization round: {j} / {optimizer_restarts}")
-
-                loss = np.inf
-                try:
-                    # Perform L-BFGS-B optimization
-                    loss, converged, diverged = minimize(function=negative_gp_log_likelihood,
-                                                         vs=hyperparams,
-                                                         parallel_iterations=10,
-                                                         max_iterations=iters)
-
-                    if diverged:
-                        logger.error(f"Model diverged, restarting iteration {j}! (loss was {loss:.3f})")
-                        j -= 1
-                        continue
-
-                except tf.errors.InvalidArgumentError as e:
-                    logger.error(str(e))
-                    j -= 1
-
-                    if err_level == "raise":
-                        raise e
-
-                    elif err_level == "catch":
-                        continue
-
-                except Exception as e:
-                    logger.exception("Iteration {} failed: {}".format(i + 1, str(e)))
-                    j -= 1
-
-                    if err_level == "raise":
-                        raise e
-
-                    elif err_level == "catch":
-                        continue
-
-                if loss < best_loss:
-                    logger.info(f"New best objective value for dimension {i}: {loss:.4f}")
-
-                    best_loss = loss
-
-                    # Reassign variables
-                    self.length_scales[i].assign(length_scales())
-                    self.signal_amplitudes[i].assign(signal_amplitude())
-                    self.noise_amplitudes[i].assign(noise_amplitude())
-                else:
-                    logger.info(f"Loss for dimension {i}: {loss:.4f}")
-
-                if np.isnan(loss) or np.isinf(loss):
-                    logger.error(f"Output {i}, Iteration {j}: Loss was {loss}, restarting training iteration!")
-                    j = j - 1
-
-        self.trained.assign(True)
+    def gp_output(self, index):
+        return self.ys[:, index:index + 1]
 
     def predict(self, xs, numpy=False):
 
@@ -263,18 +134,6 @@ class FullyFactorizedGPModel(AbstractModel):
             log_prob = log_prob.numpy()
 
         return log_prob
-
-    def create_gps(self):
-        self.models.clear()
-
-        for i in range(self.output_dim):
-            gp = GaussianProcess(kernel=self.kernel_name,
-                                 input_dim=self.input_dim,
-                                 signal_amplitude=self.signal_amplitudes[i],
-                                 length_scales=self.length_scales[i],
-                                 noise_amplitude=self.noise_amplitudes[i])
-
-            self.models.append(gp)
 
     @staticmethod
     def restore(save_path):
