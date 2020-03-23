@@ -264,7 +264,7 @@ class PermutationGPModel(AbstractModel):
         with open(save_path + ".json", "r") as config_file:
             config = json.load(config_file)
 
-        model = PermutationGPModel.from_config(config)
+        model = PermutationGPModel.from_config(config, )
 
         model.load_weights(save_path)
         model.create_gps()
@@ -280,7 +280,7 @@ class PermutationGPModel(AbstractModel):
         }
 
     @staticmethod
-    def from_config(config):
+    def from_config(config, **kwargs):
         return PermutationGPModel(**config)
 
     def _validate_and_convert(self, xs, output=False):

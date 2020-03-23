@@ -16,12 +16,13 @@ class ModelError(Exception):
 
 
 class AbstractModel(tf.keras.Model, abc.ABC):
+    AVAILABLE_LENGTHSCALE_INITIALIZATIONS = ["random", "l2_median", "marginal_median"]
 
     def __init__(self,
                  kernel: str,
                  input_dim: int,
                  output_dim: int,
-                 kernel_args = {},
+                 kernel_args={},
                  parallel: bool = False,
                  verbose: bool = False,
                  name: str = "abstract_model",
@@ -74,6 +75,16 @@ class AbstractModel(tf.keras.Model, abc.ABC):
         self.xs_euclidean_percentiles = None
         self.ys_euclidean_percentiles = None
 
+        # ---------------------------------------------------------------------
+        # Model hyperparameters
+        # ---------------------------------------------------------------------
+        self.length_scales = []
+        self.signal_amplitudes = []
+        self.noise_amplitudes = []
+
+        # ---------------------------------------------------------------------
+        # Flags
+        # ---------------------------------------------------------------------
         self.trained = tf.Variable(False, name="trained", trainable=False)
 
     def copy(self, name=None):
@@ -125,6 +136,120 @@ class AbstractModel(tf.keras.Model, abc.ABC):
 
         return model
 
+    def create_initializers(self,
+                            index,
+                            length_scale_init_mode,
+                            random_init_lower_bound=0.5,
+                            random_init_upper_bound=2.0,
+                            length_scale_base_lower_bound=1e-2,
+                            length_scale_base_upper_bound=1e2):
+        """
+        Creates the initializers for the length scales, signal amplitudes and noise variances.
+        :param length_scale_init_mode:
+        :param index:
+        :return:
+        """
+
+        if length_scale_init_mode not in self.AVAILABLE_LENGTHSCALE_INITIALIZATIONS:
+            raise ModelError(f"Length scale initialization mode must be one of "
+                             f"{self.AVAILABLE_LENGTHSCALE_INITIALIZATIONS}! ({length_scale_init_mode} was given)")
+
+        # ---------------------------------------------------------------------
+        # Random initialization
+        # ---------------------------------------------------------------------
+        if length_scale_init_mode == "random":
+            length_scale_init = tf.random.uniform(shape=(self.input_dim + index,),
+                                                  minval=random_init_lower_bound,
+                                                  maxval=random_init_upper_bound,
+                                                  dtype=tf.float64)
+
+            length_scale_lower_bound = length_scale_base_lower_bound
+            length_scale_upper_bound = length_scale_base_upper_bound
+
+        # ---------------------------------------------------------------------
+        # Initialization using the median of the non-zero pairwise Euclidean
+        # distances between training inputs
+        # ---------------------------------------------------------------------
+        elif length_scale_init_mode == "l2_median":
+            # Center on the medians, treat the inputs and the outputs separately
+            xs_ls_init = self.xs_euclidean_percentiles[3]
+            ys_ls_init = self.ys_euclidean_percentiles[3]
+
+            xs_ls_rand_range = tf.minimum(self.xs_euclidean_percentiles[3] - self.xs_euclidean_percentiles[2],
+                                          self.xs_euclidean_percentiles[4] - self.xs_euclidean_percentiles[3])
+
+            ys_ls_rand_range = tf.minimum(self.ys_euclidean_percentiles[3] - self.ys_euclidean_percentiles[2],
+                                          self.ys_euclidean_percentiles[4] - self.ys_euclidean_percentiles[3])
+
+            xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
+                                            minval=-xs_ls_rand_range,
+                                            maxval=xs_ls_rand_range,
+                                            dtype=tf.float64)
+
+            ys_ls_init += tf.random.uniform(shape=(index,),
+                                            minval=-ys_ls_rand_range,
+                                            maxval=ys_ls_rand_range,
+                                            dtype=tf.float64)
+
+            # Once the inputs and outputs have been initialized separately, concatenate them
+            ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
+
+            ls_lower_bound = tf.concat(
+                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_euclidean_percentiles[0] / 4.,
+                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_euclidean_percentiles[0] / 4.],
+                axis=0)
+
+            ls_upper_bound = tf.concat(
+                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_euclidean_percentiles[-1] * 64.,
+                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_euclidean_percentiles[-1] * 64.],
+                axis=0)
+
+        # ---------------------------------------------------------------------
+        # Initialization using the marginal median of pairwise distances
+        # between training input dimensions
+        # ---------------------------------------------------------------------
+        elif length_scale_init_mode == "marginal_median":
+            # Center on the medians, treat the inputs and the outputs separately
+            xs_ls_init = self.xs_per_dim_percentiles[3, :]
+            ys_ls_init = self.ys_per_dim_percentiles[3, :index]
+
+            xs_ls_rand_range = tf.minimum(self.xs_per_dim_percentiles[3, :] - self.xs_per_dim_percentiles[1, :],
+                                          self.xs_per_dim_percentiles[5, :] - self.xs_per_dim_percentiles[3, :])
+
+            ys_ls_rand_range = tf.minimum(self.ys_per_dim_percentiles[3, :] - self.ys_per_dim_percentiles[1, :],
+                                          self.ys_per_dim_percentiles[5, :] - self.ys_per_dim_percentiles[3, :])
+
+            xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
+                                            minval=-xs_ls_rand_range,
+                                            maxval=xs_ls_rand_range,
+                                            dtype=tf.float64)
+
+            ys_ls_init += tf.random.uniform(shape=(index,),
+                                            minval=-ys_ls_rand_range[:index],
+                                            maxval=ys_ls_rand_range[:index],
+                                            dtype=tf.float64)
+
+            # We need to multiply the lengthscales by sqrt(N) to correct for the number of dimensions
+            dim_coeff = tf.sqrt(tf.cast(self.input_dim + index, tf.float64))
+
+            # Once the inputs and outputs have been initialized separately, concatenate them
+            ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0) * dim_coeff
+
+            ls_lower_bound = tf.concat(
+                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_per_dim_percentiles[0, :] / 4.,
+                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_per_dim_percentiles[0, :index] / 4.],
+                axis=0) * dim_coeff
+
+            ls_upper_bound = tf.concat(
+                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_per_dim_percentiles[-1, :] * 64.,
+                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_per_dim_percentiles[-1, :index] * 64.],
+                axis=0) * dim_coeff
+
+        else:
+            raise NotImplementedError
+
+        return length_scale_init, length_scale_lower_bound, length_scale_upper_bound, signal_amplitude_init, noise_amplitude_init
+
     def fit_to_conditioning_data(self, **kwargs):
         """
 
@@ -134,15 +259,27 @@ class AbstractModel(tf.keras.Model, abc.ABC):
         self.fit(xs=self.xs.value(), ys=self.ys.value(), **kwargs)
 
     @abc.abstractmethod
-    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1) -> None:
+    def fit(self, xs, ys, optimizer="l-bfgs-b", optimizer_restarts=1, **kwargs) -> None:
         pass
 
     @abc.abstractmethod
-    def predict(self, xs, numpy=False):
+    def predict(self, xs, numpy=False, **kwargs):
         pass
 
     @abc.abstractmethod
     def log_prob(self, xs, ys, use_conditioning_data=True, numpy=False):
+        pass
+
+    @abc.abstractmethod
+    def create_data_getter(self, xs, ys):
+        """
+        Closure that returns a function that can be called with an index, and will return
+        a tuple (xs_i, ys_i) - the input, output pairs of the ith GP.
+
+        :param xs:
+        :param ys:
+        :return:
+        """
         pass
 
     @abc.abstractmethod
@@ -151,14 +288,14 @@ class AbstractModel(tf.keras.Model, abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def from_config(config):
+    def from_config(config, **kwargs):
         pass
 
     @abc.abstractmethod
     def create_gps(self):
         pass
 
-    def save(self, save_path):
+    def save(self, save_path, **kwargs):
 
         if not self.trained:
             logger.warning("Saved model has not been trained yet!")

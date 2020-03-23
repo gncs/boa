@@ -68,6 +68,17 @@ class GPARModel(AbstractModel):
             self.noise_amplitudes.append(
                 tf.Variable((1,), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
 
+    def create_data_getter(self, xs, ys):
+
+        xs, ys = self._validate_and_convert_input_output(xs, ys)
+
+        def get_data(i):
+            gp_input = tf.concat([xs, ys[:, :i]])
+
+            return gp_input, ys[:, i:i + 1]
+
+        return get_data
+
     def initialize_hyperparameters(self, index,
                                    length_scale_init="random",
                                    init_minval=0.5, init_maxval=2.0,
@@ -184,6 +195,7 @@ class GPARModel(AbstractModel):
     def fit(self,
             xs,
             ys,
+            ys_transforms=None,
             optimizer="l-bfgs-b",
             optimizer_restarts=1,
             permutation=None,
@@ -211,6 +223,9 @@ class GPARModel(AbstractModel):
 
         if len(permutation) != self.output_dim:
             raise ModelError("Length of permutation must match the number of outputs!")
+
+        if ys_transforms is not None and len(ys_transforms) != self.output_dim:
+            raise ModelError("Length of ys_transforms must match the number of outputs!")
 
         # Check if the permutation has every output in it
         if len([x for x in range(self.output_dim) if x not in permutation]) != 0:
@@ -247,7 +262,15 @@ class GPARModel(AbstractModel):
                 ys_to_append = ys[:, :i]
                 gp_input = tf.concat((xs, ys_to_append), axis=1)
 
-                return -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize_with_input=True)
+                log_normal = False
+
+                if ys_transforms is not None and ys_transforms[i]=='log':
+                    log_normal = True
+
+                return -gp.log_pdf(xs=gp_input,
+                                   ys=ys[:, i:i + 1],
+                                   normalize_with_input=True,
+                                   log_normal=log_normal)
 
             # Robust optimization
             j = 0
@@ -801,7 +824,7 @@ class GPARModel(AbstractModel):
         with open(save_path + ".json", "r") as config_file:
             config = json.load(config_file)
 
-        model = GPARModel.from_config(config)
+        model = GPARModel.from_config(config, )
 
         model.load_weights(save_path)
         model.create_gps()
@@ -821,5 +844,5 @@ class GPARModel(AbstractModel):
         }
 
     @staticmethod
-    def from_config(config):
+    def from_config(config, **kwargs):
         return GPARModel(**config)

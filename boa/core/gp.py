@@ -173,7 +173,8 @@ class GaussianProcess(tf.Module):
                 normalize_with_input=False,
                 normalize_with_training_data=False,
                 latent=False,
-                with_jitter=True):
+                with_jitter=True,
+                log_normal=False):
 
         if normalize_with_input and normalize_with_training_data:
             raise CoreError("Data in log_pdf can only be normalized with one scheme only (both were specified True)!")
@@ -208,7 +209,12 @@ class GaussianProcess(tf.Module):
         if self.xs.shape[0] > 0:
             gp = gp | (xs_forward(self.xs), ys_forward(self.ys))
 
-        return gp(xs).logpdf(ys)
+        log_pdf = gp(xs).logpdf(ys)
+
+        if log_normal:
+            log_pdf = log_pdf - tf.reduce_sum(ys)
+
+        return log_pdf
 
     def sample(self, xs, num=1, latent=False):
 

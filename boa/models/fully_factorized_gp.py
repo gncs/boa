@@ -20,6 +20,7 @@ logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f
 
 
 class FullyFactorizedGPModel(AbstractModel):
+
     def __init__(self,
                  kernel: str,
                  input_dim: int,
@@ -40,10 +41,6 @@ class FullyFactorizedGPModel(AbstractModel):
 
         self.initialization_heuristic = initialization_heuristic
 
-        self.length_scales: List[tf.Variable] = []
-        self.signal_amplitudes: List[tf.Variable] = []
-        self.noise_amplitudes: List[tf.Variable] = []
-
         # Create GP hyperparameter variables
         for i in range(self.output_dim):
             self.length_scales.append(
@@ -54,6 +51,15 @@ class FullyFactorizedGPModel(AbstractModel):
 
             self.noise_amplitudes.append(
                 tf.Variable((1.0,), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
+
+    def create_data_getter(self, xs, ys):
+
+        xs, ys = self._validate_and_convert_input_output(xs, ys)
+
+        def get_data(i):
+            return xs, ys[:, i:i + 1]
+
+        return get_data
 
     def initialize_hyperparameters(self, length_scale_init, init_minval=0.1, init_maxval=1.0):
 
@@ -276,7 +282,7 @@ class FullyFactorizedGPModel(AbstractModel):
         with open(save_path + ".json", "r") as config_file:
             config = json.load(config_file)
 
-        model = FullyFactorizedGPModel.from_config(config)
+        model = FullyFactorizedGPModel.from_config(config, )
 
         model.load_weights(save_path)
         model.create_gps()
@@ -296,5 +302,5 @@ class FullyFactorizedGPModel(AbstractModel):
         }
 
     @staticmethod
-    def from_config(config):
+    def from_config(config, **kwargs):
         return FullyFactorizedGPModel(**config)

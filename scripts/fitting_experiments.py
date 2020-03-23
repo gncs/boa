@@ -136,6 +136,8 @@ def run_experiment(model,
 
             train, test = train_test_split(data, train_size=size, test_size=200, random_state=_seed + index)
 
+            ys_transforms = None
+
             # Transform inputs
             if use_input_transforms:
                 train = transform_df(train, dataset["input_transforms"])
@@ -145,12 +147,19 @@ def run_experiment(model,
             if use_output_transforms:
                 train = transform_df(train, dataset["output_transforms"])
 
+                ys_transforms = [(dataset["output_transforms"][k]
+                                  if k in dataset["output_transforms"]
+                                  else None)
+                                 for k in dataset["output_labels"]]
+                print(ys_transforms)
+
             start_time = time.time()
             try:
                 model = model.condition_on(train[dataset["input_labels"]].values,
                                            train[dataset["output_labels"]].values[:, :],
                                            keep_previous=False)
-                model.fit_to_conditioning_data(optimizer_restarts=num_optimizer_restarts,
+                model.fit_to_conditioning_data(ys_transforms=ys_transforms,
+                                               optimizer_restarts=num_optimizer_restarts,
                                                optimizer=optimizer,
                                                trace=True,
                                                err_level="raise",
@@ -162,7 +171,7 @@ def run_experiment(model,
             experiment['train_time'] = time.time() - start_time
 
             save_path = f"{save_dir}/size_{size}/model_{index}/model"
-            model.save(save_path)
+            model.save(save_path, )
             _log.info(f"Saved model to {save_path}!")
 
             start_time = time.time()

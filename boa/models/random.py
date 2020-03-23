@@ -11,6 +11,7 @@ logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f
 
 
 class RandomModel(AbstractModel):
+
     def __init__(self, input_dim, output_dim, seed, num_samples, name="random_model", **kwargs):
 
         super(RandomModel, self).__init__(kernel="rbf", input_dim=input_dim, output_dim=output_dim, name=name, **kwargs)
@@ -24,7 +25,7 @@ class RandomModel(AbstractModel):
         if self.verbose:
             logger.info("Random model needs no fitting!")
 
-    def predict(self, xs, numpy=False):
+    def predict(self, xs, numpy=False, **kwargs):
 
         xs = self._validate_and_convert(xs, output=False)
 
@@ -57,6 +58,9 @@ class RandomModel(AbstractModel):
 
         return pred_mean, pred_var
 
+    def log_prob(self, xs, ys, use_conditioning_data=True, numpy=False):
+        pass
+
     def get_config(self):
 
         return {
@@ -69,7 +73,7 @@ class RandomModel(AbstractModel):
         }
 
     @staticmethod
-    def from_config(config):
+    def from_config(config, **kwargs):
 
         return RandomModel(**config)
 
@@ -82,8 +86,10 @@ class RandomModel(AbstractModel):
         with open(save_path + ".json", "r") as config_file:
             config = json.load(config_file)
 
-        model = RandomModel.from_config(config)
+        model = RandomModel.from_config(config, )
 
         model.load_weights(save_path)
 
         return model
+
+

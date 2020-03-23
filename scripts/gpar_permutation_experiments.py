@@ -415,7 +415,7 @@ def run_greedy_experiment(model,
         experiment['train_time'] = time.time() - start_time
 
         save_path = f"{save_dir}/size_{train_size}/model_{index}/model"
-        model.save(save_path)
+        model.save(save_path, )
         _log.info(f"Saved model to {save_path}!")
 
         start_time = time.time()
