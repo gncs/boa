@@ -138,9 +138,9 @@ def optimize(objective, model, model_optimizer, model_optimizer_restarts, optimi
 
     model = model.condition_on(xs=data.input, ys=data.output)
 
-    model.fit_to_conditioning_data(optimizer_restarts=model_optimizer_restarts,
-                                   optimizer=model_optimizer,
-                                   trace=verbose)
+    model.fit(optimizer_restarts=model_optimizer_restarts,
+              optimizer=model_optimizer,
+              trace=verbose)
 
     xs, ys = optimizer.optimize(f=objective,
                                 model=model,

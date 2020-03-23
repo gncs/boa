@@ -159,3 +159,16 @@ def calculate_per_dimension_distance_percentiles(xs, percents, eps=1e-4):
                                                     percents))
 
     return tf.stack(dim_percentiles, axis=1)
+
+
+def tensor_hash(tensor):
+    """
+    Hashes a tensorflow tensor based on its values
+    :param tensor:
+    :return:
+    """
+
+    if not isinstance(tensor, (tf.Tensor, tf.EagerTensor, tf.Variable)):
+        raise CoreError(f"tensor must be a TF tensor, but had type {type(tensor)}!")
+
+    return hash(tensor.numpy().tostring())

@@ -68,133 +68,10 @@ class GPARModel(AbstractModel):
             self.noise_amplitudes.append(
                 tf.Variable((1,), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
 
-    def create_data_getter(self, xs, ys):
-
-        xs, ys = self._validate_and_convert_input_output(xs, ys)
-
-        def get_data(i):
-            gp_input = tf.concat([xs, ys[:, :i]])
-
-            return gp_input, ys[:, i:i + 1]
-
-        return get_data
-
-    def initialize_hyperparameters(self, index,
-                                   length_scale_init="random",
-                                   init_minval=0.5, init_maxval=2.0,
-                                   signal_lower_bound=1e-2,
-                                   signal_upper_bound=1e1,
-                                   ls_base_lower_bound=1e-2,
-                                   ls_base_upper_bound=5e2,
-                                   noise_scale_factor=0.1):
-
-        if length_scale_init == "median":
-
-            # Center on the medians, treat the inputs and the outputs separately
-            xs_ls_init = self.xs_euclidean_percentiles[3]
-            ys_ls_init = self.ys_euclidean_percentiles[3]
-
-            xs_ls_rand_range = tf.minimum(self.xs_euclidean_percentiles[3] - self.xs_euclidean_percentiles[2],
-                                          self.xs_euclidean_percentiles[4] - self.xs_euclidean_percentiles[3])
-
-            ys_ls_rand_range = tf.minimum(self.ys_euclidean_percentiles[3] - self.ys_euclidean_percentiles[2],
-                                          self.ys_euclidean_percentiles[4] - self.ys_euclidean_percentiles[3])
-
-            xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
-                                            minval=-xs_ls_rand_range,
-                                            maxval=xs_ls_rand_range,
-                                            dtype=tf.float64)
-
-            ys_ls_init += tf.random.uniform(shape=(index,),
-                                            minval=-ys_ls_rand_range,
-                                            maxval=ys_ls_rand_range,
-                                            dtype=tf.float64)
-
-            # Once the inputs and outputs have been initialized separately, concatenate them
-            ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
-
-            ls_lower_bound = tf.concat(
-                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_euclidean_percentiles[0] / 4.,
-                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_euclidean_percentiles[0] / 4.],
-                axis=0)
-
-            ls_upper_bound = tf.concat(
-                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_euclidean_percentiles[-1] * 64.,
-                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_euclidean_percentiles[-1] * 64.],
-                axis=0)
-
-        elif length_scale_init == "dim_median":
-            # Center on the medians, treat the inputs and the outputs separately
-            xs_ls_init = self.xs_per_dim_percentiles[3, :]
-            ys_ls_init = self.ys_per_dim_percentiles[3, :index]
-
-            xs_ls_rand_range = tf.minimum(self.xs_per_dim_percentiles[3, :] - self.xs_per_dim_percentiles[1, :],
-                                          self.xs_per_dim_percentiles[5, :] - self.xs_per_dim_percentiles[3, :])
-
-            ys_ls_rand_range = tf.minimum(self.ys_per_dim_percentiles[3, :] - self.ys_per_dim_percentiles[1, :],
-                                          self.ys_per_dim_percentiles[5, :] - self.ys_per_dim_percentiles[3, :])
-
-            xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
-                                            minval=-xs_ls_rand_range,
-                                            maxval=xs_ls_rand_range,
-                                            dtype=tf.float64)
-
-            ys_ls_init += tf.random.uniform(shape=(index,),
-                                            minval=-ys_ls_rand_range[:index],
-                                            maxval=ys_ls_rand_range[:index],
-                                            dtype=tf.float64)
-
-            # We need to multiply the lengthscales by sqrt(N) to correct for the number of dimensions
-            dim_coeff = tf.sqrt(tf.cast(self.input_dim + index, tf.float64))
-
-            # Once the inputs and outputs have been initialized separately, concatenate them
-            ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0) * dim_coeff
-
-            ls_lower_bound = tf.concat(
-                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_per_dim_percentiles[0, :] / 4.,
-                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_per_dim_percentiles[0, :index] / 4.],
-                axis=0) * dim_coeff
-
-            ls_upper_bound = tf.concat(
-                [tf.ones(shape=xs_ls_init.shape, dtype=self.dtype) * self.xs_per_dim_percentiles[-1, :] * 64.,
-                 tf.ones(shape=ys_ls_init.shape, dtype=self.dtype) * self.ys_per_dim_percentiles[-1, :index] * 64.],
-                axis=0) * dim_coeff
-
-        else:
-            ls_init = tf.random.uniform(shape=(self.input_dim + index,),
-                                        minval=init_minval,
-                                        maxval=init_maxval,
-                                        dtype=tf.float64)
-
-            ls_lower_bound = ls_base_lower_bound
-            ls_upper_bound = ls_base_upper_bound
-
-        # Create bounded variables
-        length_scales = BoundedVariable(ls_init,
-                                        lower=tf.maximum(ls_lower_bound, ls_base_lower_bound),
-                                        upper=tf.minimum(ls_upper_bound, ls_base_upper_bound),
-                                        dtype=tf.float64)
-
-        signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
-                                                             minval=init_minval,
-                                                             maxval=init_maxval,
-                                                             dtype=tf.float64),
-                                           lower=signal_lower_bound,
-                                           upper=signal_upper_bound,
-                                           dtype=tf.float64)
-
-        noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
-                                                            minval=noise_scale_factor * init_minval,
-                                                            maxval=noise_scale_factor * init_maxval,
-                                                            dtype=tf.float64),
-                                          lower=noise_scale_factor * signal_lower_bound,
-                                          upper=noise_scale_factor * signal_upper_bound)
-
-        return length_scales, signal_amplitude, noise_amplitude
+    def gp_input(self, index):
+        return tf.concat([self.xs, self.ys[:, :index]], axis=1)
 
     def fit(self,
-            xs,
-            ys,
             ys_transforms=None,
             optimizer="l-bfgs-b",
             optimizer_restarts=1,
@@ -207,15 +84,6 @@ class GPARModel(AbstractModel):
             debugging_trace=False,
             err_level="catch", ) -> None:
 
-        if seed is not None:
-            np.random.seed(seed)
-            tf.random.set_seed(seed)
-
-        xs, ys = self._validate_and_convert_input_output(xs, ys)
-
-        if self.denoising:
-            # This tensor will store the predictive means for the previous dimensions
-            pred_ys = tf.zeros(shape=(ys.shape[0], 0), dtype=tf.float64)
 
         # If no permutation is given, use the regular order of the ys
         if permutation is None:
@@ -234,11 +102,7 @@ class GPARModel(AbstractModel):
         # We're learning the hyperparameters for this permutation
         self.permutation.assign(permutation)
 
-        ys = tf.gather(ys, indices=tf.convert_to_tensor(permutation, dtype=tf.int32), axis=1)
-
-        logger.info(f"Training data supplied with xs shape {xs.shape} and ys shape {ys.shape}, training!")
-
-        self._calculate_statistics_for_median_initialization_heuristic(xs, ys)
+        ys = tf.gather(self.ys, indices=tf.convert_to_tensor(permutation, dtype=tf.int32), axis=1)
 
         cumulative_loss = 0
 
@@ -256,20 +120,13 @@ class GPARModel(AbstractModel):
                                      length_scales=length_scales,
                                      noise_amplitude=noise_amplitude)
 
-                # ys_to_append = pred_ys if self.denoising else ys[:, :i]
-
-                # Permute the output
-                ys_to_append = ys[:, :i]
-                gp_input = tf.concat((xs, ys_to_append), axis=1)
-
                 log_normal = False
 
-                if ys_transforms is not None and ys_transforms[i]=='log':
+                if ys_transforms is not None and ys_transforms[i] == 'log':
                     log_normal = True
 
-                return -gp.log_pdf(xs=gp_input,
+                return -gp.log_pdf(xs=self.gp_input(index=i),
                                    ys=ys[:, i:i + 1],
-                                   normalize_with_input=True,
                                    log_normal=log_normal)
 
             # Robust optimization

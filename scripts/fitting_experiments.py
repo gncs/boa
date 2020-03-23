@@ -158,12 +158,12 @@ def run_experiment(model,
                 model = model.condition_on(train[dataset["input_labels"]].values,
                                            train[dataset["output_labels"]].values[:, :],
                                            keep_previous=False)
-                model.fit_to_conditioning_data(ys_transforms=ys_transforms,
-                                               optimizer_restarts=num_optimizer_restarts,
-                                               optimizer=optimizer,
-                                               trace=True,
-                                               err_level="raise",
-                                               iters=iters)
+                model.fit(ys_transforms=ys_transforms,
+                          optimizer_restarts=num_optimizer_restarts,
+                          optimizer=optimizer,
+                          trace=True,
+                          err_level="raise",
+                          iters=iters)
             except Exception as e:
                 _log.exception("Training failed: {}".format(str(e)))
                 raise e

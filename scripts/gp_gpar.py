@@ -38,7 +38,7 @@ def run():
                                    initialization_heuristic="median",
                                    verbose=False)
     ff_gp = ff_gp.condition_on(x_train, y_train)
-    ff_gp.fit_to_conditioning_data(optimizer_restarts=10)
+    ff_gp.fit(optimizer_restarts=10)
 
     # Add a "pseudo point"
     pred_point, _ = ff_gp.predict(pseudo_point)
@@ -48,7 +48,7 @@ def run():
     # GPAR model
     gpar = GPARModel(kernel='rbf', input_dim=2, output_dim=1, initialization_heuristic="median", verbose=False)
     gpar = gpar.condition_on(x_train, y_train)
-    gpar.fit_to_conditioning_data(optimizer_restarts=10)
+    gpar.fit(optimizer_restarts=10)
 
     pred_point, _ = gpar.predict(pseudo_point)
     gpar.condition_on(pseudo_point, pred_point, keep_previous=True)

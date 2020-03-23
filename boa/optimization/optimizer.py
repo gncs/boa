@@ -78,7 +78,7 @@ class Optimizer:
                 model = model.condition_on(i.reshape((1, -1)), o.reshape((1, -1)))
 
             try:
-                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts)
+                model.fit(optimizer_restarts=optimizer_restarts)
             except Exception as e:
                 print_message('Error: ' + str(e))
                 if not self.strict:

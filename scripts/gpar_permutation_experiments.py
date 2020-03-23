@@ -251,7 +251,7 @@ def run_random_experiment(model,
             start_time = time.time()
             try:
                 model = model.condition_on(train[inputs].values, train[outputs].values[:, perm], keep_previous=False)
-                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts, optimizer=optimizer, trace=True)
+                model.fit(optimizer_restarts=optimizer_restarts, optimizer=optimizer, trace=True)
             except Exception as e:
                 _log.exception("Training failed: {}".format(str(e)))
                 raise e
@@ -301,7 +301,7 @@ def run_random_experiment(model,
             model = model.condition_on(train_and_validate[inputs].values,
                                        train_and_validate[outputs].values[:, best_perm],
                                        keep_previous=False)
-            model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts,
+            model.fit(optimizer_restarts=optimizer_restarts,
                                            optimizer=optimizer,
                                            trace=True)
         except Exception as e:
@@ -356,7 +356,6 @@ def run_greedy_experiment(model,
                           rounds,
                           _seed,
                           _log):
-
     # Make sure the directory exists
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -467,7 +466,6 @@ def run_hierarchical_bayesopt_experiment(model,
                                          xi,
                                          _seed,
                                          _log):
-
     # Make sure the directory exists
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -538,7 +536,7 @@ def run_hierarchical_bayesopt_experiment(model,
             warmup_stat = {"perm": perm}
 
             _log.info(f"Warmup training round: {index + 1}/{rounds} for training set size {train_size}, "
-                        f"permutation #{sample_number + 1} out of {num_warmup_samples}: {perm}")
+                      f"permutation #{sample_number + 1} out of {num_warmup_samples}: {perm}")
 
             if matrix_factorized:
                 warmup_stat["latent_size"] = model.latent_dim
@@ -549,7 +547,7 @@ def run_hierarchical_bayesopt_experiment(model,
             start_time = time.time()
             try:
                 model = model.condition_on(train[inputs].values, train[outputs].values[:, perm], keep_previous=False)
-                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts, optimizer=optimizer, trace=True)
+                model.fit(optimizer_restarts=optimizer_restarts, optimizer=optimizer, trace=True)
             except Exception as e:
                 _log.exception("Training failed: {}".format(str(e)))
                 raise e
@@ -615,11 +613,11 @@ def run_hierarchical_bayesopt_experiment(model,
                                        train_log_probs)
 
         try:
-            perm_gp.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts,
-                                             optimizer='l-bfgs-b',
-                                             trace=True,
-                                             err_level='raise',
-                                             median_heuristic_only=median_heuristic_only)
+            perm_gp.fit(optimizer_restarts=optimizer_restarts,
+                        optimizer='l-bfgs-b',
+                        trace=True,
+                        err_level='raise',
+                        median_heuristic_only=median_heuristic_only)
 
         except Exception as e:
             _log.exception("Training the surrogate model failed: {}".format(str(e)))
@@ -693,7 +691,7 @@ def run_hierarchical_bayesopt_experiment(model,
             bayesopt_stat = {"perm": extended_next_evaluation_point}
 
             _log.info(f"BayesOpt training round: {index + 1}/{rounds} for training set size {train_size}, "
-                        f"permutation #{sample_number + 1} out of {num_bayesopt_steps}: {next_evaluation_point}")
+                      f"permutation #{sample_number + 1} out of {num_bayesopt_steps}: {next_evaluation_point}")
 
             if matrix_factorized:
                 bayesopt_stat["latent_size"] = model.latent_dim
@@ -706,7 +704,7 @@ def run_hierarchical_bayesopt_experiment(model,
                 model = model.condition_on(train[inputs].values,
                                            train[outputs].values[:, extended_next_evaluation_point],
                                            keep_previous=False)
-                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts,
+                model.fit(optimizer_restarts=optimizer_restarts,
                                                optimizer=optimizer,
                                                trace=True)
             except Exception as e:
@@ -751,7 +749,7 @@ def run_hierarchical_bayesopt_experiment(model,
             # -----------------------------------------------------------------------------
             _log.info("Retraining GP with newly observed data!")
             perm_gp = perm_gp.condition_on(observed_perms, observed_log_probs, keep_previous=False)
-            perm_gp.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts,
+            perm_gp.fit(optimizer_restarts=optimizer_restarts,
                                              optimizer='l-bfgs-b',
                                              trace=True,
                                              median_heuristic_only=median_heuristic_only)
@@ -775,7 +773,7 @@ def run_hierarchical_bayesopt_experiment(model,
             model = model.condition_on(train_and_validate[inputs].values,
                                        train_and_validate[outputs].values[:, best_perm],
                                        keep_previous=False)
-            model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts,
+            model.fit(optimizer_restarts=optimizer_restarts,
                                            optimizer=optimizer,
                                            trace=True)
         except Exception as e:
