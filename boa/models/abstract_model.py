@@ -51,8 +51,6 @@ class AbstractModel(tf.keras.Model, abc.ABC):
                                             dtype=tf.float64,
                                             **kwargs)
 
-        self.models = []
-
         # Check if the specified kernel is available
         if kernel in GaussianProcess.AVAILABLE_KERNELS:
             self.kernel_name = kernel
@@ -96,6 +94,10 @@ class AbstractModel(tf.keras.Model, abc.ABC):
         # Statistics on the inputs of each GP in our model
         self._gp_input_statistics = [None] * self.output_dim
         self._gp_input_statistics_hashes = [None] * self.output_dim
+
+        # Models
+        self._gp_hyperparameter_hashes = [None] * self.output_dim
+        self.models = [None] * self.output_dim
 
     def copy(self, name=None):
 
@@ -146,17 +148,17 @@ class AbstractModel(tf.keras.Model, abc.ABC):
 
         return model
 
-    def initialize_hyperparamters(self,
-                                  index: int,
-                                  length_scale_init_mode: str,
-                                  random_init_lower_bound: float = 0.5,
-                                  random_init_upper_bound: float = 2.0,
-                                  length_scale_base_lower_bound: float = 1e-2,
-                                  length_scale_base_upper_bound: float = 1e2,
-                                  signal_lower_bound=1e-2,
-                                  signal_upper_bound=1e1,
-                                  noise_scale_factor=0.1,
-                                  percentiles=(0, 30, 50, 70, 100)):
+    def initialize_hyperparameters(self,
+                                   index: int,
+                                   length_scale_init_mode: str,
+                                   random_init_lower_bound: float = 0.5,
+                                   random_init_upper_bound: float = 2.0,
+                                   length_scale_base_lower_bound: float = 1e-2,
+                                   length_scale_base_upper_bound: float = 1e2,
+                                   signal_lower_bound=1e-2,
+                                   signal_upper_bound=1e1,
+                                   noise_scale_factor=0.1,
+                                   percentiles=(0, 30, 50, 70, 100)):
         """
         Creates the initializers for the length scales, signal amplitudes and noise variances.
         :param length_scale_init_mode:
@@ -169,7 +171,7 @@ class AbstractModel(tf.keras.Model, abc.ABC):
                              f"{self.AVAILABLE_LENGTHSCALE_INITIALIZATIONS}! ({length_scale_init_mode} was given)")
 
         # Get the input data for the current GP
-        gp_input = self.gp_input(index=index)
+        gp_input = self.gp_train_input(index=index)
 
         # Dimension of a single training example
         gp_input_dim = self.gp_input_dim(index=index)
@@ -252,7 +254,7 @@ class AbstractModel(tf.keras.Model, abc.ABC):
                                          dtype=self.dtype)
 
             # We need to multiply the lengthscales by sqrt(N) to correct for the number of dimensions
-            dim_coeff = tf.sqrt(tf.cast(self.input_dim + index, tf.float64))
+            dim_coeff = tf.sqrt(tf.cast(gp_input_dim, tf.float64))
             ls_init = ls_init * dim_coeff
 
             ls_lower_bound = tf.ones(shape=(gp_input_dim,), dtype=self.dtype)
@@ -288,6 +290,34 @@ class AbstractModel(tf.keras.Model, abc.ABC):
 
         return length_scales, signal_amplitude, noise_amplitude
 
+    def initialize_all_hyperparameters(self,
+                                       length_scale_init_mode: str,
+                                       **kwargs):
+        """
+        Initializes the hyperparameters for every GP in the joint model
+        :param length_scale_init_mode:
+        :param kwargs:
+        :return:
+        """
+
+        length_scales = []
+        signal_amplitudes = []
+        noise_amplitudes = []
+
+        # Iterate through all the GPs
+        for i in range(self.output_dim):
+            hyperparams = self.initialize_hyperparameters(index=i,
+                                                          length_scale_init_mode=length_scale_init_mode,
+                                                          **kwargs)
+
+            ls, signal_amplitude, noise_amplitude = hyperparams
+
+            length_scales.append(ls)
+            signal_amplitudes.append(signal_amplitude)
+            noise_amplitudes.append(noise_amplitude)
+
+        return length_scales, signal_amplitudes, noise_amplitudes
+
     def fit(self,
             fit_joint=False,
             optimizer="l-bfgs-b",
@@ -315,6 +345,9 @@ class AbstractModel(tf.keras.Model, abc.ABC):
         :return:
         """
 
+        if self.xs.value().shape[0] == 0:
+            raise ModelError("No data to fit to!")
+
         if seed is not None:
             np.random.seed(seed)
             tf.random.set_seed(seed)
@@ -338,8 +371,8 @@ class AbstractModel(tf.keras.Model, abc.ABC):
                                          length_scales=length_scales,
                                          noise_amplitude=noise_amplitude)
 
-                    return -gp.log_pdf(xs=self.gp_input(index=i),
-                                       ys=self.gp_output(index=i),
+                    return -gp.log_pdf(xs=self.gp_train_input(index=i),
+                                       ys=self.gp_train_output(index=i),
                                        log_normal=False)
 
                 # Robust optimization
@@ -350,8 +383,8 @@ class AbstractModel(tf.keras.Model, abc.ABC):
                     # Increase step
                     restart_index = restart_index + 1
 
-                    hyperparams = self.initialize_hyperparamters(index=i,
-                                                                 length_scale_init_mode=length_scale_init_mode)
+                    hyperparams = self.initialize_hyperparameters(index=i,
+                                                                  length_scale_init_mode=length_scale_init_mode)
 
                     length_scales, signal_amplitude, noise_amplitude = hyperparams
                     # =================================================================
@@ -364,7 +397,7 @@ class AbstractModel(tf.keras.Model, abc.ABC):
                                              length_scales=length_scales(),
                                              noise_amplitude=noise_amplitude())
 
-                        gp_input = standardize(self.gp_input(index=i))
+                        gp_input = standardize(self.gp_train_input(index=i))
 
                         K = dense((gp.signal + gp.noise + gp.jitter).kernel(gp_input))
                         print(f"Kernel matrix: {K}")
@@ -409,7 +442,7 @@ class AbstractModel(tf.keras.Model, abc.ABC):
                                                      length_scales=length_scales(),
                                                      noise_amplitude=noise_amplitude())
 
-                                gp_input = standardize(self.gp_input(index=i))
+                                gp_input = standardize(self.gp_train_input(index=i))
 
                                 K = dense((gp.signal + gp.noise + gp.jitter).kernel(gp_input))
 
@@ -510,12 +543,12 @@ class AbstractModel(tf.keras.Model, abc.ABC):
         self.trained.assign(True)
 
     @abc.abstractmethod
-    def gp_input(self, index):
-        """
-        Gets all the training data for the i-th GP in the joint model
-        :param index:
-        :return:
-        """
+    def gp_input(self, index, xs, ys):
+        pass
+
+    @abc.abstractmethod
+    def gp_output(self, index, ys):
+        pass
 
     @abc.abstractmethod
     def gp_input_dim(self, index):
@@ -525,21 +558,113 @@ class AbstractModel(tf.keras.Model, abc.ABC):
         :return:
         """
 
-    @abc.abstractmethod
-    def gp_output(self, index):
+    def gp_train_input(self, index):
+        """
+        Gets all the training data for the i-th GP in the joint model
+        :param index:
+        :return:
+        """
+        return self.gp_input(index,
+                             xs=self.xs,
+                             ys=self.ys)
+
+    def gp_train_output(self, index):
         """
         Gets the training outputs for the i-th GP in the joint model
         :param index:
         :return:
         """
+        return self.gp_output(index,
+                              ys=self.ys)
 
-    @abc.abstractmethod
+    def gp_predict(self, xs, index):
+
+        if not self.trained:
+            logger.warning("Using untrained model for prediction!")
+
+        if xs.shape[1] != self.gp_input_dim(index):
+            raise ModelError(f"GP {index} requires an input with shape "
+                             f"(None, {self.gp_input_dim(index)}), "
+                             f"but got input with shape {xs.shape}!")
+
+        self.create_gp(index=index)
+
+        # Condition the model on the training data
+        model = self.models[index] | (self.gp_train_input(index=index),
+                                      self.gp_train_output(index=index))
+
+        mean, var = model.predict(xs, latent=False)
+
+        return mean, var
+
+    def gp_log_prob(self,
+                    xs,
+                    ys,
+                    index,
+                    predictive=True):
+
+        self.create_gp(index=index)
+
+        xs, ys = self._validate_and_convert_input_output(xs, ys)
+
+        # Select appropriate slices of data
+        gp_input = self.gp_input(index=index, xs=xs, ys=ys)
+        gp_output = self.gp_output(index=index, ys=ys)
+
+        # Get the model
+        model = self.models[index]
+
+        if predictive:
+            gp_train_input = self.gp_train_input(index=index)
+            gp_train_output = self.gp_train_output(index=index)
+
+            # Condition the model
+            model = model | (gp_train_input, gp_train_output)
+
+        log_prob = model.log_pdf(gp_input,
+                                 gp_output,
+                                 latent=False,
+                                 predictive=predictive)
+
+        return log_prob
+
     def predict(self, xs, numpy=False, **kwargs):
-        pass
 
-    @abc.abstractmethod
-    def log_prob(self, xs, ys, use_conditioning_data=True, numpy=False):
-        pass
+        means = []
+        variances = []
+
+        for i in range(self.output_dim):
+            mean, var = self.gp_predict(tf.concat([xs] + means, axis=1),
+                                        index=i)
+
+            means.append(mean)
+            variances.append(variances)
+
+        means = tf.concat(means, axis=1)
+        variances = tf.concat(variances, axis=1)
+
+        if numpy:
+            means = means.numpy()
+            variances = variances.numpy()
+
+        return means, variances
+
+    def log_prob(self, xs, ys, predictive=True, numpy=False):
+
+        log_prob = 0.
+
+        for i in range(self.output_dim):
+            current_log_prob = self.gp_log_prob(xs,
+                                                ys,
+                                                index=i,
+                                                predictive=predictive)
+
+            log_prob = log_prob + current_log_prob
+
+        if numpy:
+            log_prob = log_prob.numpy()
+
+        return log_prob
 
     @abc.abstractmethod
     def get_config(self):
@@ -550,17 +675,31 @@ class AbstractModel(tf.keras.Model, abc.ABC):
     def from_config(config, **kwargs):
         pass
 
+    def create_gp(self, index):
+        # Hash the hyperparameters for the i-th GP
+        param_hash = tensor_hash(self.noise_amplitudes[index]()) + \
+                     tensor_hash(self.signal_amplitudes[index]()) + \
+                     tensor_hash(self.length_scales[index]())
+
+        # If the hashes match, do nothing
+        if param_hash == self._gp_hyperparameter_hashes[index]:
+            return
+
+        # Store the new hash
+        self._gp_hyperparameter_hashes[index] = param_hash
+
+        # Create GP
+        gp = GaussianProcess(kernel=self.kernel_name,
+                             input_dim=self.gp_input_dim(index=index),
+                             signal_amplitude=self.signal_amplitudes[index],
+                             length_scales=self.length_scales[index],
+                             noise_amplitude=self.noise_amplitudes[index])
+
+        self.models[index] = gp
+
     def create_gps(self):
-        self.models.clear()
-
         for i in range(self.output_dim):
-            gp = GaussianProcess(kernel=self.kernel_name,
-                                 input_dim=self.gp_input_dim(index=i),
-                                 signal_amplitude=self.signal_amplitudes[i],
-                                 length_scales=self.length_scales[i],
-                                 noise_amplitude=self.noise_amplitudes[i])
-
-            self.models.append(gp)
+            self.create_gp(i)
 
     def save(self, save_path, **kwargs):
 
@@ -617,4 +756,3 @@ class AbstractModel(tf.keras.Model, abc.ABC):
                              f"be equal! (the data needs to form valid input-output pairs)")
 
         return xs, ys
-

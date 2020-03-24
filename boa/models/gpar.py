@@ -68,14 +68,14 @@ class GPARModel(AbstractModel):
             self.noise_amplitudes.append(
                 tf.Variable((1,), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
 
-    def gp_input(self, index):
-        return tf.concat([self.xs, self.ys[:, :index]], axis=1)
+    def gp_input(self, index, xs, ys):
+        return tf.concat([xs, ys[:, :index]], axis=1)
 
     def gp_input_dim(self, index):
         return self.input_dim + index
 
-    def gp_output(self, index):
-        return self.ys[:, index:index + 1]
+    def gp_output(self, index, ys):
+        return ys[:, index:index + 1]
 
     def fit_greedy_ordering(self,
                             train_xs,
@@ -298,97 +298,6 @@ class GPARModel(AbstractModel):
                  trace=trace,
                  iters=iters,
                  rate=rate)
-
-    def predict(self, xs, numpy=False):
-
-        if not self.trained:
-            raise ModelError("Using untrained model for prediction!")
-
-        if len(self.models) < self.output_dim:
-            logger.info("GPs haven't been cached yet, creating them now.")
-            self.create_gps()
-
-        xs = self._validate_and_convert(xs, output=False)
-
-        train_ys = self.permuted_ys
-
-        means = []
-        variances = []
-
-        for i, model in enumerate(self.models):
-            gp_input = tf.concat([xs] + means, axis=1)
-            gp_train_input = tf.concat([self.xs, train_ys[:, :i]], axis=1)
-
-            model = model | (gp_train_input, train_ys[:, i:i + 1])
-
-            mean, var = model.predict(gp_input, latent=False)
-
-            means.append(mean)
-            variances.append(var)
-
-        means = tf.concat(means, axis=1)
-        variances = tf.concat(variances, axis=1)
-
-        # Permute stuff back
-        means = self.inverse_permute_output(means)
-        variances = self.inverse_permute_output(variances)
-
-        if numpy:
-            means = means.numpy()
-            variances = variances.numpy()
-
-        return means, variances
-
-    def log_prob(self, xs, ys, use_conditioning_data=True, latent=False, numpy=False, target_dims=None):
-
-        if target_dims is not None and not isinstance(target_dims, (tuple, list)):
-            raise ModelError("target_dims must be a list or a tuple!")
-
-        if len(self.models) < self.output_dim:
-            logger.info("GPs haven't been cached yet, creating them now.")
-            self.create_gps()
-
-        xs, ys = self._validate_and_convert_input_output(xs, ys)
-
-        # Put the ys in the "correct" order
-        ys = self.permute_output(ys)
-
-        # Permute the training data according to the set permutation
-        train_ys = self.permuted_ys
-
-        log_prob = 0.
-
-        for i, model in enumerate(self.models):
-
-            if i not in target_dims:
-                continue
-
-            gp_input = tf.concat([xs, ys[:, :i]], axis=1)
-            gp_train_input = tf.concat([self.xs, train_ys[:, :i]], axis=1)
-
-            cond_model = model | (gp_train_input, train_ys[:, i:i + 1])
-
-            if use_conditioning_data:
-                model_log_prob = cond_model.log_pdf(gp_input, ys[:, i:i + 1],
-                                                    latent=latent,
-                                                    with_jitter=False,
-                                                    normalize_with_training_data=True)
-            else:
-                # Normalize model to the regime on which the models were trained
-                norm_xs = cond_model.normalize_with_training_data(gp_input, output=False)
-                norm_ys = cond_model.normalize_with_training_data(ys[:, i:i + 1], output=True)
-
-                model_log_prob = model.log_pdf(norm_xs,
-                                               norm_ys,
-                                               latent=latent,
-                                               with_jitter=False)
-
-            log_prob = log_prob + model_log_prob
-
-        if numpy:
-            log_prob = log_prob.numpy()
-
-        return log_prob
 
     @staticmethod
     def restore(save_path):
