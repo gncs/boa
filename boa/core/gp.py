@@ -122,7 +122,7 @@ class GaussianProcess(tf.Module):
             self._xs_stat_hash = xs_stat_hash
 
             if self.xs.shape[0] > 0:
-                mean, var = tf.nn.moments(self.xs, axis=[0], keepdims=True)
+                mean, var = tf.nn.moments(self.xs, axes=[0], keepdims=True)
             else:
                 mean, var = tf.cast(0., tf.float64), tf.cast(1., tf.float64)
 
@@ -140,7 +140,7 @@ class GaussianProcess(tf.Module):
             self._ys_stat_hash = ys_stat_hash
 
             if self.ys.shape[0] > 0:
-                mean, var = tf.nn.moments(self.ys, axis=[0], keepdims=True)
+                mean, var = tf.nn.moments(self.ys, axes=[0], keepdims=True)
             else:
                 mean, var = tf.cast(0., tf.float64), tf.cast(1., tf.float64)
 
