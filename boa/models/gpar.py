@@ -7,7 +7,7 @@ import tensorflow as tf
 
 from stheno.tensorflow import dense
 
-from .abstract_model import AbstractModel, ModelError
+from .multi_output_gp_regression_model import MultiOutputGPRegressionModel, ModelError
 from boa.core import GaussianProcess, setup_logger, inv_perm
 
 from not_tf_opt import minimize, BoundedVariable
@@ -17,12 +17,11 @@ from boa import ROOT_DIR
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/gpar.log")
 
 
-class GPARModel(AbstractModel):
+class GPARModel(MultiOutputGPRegressionModel):
     def __init__(self,
                  kernel: str,
                  input_dim: int,
                  output_dim: int,
-                 initialization_heuristic: str = "median",
                  denoising: bool = False,
                  verbose: bool = False,
                  _create_length_scales: bool = True,
@@ -44,29 +43,8 @@ class GPARModel(AbstractModel):
                                         **kwargs)
 
         self.denoising = denoising
-        self.initialization_heuristic = initialization_heuristic
 
         self.permutation = tf.Variable(tf.range(output_dim, dtype=tf.int32))
-
-        self.length_scales = []
-        self.signal_amplitudes = []
-        self.noise_amplitudes = []
-
-        # Create TF variables for each of the hyperparameters, so that
-        # we can use Keras' serialization features
-        for i in range(self.output_dim):
-            # Note the scaling in dimension
-            if _create_length_scales:
-                self.length_scales.append(
-                    tf.Variable(tf.ones(self.input_dim + i, dtype=tf.float64),
-                                name=f"{i}/length_scales",
-                                trainable=False))
-
-            self.signal_amplitudes.append(
-                tf.Variable((1,), dtype=tf.float64, name=f"{i}/signal_amplitude", trainable=False))
-
-            self.noise_amplitudes.append(
-                tf.Variable((1,), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
 
     def gp_input(self, index, xs, ys):
         return tf.concat([xs, ys[:, :index]], axis=1)
@@ -76,6 +54,9 @@ class GPARModel(AbstractModel):
 
     def gp_output(self, index, ys):
         return ys[:, index:index + 1]
+
+    def has_explicit_length_scales(self):
+        return True
 
     def fit_greedy_ordering(self,
                             train_xs,
@@ -164,8 +145,8 @@ class GPARModel(AbstractModel):
                 while j < optimizer_restarts:
                     j += 1
 
-                    hyperparams = self.initialize_hyperparameters(index=i,
-                                                                  length_scale_init=self.initialization_heuristic)
+                    hyperparams = self.create_hyperparameter_initializers(index=i,
+                                                                          length_scale_init=self.initialization_heuristic)
 
                     length_scales, signal_amplitude, noise_amplitude = hyperparams
 
@@ -320,7 +301,6 @@ class GPARModel(AbstractModel):
             "input_dim": self.input_dim,
             "output_dim": self.output_dim,
             "denoising": self.denoising,
-            "initialization_heuristic": self.initialization_heuristic,
             "verbose": self.verbose,
         }
 

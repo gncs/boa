@@ -1,6 +1,6 @@
 import numpy as np
 
-from boa.models.abstract_model import AbstractModel
+from boa.models.multi_output_gp_regression_model import MultiOutputGPRegressionModel
 from .abstract import AbstractAcquisition
 from .util import AcquisitionError
 
@@ -13,7 +13,7 @@ class ExpectedImprovement(AbstractAcquisition):
 
         self.xi = xi
 
-    def evaluate(self, model: AbstractModel, xs: np.ndarray, ys: np.ndarray, candidate_xs: np.ndarray) -> np.ndarray:
+    def evaluate(self, model: MultiOutputGPRegressionModel, xs: np.ndarray, ys: np.ndarray, candidate_xs: np.ndarray) -> np.ndarray:
 
         if len(ys.shape) < 2:
             ys = ys.reshape([-1, 1])

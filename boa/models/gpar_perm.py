@@ -80,7 +80,7 @@ class PermutedGPARModel(GPARModel):
 
         return soft_perm_mat, hard_perm_mat
 
-    def initialize_hyperparameters(self, length_scale_init="random", init_minval=0.5, init_maxval=2.0):
+    def create_hyperparameter_initializers(self, length_scale_init="random", init_minval=0.5, init_maxval=2.0):
 
         permutation = tf.Variable(tf.random.uniform(shape=(self.output_dim, self.output_dim), dtype=tf.float64))
 
@@ -167,7 +167,7 @@ class PermutedGPARModel(GPARModel):
             j += 1
 
             # Create dummy variables for optimization
-            hps = self.initialize_hyperparameters(length_scale_init=self.initialization_heuristic)
+            hps = self.create_hyperparameter_initializers(length_scale_init=self.initialization_heuristic)
 
             permutation, length_scales, signal_amplitudes, noise_amplitudes = hps
 
