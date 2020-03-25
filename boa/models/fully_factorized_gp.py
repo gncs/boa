@@ -2,17 +2,12 @@ import logging
 
 import json
 
-from typing import List
-
 import tensorflow as tf
-import numpy as np
 
-from boa.core.gp import GaussianProcess
 from boa.core.utils import setup_logger
 from .multi_output_gp_regression_model import MultiOutputGPRegressionModel, ModelError
 from boa import ROOT_DIR
 
-from not_tf_opt import minimize, BoundedVariable
 
 __all__ = ["FullyFactorizedGPModel"]
 
@@ -48,7 +43,7 @@ class FullyFactorizedGPModel(MultiOutputGPRegressionModel):
         return ys[:, index:index + 1]
 
     def has_explicit_length_scales(self):
-        True
+        return True
 
     @staticmethod
     def restore(save_path):
