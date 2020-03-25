@@ -45,6 +45,9 @@ class FullyFactorizedGPModel(MultiOutputGPRegressionModel):
     def has_explicit_length_scales(self):
         return True
 
+    def gp_predictive_input(self, xs, means):
+        return xs
+
     @staticmethod
     def restore(save_path):
 

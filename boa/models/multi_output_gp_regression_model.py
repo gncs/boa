@@ -735,6 +735,10 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         pass
 
     @abc.abstractmethod
+    def gp_predictive_input(self, xs, means):
+        pass
+
+    @abc.abstractmethod
     def gp_input_dim(self, index):
         """
         Dimension of a single training example
@@ -815,7 +819,8 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         variances = []
 
         for i in range(self.output_dim):
-            mean, var = self.gp_predict(tf.concat([xs] + means, axis=1),
+            mean, var = self.gp_predict(self.gp_predictive_input(xs=xs,
+                                                                 means=means),
                                         index=i)
 
             means.append(mean)

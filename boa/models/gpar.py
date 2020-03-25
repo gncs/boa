@@ -58,6 +58,9 @@ class GPARModel(MultiOutputGPRegressionModel):
     def has_explicit_length_scales(self):
         return True
 
+    def gp_predictive_input(self, xs, means):
+        return tf.concat([xs] + means, axis=1)
+
     def fit_greedy_ordering(self,
                             train_xs,
                             train_ys,
