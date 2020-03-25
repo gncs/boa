@@ -11,7 +11,7 @@ from boa.models.gpar import GPARModel
 from boa.models.matrix_factorized_gpar import MatrixFactorizedGPARModel
 from boa.models.gpar_perm import PermutedGPARModel
 
-from boa.core import GaussianProcess, transform_df, back_transform
+from boa.core import transform_df, back_transform
 from boa import ROOT_DIR
 
 import tensorflow as tf

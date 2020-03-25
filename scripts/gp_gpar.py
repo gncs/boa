@@ -35,7 +35,6 @@ def run():
     ff_gp = FullyFactorizedGPModel(kernel='rbf',
                                    input_dim=2,
                                    output_dim=1,
-                                   initialization_heuristic="median",
                                    verbose=False)
     ff_gp = ff_gp.condition_on(x_train, y_train)
     ff_gp.fit(optimizer_restarts=10)
@@ -46,7 +45,7 @@ def run():
     y_pred_ff_gp, var_pred_ff_gp = ff_gp.predict(x_cont, numpy=True)
 
     # GPAR model
-    gpar = GPARModel(kernel='rbf', input_dim=2, output_dim=1, initialization_heuristic="median", verbose=False)
+    gpar = GPARModel(kernel='rbf', input_dim=2, output_dim=1, verbose=False)
     gpar = gpar.condition_on(x_train, y_train)
     gpar.fit(optimizer_restarts=10)
 

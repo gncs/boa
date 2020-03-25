@@ -2,8 +2,6 @@ import logging
 
 import json
 
-import tensorflow as tf
-
 from boa.core.utils import setup_logger
 from .multi_output_gp_regression_model import MultiOutputGPRegressionModel, ModelError
 from boa import ROOT_DIR

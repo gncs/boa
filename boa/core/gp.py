@@ -1,4 +1,3 @@
-import logging
 import tensorflow as tf
 from stheno.tensorflow import EQ, Delta, Matern52, GP, Graph, dense
 

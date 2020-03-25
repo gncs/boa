@@ -769,7 +769,6 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
         if not self.trained:
             logger.warning("Using untrained model for prediction!")
-
         if xs.shape[1] != self.gp_input_dim(index):
             raise ModelError(f"GP {index} requires an input with shape "
                              f"(None, {self.gp_input_dim(index)}), "
@@ -814,6 +813,8 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         return log_prob
 
     def predict(self, xs, numpy=False, **kwargs):
+
+        xs = self._validate_and_convert(xs, output=False)
 
         means = []
         variances = []
@@ -865,18 +866,16 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
     def create_gp(self, index):
         # Hash the hyperparameters for the i-th GP
-        # param_hash = tensor_hash(self.noise_amplitude(index)()) + \
-        #              tensor_hash(self.signal_amplitude(index)()) + \
-        #              tensor_hash(self.length_scales(index)())
-        #
-        # print(f"param_hash {param_hash}")
-        #
-        # # If the hashes match, do nothing
-        # if param_hash == self._gp_hyperparameter_hashes[index]:
-        #     return
+        param_hash = tensor_hash(self.noise_amplitude(index)()) + \
+                     tensor_hash(self.signal_amplitude(index)()) + \
+                     tensor_hash(self.length_scales(index)())
 
-        # # Store the new hash
-        # self._gp_hyperparameter_hashes[index] = param_hash
+        # If the hashes match, do nothing
+        if param_hash == self._gp_hyperparameter_hashes[index]:
+            return
+
+        # Store the new hash
+        self._gp_hyperparameter_hashes[index] = param_hash
 
         # Create GP
         gp = GaussianProcess(kernel=self.kernel_name,

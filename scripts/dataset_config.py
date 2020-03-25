@@ -295,7 +295,7 @@ def load_dataset(dataset_path, separator, input_labels, output_labels) -> DataTu
 
 
 @dataset_ingredient.capture
-def prepare_ff_gp_data(data, input_labels, output_labels):
+def prepare_ff_gp_data(data):
     return data.df
 
 
@@ -310,7 +310,7 @@ def prepare_ff_gp_aux_data(data, targets, input_labels, output_labels):
 
 
 @dataset_ingredient.capture
-def prepare_gpar_data(data, targets, input_labels, output_labels):
+def prepare_gpar_data(data, targets, output_labels):
     output_labels = output_labels.copy()
 
     for target in targets:
