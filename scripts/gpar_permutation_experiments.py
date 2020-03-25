@@ -1,11 +1,7 @@
-import logging
-import argparse
 import json
 import time
 import os
 from typing import Sequence
-
-from itertools import permutations
 
 import numpy as np
 
@@ -302,8 +298,8 @@ def run_random_experiment(model,
                                        train_and_validate[outputs].values[:, best_perm],
                                        keep_previous=False)
             model.fit(optimizer_restarts=optimizer_restarts,
-                                           optimizer=optimizer,
-                                           trace=True)
+                      optimizer=optimizer,
+                      trace=True)
         except Exception as e:
             _log.exception("Training failed: {}".format(str(e)))
             raise e
@@ -616,8 +612,7 @@ def run_hierarchical_bayesopt_experiment(model,
             perm_gp.fit(optimizer_restarts=optimizer_restarts,
                         optimizer='l-bfgs-b',
                         trace=True,
-                        err_level='raise',
-                        median_heuristic_only=median_heuristic_only)
+                        err_level='raise')
 
         except Exception as e:
             _log.exception("Training the surrogate model failed: {}".format(str(e)))
@@ -705,8 +700,8 @@ def run_hierarchical_bayesopt_experiment(model,
                                            train[outputs].values[:, extended_next_evaluation_point],
                                            keep_previous=False)
                 model.fit(optimizer_restarts=optimizer_restarts,
-                                               optimizer=optimizer,
-                                               trace=True)
+                          optimizer=optimizer,
+                          trace=True)
             except Exception as e:
                 _log.exception("Training failed: {}".format(str(e)))
                 raise e
@@ -750,9 +745,9 @@ def run_hierarchical_bayesopt_experiment(model,
             _log.info("Retraining GP with newly observed data!")
             perm_gp = perm_gp.condition_on(observed_perms, observed_log_probs, keep_previous=False)
             perm_gp.fit(optimizer_restarts=optimizer_restarts,
-                                             optimizer='l-bfgs-b',
-                                             trace=True,
-                                             median_heuristic_only=median_heuristic_only)
+                        optimizer='l-bfgs-b',
+                        trace=True,
+                        median_heuristic_only=median_heuristic_only)
 
         experiment["bayesopt_stats"] = bayesopt_stats
 
@@ -774,8 +769,8 @@ def run_hierarchical_bayesopt_experiment(model,
                                        train_and_validate[outputs].values[:, best_perm],
                                        keep_previous=False)
             model.fit(optimizer_restarts=optimizer_restarts,
-                                           optimizer=optimizer,
-                                           trace=True)
+                      optimizer=optimizer,
+                      trace=True)
         except Exception as e:
             _log.exception("Training failed: {}".format(str(e)))
             raise e

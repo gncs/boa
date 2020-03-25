@@ -21,6 +21,21 @@ class RandomModel(MultiOutputGPRegressionModel):
 
         self.num_samples = num_samples
 
+    def has_explicit_length_scales(self):
+        return False
+
+    def gp_input(self, index, xs, ys):
+        return xs
+
+    def gp_output(self, index, ys):
+        return ys[:, index:index + 1]
+
+    def gp_predictive_input(self, xs, means):
+        return xs
+
+    def gp_input_dim(self, index):
+        return self.input_dim
+
     def fit(self, **kwargs):
         if self.verbose:
             logger.info("Random model needs no fitting!")
