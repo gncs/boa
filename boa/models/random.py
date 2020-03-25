@@ -2,7 +2,7 @@ import logging
 import json
 import tensorflow as tf
 
-from .abstract_model import AbstractModel
+from .multi_output_gp_regression_model import MultiOutputGPRegressionModel
 
 from boa.core.utils import setup_logger
 from boa import ROOT_DIR
@@ -10,7 +10,7 @@ from boa import ROOT_DIR
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/random_model.log")
 
 
-class RandomModel(AbstractModel):
+class RandomModel(MultiOutputGPRegressionModel):
 
     def __init__(self, input_dim, output_dim, seed, num_samples, name="random_model", **kwargs):
 

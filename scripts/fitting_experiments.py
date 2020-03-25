@@ -1,9 +1,6 @@
-import logging
-import argparse
 import json
 import time
 import os
-from typing import Sequence
 
 import numpy as np
 
@@ -63,6 +60,8 @@ def experiment_config(dataset):
 
     matrix_factorized = False
 
+    fit_joint = False
+
     if model == "ff-gp":
         log_dir = f"{log_dir}/{model}/{current_time}/"
         log_path = f"{log_dir}/{model}_experiments.json"
@@ -71,7 +70,8 @@ def experiment_config(dataset):
         log_dir = f"{log_dir}/{model}/{current_time}/"
         log_path = f"{log_dir}/{model}_experiments.json"
 
-    elif model == "mf_gpar":
+    elif model == "mf-gpar":
+        fit_joint = True
         # Effective dimension of the factorization.
         latent_dim = 5
         matrix_factorized = True
@@ -101,6 +101,7 @@ def run_experiment(model,
                    log_dir,
                    log_path,
                    save_dir,
+                   fit_joint,
                    matrix_factorized,
                    iters: int,
                    rounds,
@@ -160,6 +161,7 @@ def run_experiment(model,
                                            train[dataset["output_labels"]].values[:, :],
                                            keep_previous=False)
                 model.fit(ys_transforms=ys_transforms,
+                          fit_joint=fit_joint,
                           length_scale_init_mode=initialization,
                           optimizer_restarts=num_optimizer_restarts,
                           optimizer=optimizer,

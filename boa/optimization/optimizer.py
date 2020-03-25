@@ -6,7 +6,7 @@ import numpy as np
 
 from boa.acquisition.abstract import AbstractAcquisition
 from boa.optimization.data import FileHandler, Data
-from boa.models.abstract_model import AbstractModel
+from boa.models.multi_output_gp_regression_model import MultiOutputGPRegressionModel
 from boa.objective.abstract import AbstractObjective
 
 
@@ -27,7 +27,7 @@ class Optimizer:
         self.verbose = verbose
         self.create_checkpoints = checkpoints
 
-    def optimize(self, f: AbstractObjective, model: AbstractModel, acq_fun: AbstractAcquisition, xs: np.array,
+    def optimize(self, f: AbstractObjective, model: MultiOutputGPRegressionModel, acq_fun: AbstractAcquisition, xs: np.array,
                  ys: np.array, candidate_xs: np.array, optimizer_restarts: int) -> Tuple[np.ndarray, np.ndarray]:
 
         xs = xs.copy()

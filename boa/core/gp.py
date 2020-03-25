@@ -8,7 +8,7 @@ from .kernel import DiscreteMatern52, DiscreteEQ, PermutationEQ, PermutationMate
 __all__ = ["GaussianProcess", "CoreError"]
 
 
-class GaussianProcess(tf.Module):
+class GaussianProcess(object):
     """
     Base GP class for the use of more complicated GP models in BOA.
     It is a wrapper around Stheno GPs, and provides additional methods that we need in BOA, such as optimizing
@@ -36,10 +36,9 @@ class GaussianProcess(tf.Module):
                  noise_amplitude,
                  kernel_args={},
                  jitter: tf.float64 = 1e-10,
-                 name: str = "gaussian_process",
-                 **kwargs):
+                 name: str = "gaussian_process"):
 
-        super(GaussianProcess, self).__init__(name=name, **kwargs)
+        self.name = name
 
         # Check if the specified kernel is available
         if kernel in self.AVAILABLE_KERNELS:

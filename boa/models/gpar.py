@@ -7,7 +7,7 @@ import tensorflow as tf
 
 from stheno.tensorflow import dense
 
-from .abstract_model import AbstractModel, ModelError
+from .multi_output_gp_regression_model import MultiOutputGPRegressionModel, ModelError
 from boa.core import GaussianProcess, setup_logger, inv_perm
 
 from not_tf_opt import minimize, BoundedVariable
@@ -17,12 +17,11 @@ from boa import ROOT_DIR
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/gpar.log")
 
 
-class GPARModel(AbstractModel):
+class GPARModel(MultiOutputGPRegressionModel):
     def __init__(self,
                  kernel: str,
                  input_dim: int,
                  output_dim: int,
-                 initialization_heuristic: str = "median",
                  denoising: bool = False,
                  verbose: bool = False,
                  _create_length_scales: bool = True,
@@ -44,38 +43,20 @@ class GPARModel(AbstractModel):
                                         **kwargs)
 
         self.denoising = denoising
-        self.initialization_heuristic = initialization_heuristic
 
         self.permutation = tf.Variable(tf.range(output_dim, dtype=tf.int32))
 
-        self.length_scales = []
-        self.signal_amplitudes = []
-        self.noise_amplitudes = []
-
-        # Create TF variables for each of the hyperparameters, so that
-        # we can use Keras' serialization features
-        for i in range(self.output_dim):
-            # Note the scaling in dimension
-            if _create_length_scales:
-                self.length_scales.append(
-                    tf.Variable(tf.ones(self.input_dim + i, dtype=tf.float64),
-                                name=f"{i}/length_scales",
-                                trainable=False))
-
-            self.signal_amplitudes.append(
-                tf.Variable((1,), dtype=tf.float64, name=f"{i}/signal_amplitude", trainable=False))
-
-            self.noise_amplitudes.append(
-                tf.Variable((1,), dtype=tf.float64, name=f"{i}/noise_amplitude", trainable=False))
-
-    def gp_input(self, index):
-        return tf.concat([self.xs, self.ys[:, :index]], axis=1)
+    def gp_input(self, index, xs, ys):
+        return tf.concat([xs, ys[:, :index]], axis=1)
 
     def gp_input_dim(self, index):
         return self.input_dim + index
 
-    def gp_output(self, index):
-        return self.ys[:, index:index + 1]
+    def gp_output(self, index, ys):
+        return ys[:, index:index + 1]
+
+    def has_explicit_length_scales(self):
+        return True
 
     def fit_greedy_ordering(self,
                             train_xs,
@@ -164,8 +145,8 @@ class GPARModel(AbstractModel):
                 while j < optimizer_restarts:
                     j += 1
 
-                    hyperparams = self.initialize_hyperparameters(index=i,
-                                                                  length_scale_init=self.initialization_heuristic)
+                    hyperparams = self.create_hyperparameter_initializers(index=i,
+                                                                          length_scale_init=self.initialization_heuristic)
 
                     length_scales, signal_amplitude, noise_amplitude = hyperparams
 
@@ -299,97 +280,6 @@ class GPARModel(AbstractModel):
                  iters=iters,
                  rate=rate)
 
-    def predict(self, xs, numpy=False):
-
-        if not self.trained:
-            raise ModelError("Using untrained model for prediction!")
-
-        if len(self.models) < self.output_dim:
-            logger.info("GPs haven't been cached yet, creating them now.")
-            self.create_gps()
-
-        xs = self._validate_and_convert(xs, output=False)
-
-        train_ys = self.permuted_ys
-
-        means = []
-        variances = []
-
-        for i, model in enumerate(self.models):
-            gp_input = tf.concat([xs] + means, axis=1)
-            gp_train_input = tf.concat([self.xs, train_ys[:, :i]], axis=1)
-
-            model = model | (gp_train_input, train_ys[:, i:i + 1])
-
-            mean, var = model.predict(gp_input, latent=False)
-
-            means.append(mean)
-            variances.append(var)
-
-        means = tf.concat(means, axis=1)
-        variances = tf.concat(variances, axis=1)
-
-        # Permute stuff back
-        means = self.inverse_permute_output(means)
-        variances = self.inverse_permute_output(variances)
-
-        if numpy:
-            means = means.numpy()
-            variances = variances.numpy()
-
-        return means, variances
-
-    def log_prob(self, xs, ys, use_conditioning_data=True, latent=False, numpy=False, target_dims=None):
-
-        if target_dims is not None and not isinstance(target_dims, (tuple, list)):
-            raise ModelError("target_dims must be a list or a tuple!")
-
-        if len(self.models) < self.output_dim:
-            logger.info("GPs haven't been cached yet, creating them now.")
-            self.create_gps()
-
-        xs, ys = self._validate_and_convert_input_output(xs, ys)
-
-        # Put the ys in the "correct" order
-        ys = self.permute_output(ys)
-
-        # Permute the training data according to the set permutation
-        train_ys = self.permuted_ys
-
-        log_prob = 0.
-
-        for i, model in enumerate(self.models):
-
-            if i not in target_dims:
-                continue
-
-            gp_input = tf.concat([xs, ys[:, :i]], axis=1)
-            gp_train_input = tf.concat([self.xs, train_ys[:, :i]], axis=1)
-
-            cond_model = model | (gp_train_input, train_ys[:, i:i + 1])
-
-            if use_conditioning_data:
-                model_log_prob = cond_model.log_pdf(gp_input, ys[:, i:i + 1],
-                                                    latent=latent,
-                                                    with_jitter=False,
-                                                    normalize_with_training_data=True)
-            else:
-                # Normalize model to the regime on which the models were trained
-                norm_xs = cond_model.normalize_with_training_data(gp_input, output=False)
-                norm_ys = cond_model.normalize_with_training_data(ys[:, i:i + 1], output=True)
-
-                model_log_prob = model.log_pdf(norm_xs,
-                                               norm_ys,
-                                               latent=latent,
-                                               with_jitter=False)
-
-            log_prob = log_prob + model_log_prob
-
-        if numpy:
-            log_prob = log_prob.numpy()
-
-        return log_prob
-
     @staticmethod
     def restore(save_path):
 
@@ -411,7 +301,6 @@ class GPARModel(AbstractModel):
             "input_dim": self.input_dim,
             "output_dim": self.output_dim,
             "denoising": self.denoising,
-            "initialization_heuristic": self.initialization_heuristic,
             "verbose": self.verbose,
         }
 
