@@ -218,7 +218,7 @@ def run_experiment(model,
 def main(dataset, model, kernel, verbose, latent_dim=None):
     data = load_dataset()
 
-    if model == ['random', 'ff-gp']:
+    if model in ['random', 'ff-gp']:
         df = prepare_ff_gp_data(data)
 
         if model == 'ff-gp':
