@@ -76,7 +76,7 @@ def bayesopt_config(dataset):
     elif model == "gpar":
         log_path = f"{log_dir}/{model}/{current_time}/{{}}.json"
 
-    elif model == "mf_gpar":
+    elif model == "mf-gpar":
         fit_joint = True
         # Effective dimension of the factorization.
         latent_dim = 5
