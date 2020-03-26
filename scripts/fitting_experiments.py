@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 
 from boa.models.fully_factorized_gp import FullyFactorizedGPModel
 from boa.models.gpar import GPARModel
+from boa.models.random import RandomModel
 from boa.models.matrix_factorized_gpar import MatrixFactorizedGPARModel
 from boa.models.gpar_perm import PermutedGPARModel
 
@@ -62,11 +63,7 @@ def experiment_config(dataset):
 
     fit_joint = False
 
-    if model == "ff-gp":
-        log_dir = f"{log_dir}/{model}/{current_time}/"
-        log_path = f"{log_dir}/{model}_experiments.json"
-
-    elif model == "gpar":
+    if model in ["ff-gp", "gpar", "random"]:
         log_dir = f"{log_dir}/{model}/{current_time}/"
         log_path = f"{log_dir}/{model}_experiments.json"
 
@@ -221,13 +218,19 @@ def run_experiment(model,
 def main(dataset, model, kernel, verbose, latent_dim=None):
     data = load_dataset()
 
-    if model == 'ff-gp':
+    if model == ['random', 'ff-gp']:
         df = prepare_ff_gp_data(data)
 
-        surrogate_model = FullyFactorizedGPModel(kernel=kernel,
-                                                 input_dim=len(dataset["input_labels"]),
-                                                 output_dim=len(dataset["output_labels"]),
-                                                 verbose=verbose)
+        if model == 'ff-gp':
+            surrogate_model = FullyFactorizedGPModel(kernel=kernel,
+                                                     input_dim=len(dataset["input_labels"]),
+                                                     output_dim=len(dataset["output_labels"]),
+                                                     verbose=verbose)
+        elif model == "random":
+            surrogate_model = RandomModel(input_dim=len(dataset["input_labels"]),
+                                          output_dim=len(dataset["output_labels"]),
+                                          seed=42,
+                                          num_samples=50)
 
     elif model in ["gpar", "mf-gpar", "p-gpar"]:
         df = prepare_gpar_data(data)
