@@ -2,7 +2,7 @@ import abc
 
 import numpy as np
 
-from boa.models.abstract_model import AbstractModel
+from boa.models.multi_output_gp_regression_model import MultiOutputGPRegressionModel
 
 
 class AbstractAcquisition:
@@ -13,5 +13,5 @@ class AbstractAcquisition:
         pass
 
     @abc.abstractmethod
-    def evaluate(self, model: AbstractModel, xs: np.ndarray, ys: np.ndarray, candidate_xs: np.ndarray) -> np.ndarray:
+    def evaluate(self, model: MultiOutputGPRegressionModel, xs: np.ndarray, ys: np.ndarray, candidate_xs: np.ndarray) -> np.ndarray:
         pass

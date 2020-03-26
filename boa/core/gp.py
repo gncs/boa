@@ -1,18 +1,13 @@
-import logging
 import tensorflow as tf
 from stheno.tensorflow import EQ, Delta, Matern52, GP, Graph, dense
 
-from boa import ROOT_DIR
-
-from .utils import CoreError, setup_logger
+from .utils import CoreError, tensor_hash, standardize
 from .kernel import DiscreteMatern52, DiscreteEQ, PermutationEQ, PermutationMatern52
 
 __all__ = ["GaussianProcess", "CoreError"]
 
-logger = setup_logger(__name__, level=logging.DEBUG, log_file=f"{ROOT_DIR}/../logs/gp.log", to_console=True)
 
-
-class GaussianProcess(tf.Module):
+class GaussianProcess(object):
     """
     Base GP class for the use of more complicated GP models in BOA.
     It is a wrapper around Stheno GPs, and provides additional methods that we need in BOA, such as optimizing
@@ -40,11 +35,9 @@ class GaussianProcess(tf.Module):
                  noise_amplitude,
                  kernel_args={},
                  jitter: tf.float64 = 1e-10,
-                 verbose: bool = False,
-                 name: str = "gaussian_process",
-                 **kwargs):
+                 name: str = "gaussian_process"):
 
-        super(GaussianProcess, self).__init__(name=name, **kwargs)
+        self.name = name
 
         # Check if the specified kernel is available
         if kernel in self.AVAILABLE_KERNELS:
@@ -79,8 +72,6 @@ class GaussianProcess(tf.Module):
         if tf.reduce_any(self.length_scales <= 0):
             raise CoreError(f"All length scale amplitudes must be strictly positive! {self.length_scales} was given.")
 
-        self.verbose = verbose
-
         self.input_dim = input_dim
 
         # Create model parts
@@ -102,11 +93,99 @@ class GaussianProcess(tf.Module):
         self.xs = tf.zeros((0, self.input_dim), dtype=tf.float64)
         self.ys = tf.zeros((0, 1), dtype=tf.float64)
 
-        self.xs_forward_transform = lambda x, var=False: x
-        self.ys_forward_transform = lambda y, var=False: y
+        # ---------------------------------------------------------------------
+        # Stuff used in property methods
+        # ---------------------------------------------------------------------
+        self._xs_stat_hash = None
+        self._xs_mean = None
+        self._xs_std = None
 
-        self.xs_backward_transform = lambda x, var=False: x
-        self.ys_backward_transform = lambda y, var=False: y
+        self._ys_stat_hash = None
+        self._ys_mean = None
+        self._ys_std = None
+
+    @property
+    def xs_mean_and_std(self, eps=1e-7, min_std=1e-8):
+        """
+        Returns the means and standard deviations of the training inputs.
+        If we have calculated them already, then we do not perform the calculations again.
+        :param eps: small positive value to improve the stability of taking the square root
+        :param min_std: lower bound on the standard deviation
+        :return:
+        """
+        xs_stat_hash = tensor_hash(self.xs)
+
+        # If the data does not match what we had before, recalculate the statistics
+        if xs_stat_hash != self._xs_stat_hash:
+            self._xs_stat_hash = xs_stat_hash
+
+            if self.xs.shape[0] > 0:
+                mean, var = tf.nn.moments(self.xs, axes=[0], keepdims=True)
+            else:
+                mean, var = tf.cast(0., tf.float64), tf.cast(1., tf.float64)
+
+            self._xs_mean = mean
+            self._xs_std = tf.maximum(tf.sqrt(var + eps), min_std)
+
+        return self._xs_mean, self._xs_std
+
+    @property
+    def ys_mean_and_std(self, eps=1e-7, min_std=1e-8):
+        ys_stat_hash = tensor_hash(self.ys)
+
+        # If the data does not match what we had before, recalculate the statistics
+        if ys_stat_hash != self._ys_stat_hash:
+            self._ys_stat_hash = ys_stat_hash
+
+            if self.ys.shape[0] > 0:
+                mean, var = tf.nn.moments(self.ys, axes=[0], keepdims=True)
+            else:
+                mean, var = tf.cast(0., tf.float64), tf.cast(1., tf.float64)
+
+            self._ys_mean = mean
+            self._ys_std = tf.maximum(tf.sqrt(var + eps), min_std)
+
+        return self._ys_mean, self._ys_std
+
+    @property
+    def xs_standardized(self):
+        mean, std = self.xs_mean_and_std
+        return (self.xs - mean) / std
+
+    @property
+    def ys_standardized(self):
+        mean, std = self.ys_mean_and_std
+        return (self.ys - mean) / std
+
+    def standardize_predictive_input(self, xs):
+        """
+        Standardizes the new input with the statistics of the training inputs
+        :param xs:
+        :return:
+        """
+        mean, std = self.xs_mean_and_std
+
+        return (xs - mean) / std
+
+    def standardize_predictive_output(self, ys):
+        """
+        Standardizes the new output with the statistics of the training outputs
+        :param ys:
+        :return:
+        """
+        mean, std = self.ys_mean_and_std
+
+        return (ys - mean) / std
+
+    def unstandardize_predictive_output(self, ys):
+        """
+        Back-transform a standardized output with the statistics of the training outputs
+        :param ys:
+        :return:
+        """
+        mean, std = self.ys_mean_and_std
+
+        return ys * std + mean
 
     def copy(self):
         """
@@ -120,15 +199,11 @@ class GaussianProcess(tf.Module):
                              signal_amplitude=self.signal_amplitude,
                              length_scales=self.length_scales,
                              noise_amplitude=self.noise_amplitude,
-                             jitter=self.jitter_amplitude,
-                             verbose=self.verbose)
+                             jitter=self.jitter_amplitude)
 
         # Copy data
         gp.xs = self.xs
         gp.ys = self.ys
-
-        gp.xs_forward_transform, gp.xs_backward_transform = self._create_transforms(gp.xs)
-        gp.ys_forward_transform, gp.ys_backward_transform = self._create_transforms(gp.ys)
 
         return gp
 
@@ -161,58 +236,42 @@ class GaussianProcess(tf.Module):
         gp.xs = xs
         gp.ys = ys
 
-        # Calculate forward and backward transforms
-        gp.xs_forward_transform, gp.xs_backward_transform = self._create_transforms(xs)
-        gp.ys_forward_transform, gp.ys_backward_transform = self._create_transforms(ys)
-
         return gp
 
     def log_pdf(self,
                 xs,
                 ys,
-                normalize_with_input=False,
-                normalize_with_training_data=False,
-                latent=False,
-                with_jitter=True):
+                predictive=False,
+                log_normal=False):
 
-        if normalize_with_input and normalize_with_training_data:
-            raise CoreError("Data in log_pdf can only be normalized with one scheme only (both were specified True)!")
-
-        if normalize_with_input:
-            xs_forward, _ = self._create_transforms(xs)
-            ys_forward, _ = self._create_transforms(ys)
-
-        elif normalize_with_training_data:
-            xs_forward, _ = self._create_transforms(self.xs)
-            ys_forward, _ = self._create_transforms(self.ys)
+        if predictive:
+            xs = self.standardize_predictive_input(xs)
+            ys = self.standardize_predictive_output(ys)
 
         else:
-            xs_forward = lambda x: x
-            ys_forward = lambda y: y
-
-        xs = xs_forward(xs)
-        ys = ys_forward(ys)
-
-        # print("using xs ys")
-        # print(xs, ys)
+            xs = standardize(xs)
+            ys = standardize(ys)
 
         gp = self.signal
 
-        if not latent:
-            gp = gp + self.noise
-
-        if with_jitter:
-            gp = gp + self.jitter
+        if not predictive:
+            gp = gp + self.noise + self.jitter
 
         # Condition on the training data
-        if self.xs.shape[0] > 0:
-            gp = gp | (xs_forward(self.xs), ys_forward(self.ys))
+        else:
+            if self.xs.shape[0] > 0:
+                gp = gp | (self.xs_standardized, self.ys_standardized)
 
-        return gp(xs).logpdf(ys)
+        log_pdf = gp(xs).logpdf(ys)
+
+        if log_normal:
+            log_pdf = log_pdf - tf.reduce_sum(ys)
+
+        return log_pdf
 
     def sample(self, xs, num=1, latent=False):
 
-        xs = self.xs_forward_transform(xs)
+        xs = self.standardize_predictive_input(xs)
 
         if latent:
             sample = self.signal(xs).sample(num=num)
@@ -221,7 +280,7 @@ class GaussianProcess(tf.Module):
             sample = (self.signal + self.noise)(xs).sample(num=num)
 
         sample = tf.reshape(sample, (-1, 1))
-        sample = self.ys_backward_transform(sample)
+        sample = self.unstandardize_predictive_output(sample)
         sample = tf.reshape(sample, (-1, num))
 
         return sample
@@ -234,7 +293,7 @@ class GaussianProcess(tf.Module):
         :return: Tensor of predictions given by the model
         """
 
-        xs = self.xs_forward_transform(xs)
+        xs = self.standardize_predictive_input(xs)
 
         gp = self.signal
 
@@ -244,59 +303,19 @@ class GaussianProcess(tf.Module):
         if with_jitter:
             gp = gp + self.jitter
 
-        gp = gp | (self.xs_forward_transform(self.xs), self.ys_forward_transform(self.ys))
+        gp = gp | (self.xs_standardized, self.ys_standardized)
 
         # dense(X) is a no-op if X is a tensorflow op, or it is X.mat if it is a stheno.Dense
         prediction = dense(gp.mean(xs))
         pred_var = dense(gp.kernel.elwise(xs))
 
         prediction = tf.reshape(prediction, (-1, 1))
-        prediction = self.ys_backward_transform(prediction)
+        prediction = self.unstandardize_predictive_output(prediction)
 
         pred_var = tf.reshape(pred_var, (-1, 1))
-        pred_var = self.ys_backward_transform(pred_var, var=True)
+        pred_var = pred_var * (self.ys_mean_and_std[1] ** 2)
 
         return prediction, pred_var
-
-    def normalize_with_training_data(self, data, output=False):
-
-        # Create the normalizing transforms
-        if output:
-            forward_transform, _ = self._create_transforms(self.ys)
-        else:
-            forward_transform, _ = self._create_transforms(self.xs)
-
-        return forward_transform(data)
-
-    @staticmethod
-    def _create_transforms(input, min_std=1e-6):
-        """
-
-        :param input: rank-2 tensor with rows of inputs
-        :param min_std:
-        :return:
-        """
-
-        if input.shape[0] == 0:
-            return lambda x, var=False: x, lambda x, var=False: x
-
-        # Calculate data statistics
-        mean, var = tf.nn.moments(input, axes=[0], keepdims=True)
-        std = tf.maximum(tf.sqrt(var), min_std)
-
-        def forward(x, var=False):
-            if var:
-                return x / (std**2)
-            else:
-                return (x - mean) / std
-
-        def backward(x, var=False):
-            if var:
-                return x * (std**2)
-            else:
-                return (x * std) + mean
-
-        return forward, backward
 
 
 class DiscreteGaussianProcess(GaussianProcess):
@@ -320,30 +339,3 @@ class DiscreteGaussianProcess(GaussianProcess):
                          verbose=verbose,
                          **kwargs)
 
-    @staticmethod
-    def _create_transforms(input, min_std=1e-6, input_normalizable=False):
-        if input.shape[0] == 0:
-            return lambda x, var=False: x, lambda x, var=False: x
-
-        # Calculate data statistics
-        mean, var = tf.nn.moments(input, axes=[0], keepdims=True)
-        std = tf.maximum(tf.sqrt(var), min_std)
-
-        if input_normalizable:
-            def forward(x, var=False):
-                if var:
-                    return x / (std**2)
-                else:
-                    return (x - mean) / std
-
-            def backward(x, var=False):
-                if var:
-                    return x * (std ** 2)
-                else:
-                    return (x * std) + mean
-
-        else:
-            forward = lambda x, var=False: x
-            backward = lambda x, var=False: x
-
-        return forward, backward

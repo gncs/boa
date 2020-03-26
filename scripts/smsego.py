@@ -66,7 +66,7 @@ def manual_optimization(x_train, y_train):
 
     # Optimize the hyperparameters
     model = model.condition_on(x_train, y_train)
-    model.fit_to_conditioning_data(optimizer_restarts=5)
+    model.fit(optimizer_restarts=5)
 
     # Set up the acquisition function
     acq = SMSEGO(gain=1., epsilon=0.1, reference=[2])
@@ -110,7 +110,7 @@ def manual_optimization(x_train, y_train):
 
         model = model.condition_on(inp.reshape([-1, 1]), outp)
 
-        model.fit_to_conditioning_data(optimizer_restarts=3)
+        model.fit(optimizer_restarts=3)
 
 
 def automated_optimization(x_train, y_train):
@@ -143,7 +143,7 @@ def automated_optimization(x_train, y_train):
     # Set up GP model and train it
     model = FullyFactorizedGPModel(kernel='rbf', input_dim=1, output_dim=1, verbose=False)
     model = model.condition_on(x_train, y_train)
-    model.fit_to_conditioning_data(optimizer_restarts=3)
+    model.fit(optimizer_restarts=3)
 
     # Setup the acquisition fn
     acq = SMSEGO(gain=1, epsilon=0.1, reference=[2])
@@ -157,6 +157,10 @@ def automated_optimization(x_train, y_train):
                                         xs=x_train,
                                         ys=y_train,
                                         candidate_xs=x_cont,
+                                        initialization='l2_median',
+                                        iters=200,
+                                        fit_joint=False,
+                                        model_optimizer='l-bfgs-b',
                                         optimizer_restarts=3)
 
     model = model.condition_on(data_x, data_y, keep_previous=False)

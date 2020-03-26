@@ -9,4 +9,7 @@ matplotlib
 seaborn
 pandas
 jupyter
+pytest
+pytest-cov
+coveralls
 

@@ -6,7 +6,7 @@ import numpy as np
 
 from boa.acquisition.abstract import AbstractAcquisition
 from boa.optimization.data import FileHandler, Data
-from boa.models.abstract_model import AbstractModel
+from boa.models.multi_output_gp_regression_model import MultiOutputGPRegressionModel
 from boa.objective.abstract import AbstractObjective
 
 
@@ -27,8 +27,9 @@ class Optimizer:
         self.verbose = verbose
         self.create_checkpoints = checkpoints
 
-    def optimize(self, f: AbstractObjective, model: AbstractModel, acq_fun: AbstractAcquisition, xs: np.array,
-                 ys: np.array, candidate_xs: np.array, optimizer_restarts: int) -> Tuple[np.ndarray, np.ndarray]:
+    def optimize(self, f: AbstractObjective, model: MultiOutputGPRegressionModel, acq_fun: AbstractAcquisition, xs: np.array,
+                 ys: np.array, candidate_xs: np.array, optimizer_restarts: int, initialization: str, iters: int,
+                 fit_joint: bool, model_optimizer: str) -> Tuple[np.ndarray, np.ndarray]:
 
         xs = xs.copy()
         ys = ys.copy()
@@ -78,7 +79,11 @@ class Optimizer:
                 model = model.condition_on(i.reshape((1, -1)), o.reshape((1, -1)))
 
             try:
-                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts)
+                model.fit(optimizer_restarts=optimizer_restarts,
+                          optimizer=model_optimizer,
+                          initialization=initialization,
+                          iters=iters,
+                          fit_joint=fit_joint)
             except Exception as e:
                 print_message('Error: ' + str(e))
                 if not self.strict:

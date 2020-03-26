@@ -1,9 +1,6 @@
-import logging
-import argparse
 import json
 import time
 import os
-from typing import Sequence
 
 import numpy as np
 
@@ -11,10 +8,11 @@ from sklearn.model_selection import train_test_split
 
 from boa.models.fully_factorized_gp import FullyFactorizedGPModel
 from boa.models.gpar import GPARModel
+from boa.models.random import RandomModel
 from boa.models.matrix_factorized_gpar import MatrixFactorizedGPARModel
 from boa.models.gpar_perm import PermutedGPARModel
 
-from boa.core import GaussianProcess, transform_df, back_transform
+from boa.core import transform_df, back_transform
 from boa import ROOT_DIR
 
 import tensorflow as tf
@@ -56,22 +54,21 @@ def experiment_config(dataset):
     optimizer = "l-bfgs-b"
 
     # Initialization heuristic for the hyperparameters of the models.
-    initialization = "median"
+    initialization = "l2_median"
 
     # Number of training iterations to allow either for L-BFGS-B or Adam.
     iters = 1000
 
     matrix_factorized = False
 
-    if model == "ff-gp":
+    fit_joint = False
+
+    if model in ["ff-gp", "gpar", "random"]:
         log_dir = f"{log_dir}/{model}/{current_time}/"
         log_path = f"{log_dir}/{model}_experiments.json"
 
-    elif model == "gpar":
-        log_dir = f"{log_dir}/{model}/{current_time}/"
-        log_path = f"{log_dir}/{model}_experiments.json"
-
-    elif model == "mf_gpar":
+    elif model == "mf-gpar":
+        fit_joint = True
         # Effective dimension of the factorization.
         latent_dim = 5
         matrix_factorized = True
@@ -94,12 +91,14 @@ def run_experiment(model,
 
                    dataset,
                    optimizer,
+                   initialization,
                    num_optimizer_restarts,
                    use_input_transforms,
                    use_output_transforms,
                    log_dir,
                    log_path,
                    save_dir,
+                   fit_joint,
                    matrix_factorized,
                    iters: int,
                    rounds,
@@ -136,6 +135,8 @@ def run_experiment(model,
 
             train, test = train_test_split(data, train_size=size, test_size=200, random_state=_seed + index)
 
+            ys_transforms = None
+
             # Transform inputs
             if use_input_transforms:
                 train = transform_df(train, dataset["input_transforms"])
@@ -145,16 +146,25 @@ def run_experiment(model,
             if use_output_transforms:
                 train = transform_df(train, dataset["output_transforms"])
 
+                ys_transforms = [(dataset["output_transforms"][k]
+                                  if k in dataset["output_transforms"]
+                                  else None)
+                                 for k in dataset["output_labels"]]
+                print(ys_transforms)
+
             start_time = time.time()
             try:
                 model = model.condition_on(train[dataset["input_labels"]].values,
                                            train[dataset["output_labels"]].values[:, :],
                                            keep_previous=False)
-                model.fit_to_conditioning_data(optimizer_restarts=num_optimizer_restarts,
-                                               optimizer=optimizer,
-                                               trace=True,
-                                               err_level="raise",
-                                               iters=iters)
+                model.fit(ys_transforms=ys_transforms,
+                          fit_joint=fit_joint,
+                          length_scale_init_mode=initialization,
+                          optimizer_restarts=num_optimizer_restarts,
+                          optimizer=optimizer,
+                          trace=True,
+                          err_level="raise",
+                          iters=iters)
             except Exception as e:
                 _log.exception("Training failed: {}".format(str(e)))
                 raise e
@@ -162,7 +172,7 @@ def run_experiment(model,
             experiment['train_time'] = time.time() - start_time
 
             save_path = f"{save_dir}/size_{size}/model_{index}/model"
-            model.save(save_path)
+            model.save(save_path, )
             _log.info(f"Saved model to {save_path}!")
 
             start_time = time.time()
@@ -205,17 +215,22 @@ def run_experiment(model,
 
 
 @ex.automain
-def main(dataset, model, kernel, initialization, verbose, latent_dim=None):
+def main(dataset, model, kernel, verbose, latent_dim=None):
     data = load_dataset()
 
-    if model == 'ff-gp':
+    if model in ['random', 'ff-gp']:
         df = prepare_ff_gp_data(data)
 
-        surrogate_model = FullyFactorizedGPModel(kernel=kernel,
-                                                 input_dim=len(dataset["input_labels"]),
-                                                 output_dim=len(dataset["output_labels"]),
-                                                 initialization_heuristic=initialization,
-                                                 verbose=verbose)
+        if model == 'ff-gp':
+            surrogate_model = FullyFactorizedGPModel(kernel=kernel,
+                                                     input_dim=len(dataset["input_labels"]),
+                                                     output_dim=len(dataset["output_labels"]),
+                                                     verbose=verbose)
+        elif model == "random":
+            surrogate_model = RandomModel(input_dim=len(dataset["input_labels"]),
+                                          output_dim=len(dataset["output_labels"]),
+                                          seed=42,
+                                          num_samples=50)
 
     elif model in ["gpar", "mf-gpar", "p-gpar"]:
         df = prepare_gpar_data(data)
@@ -224,7 +239,6 @@ def main(dataset, model, kernel, initialization, verbose, latent_dim=None):
             surrogate_model = GPARModel(kernel=kernel,
                                         input_dim=len(dataset["input_labels"]),
                                         output_dim=len(dataset["output_labels"]),
-                                        initialization_heuristic=initialization,
                                         verbose=verbose)
 
         elif model == 'mf-gpar':
@@ -232,14 +246,12 @@ def main(dataset, model, kernel, initialization, verbose, latent_dim=None):
                                                         input_dim=len(dataset["input_labels"]),
                                                         output_dim=len(dataset["output_labels"]),
                                                         latent_dim=latent_dim,
-                                                        initialization_heuristic=initialization,
                                                         verbose=verbose)
 
         elif model == 'p-gpar':
             surrogate_model = PermutedGPARModel(kernel=kernel,
                                                 input_dim=len(dataset["input_labels"]),
                                                 output_dim=len(dataset["output_labels"]),
-                                                initialization_heuristic=initialization,
                                                 verbose=verbose)
 
     results = run_experiment(model=surrogate_model,

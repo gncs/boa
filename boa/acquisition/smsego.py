@@ -2,7 +2,7 @@ from typing import List, Tuple, Optional
 
 import numpy as np
 
-from boa.models.abstract_model import AbstractModel
+from boa.models.multi_output_gp_regression_model import MultiOutputGPRegressionModel
 from .abstract import AbstractAcquisition
 from .util import calculate_hypervolume, get_frontier
 
@@ -30,7 +30,7 @@ class SMSEGO(AbstractAcquisition):
             return ys[:, self.output_slice[0]:self.output_slice[1]]
         return ys
 
-    def evaluate(self, model: AbstractModel, xs: np.ndarray, ys: np.ndarray, candidate_xs: np.ndarray) -> np.ndarray:
+    def evaluate(self, model: MultiOutputGPRegressionModel, xs: np.ndarray, ys: np.ndarray, candidate_xs: np.ndarray) -> np.ndarray:
         ys = self.slice_output(ys)
 
         # Model predictions for candidates

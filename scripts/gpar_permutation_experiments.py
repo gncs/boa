@@ -1,11 +1,7 @@
-import logging
-import argparse
 import json
 import time
 import os
 from typing import Sequence
-
-from itertools import permutations
 
 import numpy as np
 
@@ -251,7 +247,7 @@ def run_random_experiment(model,
             start_time = time.time()
             try:
                 model = model.condition_on(train[inputs].values, train[outputs].values[:, perm], keep_previous=False)
-                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts, optimizer=optimizer, trace=True)
+                model.fit(optimizer_restarts=optimizer_restarts, optimizer=optimizer, trace=True)
             except Exception as e:
                 _log.exception("Training failed: {}".format(str(e)))
                 raise e
@@ -301,9 +297,9 @@ def run_random_experiment(model,
             model = model.condition_on(train_and_validate[inputs].values,
                                        train_and_validate[outputs].values[:, best_perm],
                                        keep_previous=False)
-            model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts,
-                                           optimizer=optimizer,
-                                           trace=True)
+            model.fit(optimizer_restarts=optimizer_restarts,
+                      optimizer=optimizer,
+                      trace=True)
         except Exception as e:
             _log.exception("Training failed: {}".format(str(e)))
             raise e
@@ -356,7 +352,6 @@ def run_greedy_experiment(model,
                           rounds,
                           _seed,
                           _log):
-
     # Make sure the directory exists
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -415,7 +410,7 @@ def run_greedy_experiment(model,
         experiment['train_time'] = time.time() - start_time
 
         save_path = f"{save_dir}/size_{train_size}/model_{index}/model"
-        model.save(save_path)
+        model.save(save_path, )
         _log.info(f"Saved model to {save_path}!")
 
         start_time = time.time()
@@ -467,7 +462,6 @@ def run_hierarchical_bayesopt_experiment(model,
                                          xi,
                                          _seed,
                                          _log):
-
     # Make sure the directory exists
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -538,7 +532,7 @@ def run_hierarchical_bayesopt_experiment(model,
             warmup_stat = {"perm": perm}
 
             _log.info(f"Warmup training round: {index + 1}/{rounds} for training set size {train_size}, "
-                        f"permutation #{sample_number + 1} out of {num_warmup_samples}: {perm}")
+                      f"permutation #{sample_number + 1} out of {num_warmup_samples}: {perm}")
 
             if matrix_factorized:
                 warmup_stat["latent_size"] = model.latent_dim
@@ -549,7 +543,7 @@ def run_hierarchical_bayesopt_experiment(model,
             start_time = time.time()
             try:
                 model = model.condition_on(train[inputs].values, train[outputs].values[:, perm], keep_previous=False)
-                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts, optimizer=optimizer, trace=True)
+                model.fit(optimizer_restarts=optimizer_restarts, optimizer=optimizer, trace=True)
             except Exception as e:
                 _log.exception("Training failed: {}".format(str(e)))
                 raise e
@@ -615,11 +609,10 @@ def run_hierarchical_bayesopt_experiment(model,
                                        train_log_probs)
 
         try:
-            perm_gp.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts,
-                                             optimizer='l-bfgs-b',
-                                             trace=True,
-                                             err_level='raise',
-                                             median_heuristic_only=median_heuristic_only)
+            perm_gp.fit(optimizer_restarts=optimizer_restarts,
+                        optimizer='l-bfgs-b',
+                        trace=True,
+                        err_level='raise')
 
         except Exception as e:
             _log.exception("Training the surrogate model failed: {}".format(str(e)))
@@ -693,7 +686,7 @@ def run_hierarchical_bayesopt_experiment(model,
             bayesopt_stat = {"perm": extended_next_evaluation_point}
 
             _log.info(f"BayesOpt training round: {index + 1}/{rounds} for training set size {train_size}, "
-                        f"permutation #{sample_number + 1} out of {num_bayesopt_steps}: {next_evaluation_point}")
+                      f"permutation #{sample_number + 1} out of {num_bayesopt_steps}: {next_evaluation_point}")
 
             if matrix_factorized:
                 bayesopt_stat["latent_size"] = model.latent_dim
@@ -706,9 +699,9 @@ def run_hierarchical_bayesopt_experiment(model,
                 model = model.condition_on(train[inputs].values,
                                            train[outputs].values[:, extended_next_evaluation_point],
                                            keep_previous=False)
-                model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts,
-                                               optimizer=optimizer,
-                                               trace=True)
+                model.fit(optimizer_restarts=optimizer_restarts,
+                          optimizer=optimizer,
+                          trace=True)
             except Exception as e:
                 _log.exception("Training failed: {}".format(str(e)))
                 raise e
@@ -751,10 +744,10 @@ def run_hierarchical_bayesopt_experiment(model,
             # -----------------------------------------------------------------------------
             _log.info("Retraining GP with newly observed data!")
             perm_gp = perm_gp.condition_on(observed_perms, observed_log_probs, keep_previous=False)
-            perm_gp.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts,
-                                             optimizer='l-bfgs-b',
-                                             trace=True,
-                                             median_heuristic_only=median_heuristic_only)
+            perm_gp.fit(optimizer_restarts=optimizer_restarts,
+                        optimizer='l-bfgs-b',
+                        trace=True,
+                        median_heuristic_only=median_heuristic_only)
 
         experiment["bayesopt_stats"] = bayesopt_stats
 
@@ -775,9 +768,9 @@ def run_hierarchical_bayesopt_experiment(model,
             model = model.condition_on(train_and_validate[inputs].values,
                                        train_and_validate[outputs].values[:, best_perm],
                                        keep_previous=False)
-            model.fit_to_conditioning_data(optimizer_restarts=optimizer_restarts,
-                                           optimizer=optimizer,
-                                           trace=True)
+            model.fit(optimizer_restarts=optimizer_restarts,
+                      optimizer=optimizer,
+                      trace=True)
         except Exception as e:
             _log.exception("Training failed: {}".format(str(e)))
             raise e
@@ -832,26 +825,26 @@ def main(model, kernel, initialization, verbose, search_mode, latent_dim=None):
                                                     verbose=verbose)
 
     elif model == 'p-gpar':
-        surrogate_mmodel = PermutedGPARModel(kernel=kernel,
-                                             input_dim=len(input_labels),
-                                             output_dim=len(output_labels),
-                                             initialization_heuristic=initialization,
-                                             verbose=verbose)
+        surrogate_model = PermutedGPARModel(kernel=kernel,
+                                            input_dim=len(input_labels),
+                                            output_dim=len(output_labels),
+                                            initialization_heuristic=initialization,
+                                            verbose=verbose)
 
     if search_mode == "random_search":
-        results = run_random_experiment(model=model,
+        results = run_random_experiment(model=surrogate_model,
                                         data=df,
                                         inputs=input_labels,
                                         outputs=output_labels)
 
     elif search_mode == "greedy_search":
-        run_greedy_experiment(model=model,
+        run_greedy_experiment(model=surrogate_model,
                               data=df,
                               inputs=input_labels,
                               outputs=output_labels)
 
     elif search_mode == "hbo":
-        run_hierarchical_bayesopt_experiment(model=model,
+        run_hierarchical_bayesopt_experiment(model=surrogate_model,
                                              data=df,
                                              inputs=input_labels,
                                              outputs=output_labels)

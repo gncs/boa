@@ -2,7 +2,7 @@ import logging
 import json
 import tensorflow as tf
 
-from .abstract_model import AbstractModel
+from .multi_output_gp_regression_model import MultiOutputGPRegressionModel
 
 from boa.core.utils import setup_logger
 from boa import ROOT_DIR
@@ -10,7 +10,8 @@ from boa import ROOT_DIR
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/random_model.log")
 
 
-class RandomModel(AbstractModel):
+class RandomModel(MultiOutputGPRegressionModel):
+
     def __init__(self, input_dim, output_dim, seed, num_samples, name="random_model", **kwargs):
 
         super(RandomModel, self).__init__(kernel="rbf", input_dim=input_dim, output_dim=output_dim, name=name, **kwargs)
@@ -20,11 +21,26 @@ class RandomModel(AbstractModel):
 
         self.num_samples = num_samples
 
+    def has_explicit_length_scales(self):
+        return False
+
+    def gp_input(self, index, xs, ys):
+        return xs
+
+    def gp_output(self, index, ys):
+        return ys[:, index:index + 1]
+
+    def gp_predictive_input(self, xs, means):
+        return xs
+
+    def gp_input_dim(self, index):
+        return self.input_dim
+
     def fit(self, **kwargs):
         if self.verbose:
             logger.info("Random model needs no fitting!")
 
-    def predict(self, xs, numpy=False):
+    def predict(self, xs, numpy=False, **kwargs):
 
         xs = self._validate_and_convert(xs, output=False)
 
@@ -57,6 +73,9 @@ class RandomModel(AbstractModel):
 
         return pred_mean, pred_var
 
+    def log_prob(self, xs, ys, use_conditioning_data=True, numpy=False):
+        pass
+
     def get_config(self):
 
         return {
@@ -69,7 +88,7 @@ class RandomModel(AbstractModel):
         }
 
     @staticmethod
-    def from_config(config):
+    def from_config(config, **kwargs):
 
         return RandomModel(**config)
 
@@ -82,8 +101,10 @@ class RandomModel(AbstractModel):
         with open(save_path + ".json", "r") as config_file:
             config = json.load(config_file)
 
-        model = RandomModel.from_config(config)
+        model = RandomModel.from_config(config, )
 
         model.load_weights(save_path)
 
         return model
+
+

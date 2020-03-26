@@ -11,7 +11,7 @@ import numpy as np
 
 from boa.core.gp import DiscreteGaussianProcess
 from boa.core.utils import setup_logger
-from .abstract_model import AbstractModel
+from .multi_output_gp_regression_model import MultiOutputGPRegressionModel
 
 from boa.core.kernel import perm_pointwise_distance
 from boa import ROOT_DIR
@@ -23,7 +23,7 @@ __all__ = ["PermutationGPModel"]
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/permutation_gp.log")
 
 
-class PermutationGPModel(AbstractModel):
+class PermutationGPModel(MultiOutputGPRegressionModel):
 
     def __init__(self,
                  kernel: str,
@@ -46,7 +46,7 @@ class PermutationGPModel(AbstractModel):
         self.signal_amplitude = tf.Variable(1., dtype=tf.float64, name="signal_amplitude")
         self.noise_amplitude = tf.Variable(1e-1, dtype=tf.float64, name="noise_amplitude")
 
-    def initialize_hyperparameters(self, init_minval=0.1, init_maxval=1.):
+    def create_hyperparameter_initializers(self, init_minval=0.1, init_maxval=1.):
         length_scale = BoundedVariable(tf.random.uniform(shape=(1,),
                                                          minval=init_minval,
                                                          maxval=init_maxval,
@@ -114,7 +114,7 @@ class PermutationGPModel(AbstractModel):
             j = j + 1
 
             # Reinitialize hyperparameters
-            hyperparams = self.initialize_hyperparameters()
+            hyperparams = self.create_hyperparameter_initializers()
 
             length_scale, signal_amplitude, noise_amplitude = hyperparams
 
@@ -264,7 +264,7 @@ class PermutationGPModel(AbstractModel):
         with open(save_path + ".json", "r") as config_file:
             config = json.load(config_file)
 
-        model = PermutationGPModel.from_config(config)
+        model = PermutationGPModel.from_config(config, )
 
         model.load_weights(save_path)
         model.create_gps()
@@ -280,7 +280,7 @@ class PermutationGPModel(AbstractModel):
         }
 
     @staticmethod
-    def from_config(config):
+    def from_config(config, **kwargs):
         return PermutationGPModel(**config)
 
     def _validate_and_convert(self, xs, output=False):
