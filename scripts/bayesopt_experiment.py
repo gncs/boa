@@ -8,6 +8,8 @@ import tensorflow as tf
 
 from boa.objective.abstract import AbstractObjective
 
+from boa.core import transform_df
+
 from boa.models.random import RandomModel
 from boa.models.fully_factorized_gp import FullyFactorizedGPModel
 from boa.models.gpar import GPARModel
@@ -49,6 +51,9 @@ def bayesopt_config(dataset):
 
     # GP kernel to use.
     kernel = "matern52"
+
+    use_input_transforms = True
+    use_output_transforms = False
 
     # Number of random initializations to try in a single training cycle.
     num_optimizer_restarts = 5
@@ -92,12 +97,23 @@ tf.config.experimental.set_visible_devices([], 'GPU')
 
 
 class Objective(AbstractObjective):
-    def __init__(self, df: pd.DataFrame, input_labels: List[str], output_labels: List[str], *args, **kwargs):
+    def __init__(self,
+                 df: pd.DataFrame,
+                 input_labels: List[str],
+                 output_labels: List[str],
+                 input_transforms: List[str] = None,
+                 *args,
+                 **kwargs):
         super().__init__(*args, **kwargs)
 
         self.data = df
         self.input_labels = input_labels
         self.output_labels = output_labels
+
+        self.input_transforms = input_transforms
+
+        if self.input_transforms is not None:
+            self.data = transform_df(self.data, self.input_transforms)
 
     def get_input_labels(self) -> List[str]:
         """Return input labels as a list of length D_input"""
@@ -182,6 +198,7 @@ def main(dataset,
          fit_joint,
          max_num_iterations,
          num_optimizer_restarts,
+         use_input_transforms,
          initialization,
          batch_size,
          verbose,
@@ -240,7 +257,10 @@ def main(dataset,
 
     # Run the optimization
     for seed in range(5):
-        results = optimize(objective=Objective(df=df, input_labels=input_labels, output_labels=output_labels),
+        results = optimize(objective=Objective(df=df,
+                                               input_labels=input_labels,
+                                               output_labels=output_labels,
+                                               input_transforms=dataset["input_transforms"] if use_input_transforms else None),
                            model=surrogate_model,
                            model_optimizer=optimizer,
                            model_optimizer_restarts=num_optimizer_restarts,

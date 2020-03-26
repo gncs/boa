@@ -339,8 +339,11 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
             ls_upper_bound = tf.ones(shape=(gp_input_dim,), dtype=self.dtype)
             ls_upper_bound = ls_upper_bound * marginal_percentiles[-1, :] * 64.
 
+
         else:
             raise NotImplementedError
+
+        ls_init = tf.clip_by_value(ls_init, length_scale_base_lower_bound, length_scale_base_upper_bound)
 
         # Create bounded variables
         length_scales = BoundedVariable(ls_init,
@@ -817,7 +820,8 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                                  predictive=predictive)
 
         if average:
-            log_prob = log_prob / tf.cast(xs.shape[0], xs.dtype)
+            num_datapoints = xs.value().shape[0] if isinstance(xs, tf.Variable) else xs.shape[0]
+            log_prob = log_prob / tf.cast(num_datapoints, xs.dtype)
 
         return log_prob
 

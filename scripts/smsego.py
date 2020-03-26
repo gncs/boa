@@ -157,6 +157,10 @@ def automated_optimization(x_train, y_train):
                                         xs=x_train,
                                         ys=y_train,
                                         candidate_xs=x_cont,
+                                        initialization='l2_median',
+                                        iters=200,
+                                        fit_joint=False,
+                                        model_optimizer='l-bfgs-b',
                                         optimizer_restarts=3)
 
     model = model.condition_on(data_x, data_y, keep_previous=False)
