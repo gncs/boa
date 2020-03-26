@@ -825,26 +825,26 @@ def main(model, kernel, initialization, verbose, search_mode, latent_dim=None):
                                                     verbose=verbose)
 
     elif model == 'p-gpar':
-        surrogate_mmodel = PermutedGPARModel(kernel=kernel,
-                                             input_dim=len(input_labels),
-                                             output_dim=len(output_labels),
-                                             initialization_heuristic=initialization,
-                                             verbose=verbose)
+        surrogate_model = PermutedGPARModel(kernel=kernel,
+                                            input_dim=len(input_labels),
+                                            output_dim=len(output_labels),
+                                            initialization_heuristic=initialization,
+                                            verbose=verbose)
 
     if search_mode == "random_search":
-        results = run_random_experiment(model=model,
+        results = run_random_experiment(model=surrogate_model,
                                         data=df,
                                         inputs=input_labels,
                                         outputs=output_labels)
 
     elif search_mode == "greedy_search":
-        run_greedy_experiment(model=model,
+        run_greedy_experiment(model=surrogate_model,
                               data=df,
                               inputs=input_labels,
                               outputs=output_labels)
 
     elif search_mode == "hbo":
-        run_hierarchical_bayesopt_experiment(model=model,
+        run_hierarchical_bayesopt_experiment(model=surrogate_model,
                                              data=df,
                                              inputs=input_labels,
                                              outputs=output_labels)

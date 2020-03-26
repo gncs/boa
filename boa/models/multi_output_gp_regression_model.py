@@ -432,7 +432,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
             optimizer_restarts=1,
             length_scale_init_mode="l2_median",
             iters=1000,
-            rate=1e-2,
+            rate=1e-1,
             tolerance=1e-5,
             trace=False,
             debugging_trace=False,
@@ -523,7 +523,8 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                     negative_gp_log_prob = lambda: -self.gp_log_prob(xs=self.xs,
                                                                      ys=self.ys,
                                                                      index=i,
-                                                                     predictive=False)
+                                                                     predictive=False,
+                                                                     average=True)
                     try:
                         if optimizer == "l-bfgs-b":
                             # Perform L-BFGS-B optimization
@@ -652,7 +653,8 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
                 negative_model_log_likelihood = lambda: -self.log_prob(xs=self.xs,
                                                                        ys=self.ys,
-                                                                       predictive=False)
+                                                                       predictive=False,
+                                                                       average=True)
                 try:
                     if optimizer == "l-bfgs-b":
                         # Perform L-BFGS-B optimization
@@ -677,6 +679,9 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                                     tape.watch(reparams)
 
                                     loss = negative_model_log_likelihood()
+
+                                    # Average the NLL over the training data to keep learning rate consistent
+                                    loss = loss
 
                                 if tf.abs(prev_loss - loss) < tolerance:
                                     logger.info(f"Loss decreased less than {tolerance}, "
@@ -788,7 +793,8 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                     xs,
                     ys,
                     index,
-                    predictive=True):
+                    predictive=True,
+                    average=False):
 
         self.create_gp(index=index)
 
@@ -809,6 +815,9 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         log_prob = model.log_pdf(gp_input,
                                  gp_output,
                                  predictive=predictive)
+
+        if average:
+            log_prob = log_prob / tf.cast(xs.shape[0], xs.dtype)
 
         return log_prob
 
@@ -836,7 +845,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
         return means, variances
 
-    def log_prob(self, xs, ys, predictive=True, numpy=False):
+    def log_prob(self, xs, ys, predictive=True, numpy=False, average=False):
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -846,7 +855,8 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
             current_log_prob = self.gp_log_prob(xs,
                                                 ys,
                                                 index=i,
-                                                predictive=predictive)
+                                                predictive=predictive,
+                                                average=average)
 
             log_prob = log_prob + current_log_prob
 
