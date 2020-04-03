@@ -23,11 +23,20 @@ from boa.optimization.optimizer import Optimizer
 from boa import ROOT_DIR
 
 from sacred import Experiment
+from sacred.observers import MongoObserver
+from sacred.utils import apply_backspaces_and_linefeeds
+
 import datetime
 
 from dataset_config import prepare_ff_gp_data, prepare_gpar_data, load_dataset, dataset_ingredient
 
 ex = Experiment("bayesopt_experiment", ingredients=[dataset_ingredient])
+database_url = "127.0.0.1:27017"
+database_name = "boa_bayesopt_experiments"
+ex.captured_out_filter = apply_backspaces_and_linefeeds
+
+ex.observers.append(MongoObserver(url=database_url,
+                                  db_name=database_name))
 
 
 @ex.config
@@ -41,6 +50,7 @@ def bayesopt_config(dataset):
 
     # BayesOpt iterations
     max_num_iterations = 120
+    warmup_dataset_size = 25
     batch_size = 1
 
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -55,11 +65,29 @@ def bayesopt_config(dataset):
     use_input_transforms = True
     use_output_transforms = False
 
+    map_estimate = False
+
+    marginalize_hyperparameters = False
+
+    if marginalize_hyperparameters:
+        num_samples = 50
+        num_burnin_steps = 100
+
+        leapfrog_steps = 10
+        step_size = 0.03
+
+        mcmc_kwargs = {
+            "num_samples": num_samples,
+            "num_burnin_steps": num_burnin_steps,
+            "leapfrog_steps": leapfrog_steps,
+            "step_size": step_size,
+    }
+
     # Number of random initializations to try in a single training cycle.
-    num_optimizer_restarts = 5
+    model_optimizer_restarts = 3
 
     # Optimization algorithm to use when fitting the models' hyperparameters.
-    optimizer = "l-bfgs-b"
+    model_optimizer = "l-bfgs-b"
 
     # Initialization heuristic for the hyperparameters of the models.
     initialization = "l2_median"
@@ -89,10 +117,6 @@ def bayesopt_config(dataset):
         log_path = f"{log_dir}/{model}-{num_samples}/{current_time}/{{}}.json"
 
 
-AVAILABLE_OPTIMIZERS = ["l-bfgs-b", "adam"]
-
-AVAILABLE_INITIALIZATION = ["median", "random", "dim_median"]
-
 tf.config.experimental.set_visible_devices([], 'GPU')
 
 
@@ -101,7 +125,6 @@ class Objective(AbstractObjective):
                  df: pd.DataFrame,
                  input_labels: List[str],
                  output_labels: List[str],
-                 input_transforms: List[str] = None,
                  *args,
                  **kwargs):
         super().__init__(*args, **kwargs)
@@ -109,11 +132,6 @@ class Objective(AbstractObjective):
         self.data = df
         self.input_labels = input_labels
         self.output_labels = output_labels
-
-        self.input_transforms = input_transforms
-
-        if self.input_transforms is not None:
-            self.data = transform_df(self.data, self.input_transforms)
 
     def get_input_labels(self) -> List[str]:
         """Return input labels as a list of length D_input"""
@@ -133,11 +151,12 @@ class Objective(AbstractObjective):
         for k, v in zip(self.input_labels, value):
             mask = mask & (self.data[k].values == v)
 
-        assert (mask.sum() == 1)
-
+        if mask.sum() != 1:
+            raise Exception(f"sum was {mask.sum()}, value was {value}")
         return self.data.loc[mask, self.output_labels].values
 
 
+@ex.capture
 def optimize(objective,
              model,
              model_optimizer,
@@ -146,26 +165,33 @@ def optimize(objective,
              iters,
              fit_joint,
              optimizer,
+             warmup_dataset_size,
              acq,
              seed: int,
-             verbose) -> Data:
+             verbose,
+             map_estimate,
+             marginalize_hyperparameters,
+             mcmc_kwargs={}) -> Data:
     np.random.seed(seed)
     tf.random.set_seed(seed)
 
-    init_data_size = 10
-
     candidates = objective.get_candidates()
 
-    data = generate_data(objective=objective, size=init_data_size, seed=seed)
+    data = generate_data(objective=objective, size=warmup_dataset_size, seed=seed)
 
     model = model.condition_on(xs=data.input, ys=data.output)
 
-    model.fit(optimizer_restarts=model_optimizer_restarts,
-              optimizer=model_optimizer,
-              iters=iters,
-              fit_joint=fit_joint,
-              length_scale_init_mode=initialization,
-              trace=verbose)
+    if map_estimate or marginalize_hyperparameters:
+        model.initialize_hyperpriors_and_bijectors(length_scale_init_mode=initialization)
+
+    if not marginalize_hyperparameters:
+        model.fit(optimizer_restarts=model_optimizer_restarts,
+                  optimizer=model_optimizer,
+                  iters=iters,
+                  fit_joint=fit_joint,
+                  length_scale_init_mode=initialization,
+                  map_estimate=map_estimate,
+                  trace=verbose)
 
     xs, ys = optimizer.optimize(f=objective,
                                 model=model,
@@ -177,7 +203,10 @@ def optimize(objective,
                                 iters=iters,
                                 initialization=initialization,
                                 model_optimizer=model_optimizer,
-                                optimizer_restarts=3)
+                                optimizer_restarts=3,
+                                map_estimate=map_estimate,
+                                marginalize_hyperparameters=marginalize_hyperparameters,
+                                mcmc_kwargs=mcmc_kwargs)
 
     return Data(xs=xs, ys=ys, x_labels=objective.input_labels, y_labels=objective.output_labels)
 
@@ -191,15 +220,11 @@ def get_default_acq_config(df: pd.DataFrame, objective_labels) -> dict:
 @ex.automain
 def main(dataset,
 
+         rounds,
          model,
          kernel,
-         optimizer,
-         iters,
-         fit_joint,
          max_num_iterations,
-         num_optimizer_restarts,
          use_input_transforms,
-         initialization,
          batch_size,
          verbose,
          log_path,
@@ -254,22 +279,18 @@ def main(dataset,
                                                         output_dim=len(output_labels),
                                                         latent_dim=latent_dim,
                                                         verbose=verbose)
+    if use_input_transforms:
+        df = transform_df(df, dataset["input_transforms"])
 
     # Run the optimization
-    for seed in range(5):
+    for seed in range(rounds):
         results = optimize(objective=Objective(df=df,
                                                input_labels=input_labels,
-                                               output_labels=output_labels,
-                                               input_transforms=dataset["input_transforms"] if use_input_transforms else None),
+                                               output_labels=output_labels),
                            model=surrogate_model,
-                           model_optimizer=optimizer,
-                           model_optimizer_restarts=num_optimizer_restarts,
                            optimizer=bo_optimizer,
                            acq=smsego_acq,
-                           initialization=initialization,
                            seed=seed,
-                           iters=iters,
-                           fit_joint=fit_joint,
                            verbose=verbose)
 
         os.makedirs(os.path.dirname(log_path.format(seed)), exist_ok=True)

@@ -30,20 +30,28 @@ class SMSEGO(AbstractAcquisition):
             return ys[:, self.output_slice[0]:self.output_slice[1]]
         return ys
 
-    def evaluate(self, model: MultiOutputGPRegressionModel, xs: np.ndarray, ys: np.ndarray, candidate_xs: np.ndarray) -> np.ndarray:
+    def evaluate(self, model: MultiOutputGPRegressionModel,
+                 xs: np.ndarray,
+                 ys: np.ndarray,
+                 candidate_xs: np.ndarray,
+                 marginalize_hyperparameters: bool,
+                 mcmc_kwargs: dict = None) -> Tuple[np.ndarray, np.ndarray]:
         ys = self.slice_output(ys)
 
         # Model predictions for candidates
-        means, var = model.predict(candidate_xs, numpy=True)
+        pred_means, pred_var = model.predict(candidate_xs,
+                                   numpy=True,
+                                   marginalize_hyperparameters=marginalize_hyperparameters,
+                                   mcmc_kwargs=mcmc_kwargs)
 
-        means = self.slice_output(means)
-        var = self.slice_output(var)
+        means = self.slice_output(pred_means)
+        var = self.slice_output(pred_var)
 
         candidate_ys = means - self.gain * np.sqrt(np.maximum(var, self.NOISE))
 
         # Normalize so that objectives are treated on equal footing
         ys_mean = np.mean(ys, axis=0)
-        ys_std = np.mean(ys, axis=0)
+        ys_std = np.maximum(np.std(ys, axis=0), 1e-5)
 
         ys_normalized = (ys - ys_mean) / ys_std
         reference_normalized = (self.reference - ys_mean) / ys_std
@@ -77,4 +85,4 @@ class SMSEGO(AbstractAcquisition):
 
             values[i] = value
 
-        return values
+        return values, pred_means

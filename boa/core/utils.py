@@ -104,7 +104,7 @@ def standardize(x, min_std=1e-10):
     return (x - mean) / std
 
 
-def distance_matrix(xs, eps=1e-7):
+def distance_matrix(xs, eps=1e-12):
     """
     Calculate the pairwise distances between the rows of the input data-points and
     return the square matrix D_ij = || X_i - X_j ||
@@ -116,7 +116,9 @@ def distance_matrix(xs, eps=1e-7):
     which can be computed efficiently using some nice broadcasting.
     """
 
+    # print("unstandardized", xs)
     xs = standardize(xs)
+    # print("std", xs)
 
     # Calculate L2 norm of each row in the matrix
     norms = tf.reduce_sum(xs * xs, axis=1, keepdims=True)
@@ -139,12 +141,23 @@ def dim_distance_matrix(xs):
 def calculate_euclidean_distance_percentiles(xs, percents, eps=1e-4):
     euclidean_dist_mat = distance_matrix(xs)
 
+    # print("ED shape", euclidean_dist_mat.shape)
+    # print("ED", euclidean_dist_mat.numpy())
     # Remove very small entries
     positive_euclidean_dists = tf.gather_nd(euclidean_dist_mat, tf.where(euclidean_dist_mat > eps))
 
-    return tfp.stats.percentile(positive_euclidean_dists,
-                                percents,
-                                axis=0)
+    # print("PED shape", positive_euclidean_dists.shape)
+    # print("PED", positive_euclidean_dists.numpy())
+
+    try:
+        percentiles = tfp.stats.percentile(positive_euclidean_dists,
+                                    percents,
+                                    axis=0)
+    except Exception as e:
+        print(str(e))
+
+
+    return percentiles
 
 
 def calculate_per_dimension_distance_percentiles(xs, percents, eps=1e-4):

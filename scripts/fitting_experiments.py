@@ -19,11 +19,19 @@ import tensorflow as tf
 
 import datetime
 from sacred import Experiment
+from sacred.observers import MongoObserver
+from sacred.utils import apply_backspaces_and_linefeeds
 
 from dataset_config import dataset_ingredient, load_dataset
 from dataset_config import prepare_gpar_data, prepare_ff_gp_data, prepare_ff_gp_aux_data
 
 ex = Experiment("fitting_experiment", ingredients=[dataset_ingredient])
+database_url = "127.0.0.1:27017"
+database_name = "boa_fitting_experiments"
+ex.captured_out_filter = apply_backspaces_and_linefeeds
+
+ex.observers.append(MongoObserver(url=database_url,
+                                  db_name=database_name))
 
 
 @ex.config
@@ -34,6 +42,8 @@ def experiment_config(dataset):
 
     use_input_transforms = True
     use_output_transforms = False
+
+    map_estimate = False
 
     # Number of experiments to perform
     rounds = 5
@@ -46,6 +56,25 @@ def experiment_config(dataset):
 
     # GP kernel to use.
     kernel = "matern52"
+
+    marginalize_hyperparameters = False
+
+    mcmc_kwargs = {}
+
+    if marginalize_hyperparameters:
+        num_samples = 50
+        num_burnin_steps = 100
+
+        leapfrog_steps = 10
+        step_size = 0.03
+
+        mcmc_kwargs = {
+            "num_samples": num_samples,
+            "num_burnin_steps": num_burnin_steps,
+            "leapfrog_steps": leapfrog_steps,
+            "step_size": step_size,
+        }
+
 
     # Number of random initializations to try in a single training cycle.
     num_optimizer_restarts = 5
@@ -91,6 +120,7 @@ def run_experiment(model,
 
                    dataset,
                    optimizer,
+                   map_estimate,
                    initialization,
                    num_optimizer_restarts,
                    use_input_transforms,
@@ -103,8 +133,10 @@ def run_experiment(model,
                    iters: int,
                    rounds,
                    verbose,
+                   marginalize_hyperparameters,
                    _log,
-                   _seed):
+                   _seed,
+                   mcmc_kwargs={}):
     # Make sure the directory exists
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -157,14 +189,20 @@ def run_experiment(model,
                 model = model.condition_on(train[dataset["input_labels"]].values,
                                            train[dataset["output_labels"]].values[:, :],
                                            keep_previous=False)
-                model.fit(ys_transforms=ys_transforms,
-                          fit_joint=fit_joint,
-                          length_scale_init_mode=initialization,
-                          optimizer_restarts=num_optimizer_restarts,
-                          optimizer=optimizer,
-                          trace=True,
-                          err_level="raise",
-                          iters=iters)
+
+                if map_estimate or marginalize_hyperparameters:
+                    model.initialize_hyperpriors_and_bijectors(length_scale_init_mode=initialization)
+
+                if not marginalize_hyperparameters:
+                    model.fit(ys_transforms=ys_transforms,
+                              fit_joint=fit_joint,
+                              map_estimate=map_estimate,
+                              length_scale_init_mode=initialization,
+                              optimizer_restarts=num_optimizer_restarts,
+                              optimizer=optimizer,
+                              trace=True,
+                              err_level="raise",
+                              iters=iters)
             except Exception as e:
                 _log.exception("Training failed: {}".format(str(e)))
                 raise e
@@ -178,7 +216,10 @@ def run_experiment(model,
             start_time = time.time()
 
             try:
-                mean, variance = model.predict(test[dataset["input_labels"]].values, numpy=True)
+                mean, variance = model.predict(test[dataset["input_labels"]].values,
+                                               marginalize_hyperparameters=marginalize_hyperparameters,
+                                               numpy=True,
+                                               **mcmc_kwargs)
 
                 # Back-transfrom predictions!
                 # *Note*: If we are using a log-transform, the back-transformed mean is actually

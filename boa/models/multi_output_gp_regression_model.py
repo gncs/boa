@@ -4,9 +4,10 @@ import abc
 import logging
 import json
 
-from tqdm import trange
+from tqdm import trange, tqdm
 
 import tensorflow as tf
+import tensorflow_probability as tfp
 import numpy as np
 
 from stheno.tensorflow import dense
@@ -18,6 +19,9 @@ from boa.core.utils import calculate_euclidean_distance_percentiles, calculate_p
 
 from not_tf_opt import AbstractVariable, BoundedVariable, UnconstrainedVariable, \
     minimize, get_reparametrizations
+
+tfd = tfp.distributions
+tfb = tfp.bijectors
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True)
 
@@ -118,6 +122,21 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         self._gp_hyperparameter_hashes = [None] * self.output_dim
         self.models = [None] * self.output_dim
 
+        # ---------------------------------------------------------------------
+        # Create hyperparameter priors
+        # ---------------------------------------------------------------------
+
+        self.signal_amplitude_priors = []
+        self.length_scales_priors = []
+        self.noise_amplitude_priors = []
+
+        self.signal_amplitude_prior_bijectors = []
+        self.length_scales_prior_bijectors = []
+        self.noise_amplitude_prior_bijectors = []
+
+        self.hyperpriors_initialized = False
+        self.hyperprior_ls_init_mode = None
+
     def length_scales(self, index):
         return self._length_scales[index]
 
@@ -194,6 +213,9 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
             if issubclass(v.__class__, AbstractVariable):
                 model_submodule_dict[k].assign_var(v)
 
+        if self.hyperpriors_initialized:
+            model.initialize_hyperpriors_and_bijectors(length_scale_init_mode=self.hyperprior_ls_init_mode)
+
         return model
 
     def condition_on(self, xs, ys, keep_previous=True):
@@ -223,6 +245,50 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         model.ys.assign(ys)
 
         return model
+
+    def initialize_hyperpriors_and_bijectors(self, length_scale_init_mode, **kwargs):
+
+        length_scales, signal_amplitudes, noise_amplitudes = self.create_all_hyperparameter_initializers(length_scale_init_mode=length_scale_init_mode,
+                                                                                                         **kwargs)
+
+        sa_lowers = []
+        sa_uppers = []
+
+        ls_lowers = []
+        ls_uppers = []
+
+        na_lowers = []
+        na_uppers = []
+
+        for i in range(self.output_dim):
+            sa_lowers.append(signal_amplitudes[i].lower)
+            sa_uppers.append(signal_amplitudes[i].upper)
+
+            ls_lowers.append(length_scales[i].lower)
+            ls_uppers.append(length_scales[i].upper)
+
+            na_lowers.append(noise_amplitudes[i].lower)
+            na_uppers.append(noise_amplitudes[i].upper)
+
+            self.signal_amplitude_prior_bijectors.append(tfb.Softplus())
+            self.length_scales_prior_bijectors.append(tfb.Softplus())
+            self.noise_amplitude_prior_bijectors.append(tfb.Softplus())
+
+        self.signal_amplitude_priors = [tfd.Independent(tfd.HalfCauchy(loc=0., scale=(sa_upper - sa_lower) / 4.),
+                                                        reinterpreted_batch_ndims=1)
+                                        for sa_upper, sa_lower in zip(sa_uppers, sa_lowers)]
+
+        self.noise_amplitude_priors = [tfd.Independent(tfd.HalfCauchy(loc=0., scale=(na_upper - na_lower) / 4.),
+                                                       reinterpreted_batch_ndims=1)
+                                       for na_upper, na_lower in zip(na_uppers, na_lowers)]
+
+        self.length_scales_priors = [tfd.Independent(tfd.InverseGamma(concentration=5. * tf.ones_like(ls_lower),
+                                                                      scale=5. * tf.ones_like(ls_lower)),
+                                                     reinterpreted_batch_ndims=1)
+                                     for ls_lower in ls_lowers]
+
+        self.hyperpriors_initialized = True
+        self.hyperprior_ls_init_mode = length_scale_init_mode
 
     def create_hyperparameter_initializers(self,
                                            index: int,
@@ -431,6 +497,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
     def fit(self,
             fit_joint=False,
+            map_estimate=False,
             optimizer="l-bfgs-b",
             optimizer_restarts=1,
             length_scale_init_mode="l2_median",
@@ -526,6 +593,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                     negative_gp_log_prob = lambda: -self.gp_log_prob(xs=self.xs,
                                                                      ys=self.ys,
                                                                      index=i,
+                                                                     joint=map_estimate,
                                                                      predictive=False,
                                                                      average=True)
                     try:
@@ -657,6 +725,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                 negative_model_log_likelihood = lambda: -self.log_prob(xs=self.xs,
                                                                        ys=self.ys,
                                                                        predictive=False,
+                                                                       joint=map_estimate,
                                                                        average=True)
                 try:
                     if optimizer == "l-bfgs-b":
@@ -773,16 +842,19 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         return self.gp_output(index,
                               ys=self.ys)
 
-    def gp_predict(self, xs, index):
+    def gp_predict(self, xs, index, signal_amplitude=None, length_scales=None, noise_amplitude=None):
 
-        if not self.trained:
-            logger.warning("Using untrained model for prediction!")
+        # if not self.trained:
+        #     logger.warning("Using untrained model for prediction!")
         if xs.shape[1] != self.gp_input_dim(index):
             raise ModelError(f"GP {index} requires an input with shape "
                              f"(None, {self.gp_input_dim(index)}), "
                              f"but got input with shape {xs.shape}!")
 
-        self.create_gp(index=index)
+        self.create_gp(index=index,
+                       signal_amplitude=signal_amplitude,
+                       length_scales=length_scales,
+                       noise_amplitude=noise_amplitude)
 
         # Condition the model on the training data
         model = self.models[index] | (self.gp_train_input(index=index),
@@ -797,9 +869,19 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                     ys,
                     index,
                     predictive=True,
-                    average=False):
+                    average=False,
+                    joint=False,
+                    signal_amplitude=None,
+                    length_scales=None,
+                    noise_amplitude=None):
 
-        self.create_gp(index=index)
+        if joint and not self.hyperpriors_initialized:
+            raise ModelError("Hyperpriors haven't been initialized yet!")
+
+        self.create_gp(index=index,
+                       signal_amplitude=signal_amplitude,
+                       length_scales=length_scales,
+                       noise_amplitude=noise_amplitude)
 
         # Select appropriate slices of data
         gp_input = self.gp_input(index=index, xs=xs, ys=ys)
@@ -819,26 +901,79 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                                  gp_output,
                                  predictive=predictive)
 
+        # If we are using the joint log-probability, we add on the log prob of the hyperparameteres
+        if joint:
+            if signal_amplitude is None:
+                signal_amplitude = self.signal_amplitude(index)()
+
+            if length_scales is None:
+                length_scales = self.length_scales(index)()
+
+            if noise_amplitude is None:
+                noise_amplitude = self.noise_amplitude(index)()
+
+            log_prob += self.signal_amplitude_priors[index].log_prob(signal_amplitude)
+            log_prob += self.length_scales_priors[index].log_prob(length_scales)
+            log_prob += self.noise_amplitude_priors[index].log_prob(noise_amplitude)
+
         if average:
             num_datapoints = xs.value().shape[0] if isinstance(xs, tf.Variable) else xs.shape[0]
             log_prob = log_prob / tf.cast(num_datapoints, xs.dtype)
 
         return log_prob
 
-    def predict(self, xs, numpy=False, **kwargs):
+    def predict(self, xs, numpy=False, marginalize_hyperparameters=False, **kwargs):
 
         xs = self._validate_and_convert(xs, output=False)
 
         means = []
         variances = []
 
-        for i in range(self.output_dim):
-            mean, var = self.gp_predict(self.gp_predictive_input(xs=xs,
-                                                                 means=means),
-                                        index=i)
+        if marginalize_hyperparameters:
+            logger.info("Marginalizing hyperparameters!")
 
-            means.append(mean)
-            variances.append(var)
+            [signal_amplitudes, length_scales, noise_amplitudes], traces = self.sample_hyperposterior(**kwargs)
+
+            num_accepted = tf.reduce_sum(tf.cast(traces.is_accepted, tf.int32)).numpy()
+
+            logger.info(f"Sampled hyperparameters, of {100} samples, {num_accepted} were accepted.")
+
+            signal_amplitudes = signal_amplitudes[traces.is_accepted]
+            length_scales = length_scales[traces.is_accepted]
+            noise_amplitudes = noise_amplitudes[traces.is_accepted]
+
+            all_means = [[] for _ in range(num_accepted)]
+            all_variances = [[] for _ in range(num_accepted)]
+
+            for samp_index, (sa_vec, ls_vec, na_vec) in tqdm(enumerate(zip(signal_amplitudes, length_scales, noise_amplitudes))):
+
+                sa_list, ls_list, na_list = self.hyperparameters_from_vectors(sa_vec, ls_vec, na_vec)
+
+                for i in range(self.output_dim):
+                    mean, var = self.gp_predict(self.gp_predictive_input(xs=xs,
+                                                                         means=all_means[samp_index]),
+                                                signal_amplitude=sa_list[i],
+                                                length_scales=ls_list[i],
+                                                noise_amplitude=na_list[i],
+                                                index=i)
+
+                    all_means[samp_index].append(mean)
+                    all_variances[samp_index].append(var)
+
+            all_means = [tf.concat(pred_means, axis=1) for pred_means in all_means]
+            all_variances = [tf.concat(pred_vars, axis=1) for pred_vars in all_variances]
+
+            means = tf.reduce_mean(all_means, axis=0)
+            variances = tf.reduce_mean(all_variances, axis=0)
+
+        else:
+            for i in range(self.output_dim):
+                mean, var = self.gp_predict(self.gp_predictive_input(xs=xs,
+                                                                     means=means),
+                                            index=i)
+
+                means.append(mean)
+                variances.append(var)
 
         means = tf.concat(means, axis=1)
         variances = tf.concat(variances, axis=1)
@@ -849,7 +984,15 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
         return means, variances
 
-    def log_prob(self, xs, ys, predictive=True, numpy=False, average=False):
+    def log_prob(self, xs, ys,
+                 predictive=True,
+                 numpy=False,
+                 average=False,
+                 joint=False,
+                 signal_amplitudes=None,
+                 length_scales=None,
+                 noise_amplitudes=None
+                 ):
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -860,7 +1003,13 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                                                 ys,
                                                 index=i,
                                                 predictive=predictive,
-                                                average=average)
+                                                average=average,
+                                                joint=joint,
+                                                signal_amplitude=(
+                                                    signal_amplitudes[i] if signal_amplitudes is not None else None),
+                                                length_scales=(length_scales[i] if length_scales is not None else None),
+                                                noise_amplitude=(
+                                                    noise_amplitudes[i] if noise_amplitudes is not None else None))
 
             log_prob = log_prob + current_log_prob
 
@@ -868,6 +1017,69 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
             log_prob = log_prob.numpy()
 
         return log_prob
+
+    def hyperparameters_from_vectors(self, signal_amplitude_vec, length_scales_vec, noise_amplitude_vec):
+
+        length_scale_index = 0
+
+        sa_list = []
+        ls_list = []
+        na_list = []
+
+        for i in range(self.output_dim):
+            sa_list.append(signal_amplitude_vec[i:i + 1])
+            na_list.append(noise_amplitude_vec[i:i + 1])
+            ls_list.append(length_scales_vec[length_scale_index:length_scale_index + self.gp_input_dim(i)])
+
+            length_scale_index = length_scale_index + self.gp_input_dim(i)
+
+        return sa_list, ls_list, na_list
+
+    def sample_hyperposterior(self,
+                              num_samples,
+                              num_burnin_steps,
+                              step_size=0.03,
+                              leapfrog_steps=10):
+
+        def joint_vectorized_log_prob(sas, lss, nas):
+
+            sa_list, ls_list, na_list = self.hyperparameters_from_vectors(sas, lss, nas)
+
+            return self.log_prob(xs=self.xs,
+                                 ys=self.ys,
+                                 predictive=False,
+                                 joint=True,
+                                 signal_amplitudes=sa_list,
+                                 length_scales=ls_list,
+                                 noise_amplitudes=na_list)
+
+        init_state = [
+            tf.concat([sap.sample() for sap in self.signal_amplitude_priors], axis=0),
+            tf.concat([lsp.sample() for lsp in self.length_scales_priors], axis=0),
+            tf.concat([nap.sample() for nap in self.noise_amplitude_priors], axis=0)
+        ]
+
+        return tfp.mcmc.sample_chain(
+            num_results=num_samples,
+            num_burnin_steps=num_burnin_steps,
+            current_state=init_state,
+            kernel=tfp.mcmc.SimpleStepSizeAdaptation(
+                tfp.mcmc.TransformedTransitionKernel(
+                    inner_kernel=tfp.mcmc.HamiltonianMonteCarlo(
+                        target_log_prob_fn=joint_vectorized_log_prob,
+                        step_size=step_size,
+                        num_leapfrog_steps=leapfrog_steps,
+                    ),
+                    bijector=[
+                        tfb.Softplus(),
+                        tfb.Softplus(),
+                        tfb.Softplus(),
+                    ]
+                ),
+                num_adaptation_steps=int(num_burnin_steps * 0.8),
+            ),
+            trace_fn=lambda _, pkr: pkr.inner_results.inner_results
+        )
 
     @abc.abstractmethod
     def get_config(self):
@@ -878,7 +1090,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
     def from_config(config, **kwargs):
         pass
 
-    def create_gp(self, index):
+    def create_gp(self, index, signal_amplitude=None, length_scales=None, noise_amplitude=None):
         # Hash the hyperparameters for the i-th GP
         # param_hash = tensor_hash(self.noise_amplitude(index)()) + \
         #              tensor_hash(self.signal_amplitude(index)()) + \
@@ -891,12 +1103,21 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         # # Store the new hash
         # self._gp_hyperparameter_hashes[index] = param_hash
 
+        if signal_amplitude is None:
+            signal_amplitude = self.signal_amplitude(index)()
+
+        if length_scales is None:
+            length_scales = self.length_scales(index)()
+
+        if noise_amplitude is None:
+            noise_amplitude = self.noise_amplitude(index)()
+
         # Create GP
         gp = GaussianProcess(kernel=self.kernel_name,
                              input_dim=self.gp_input_dim(index=index),
-                             signal_amplitude=self.signal_amplitude(index)(),
-                             length_scales=self.length_scales(index)(),
-                             noise_amplitude=self.noise_amplitude(index)())
+                             signal_amplitude=signal_amplitude,
+                             length_scales=length_scales,
+                             noise_amplitude=noise_amplitude)
 
         self.models[index] = gp
 

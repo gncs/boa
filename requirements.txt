@@ -5,6 +5,7 @@ scikit-learn
 not-tf-opt
 stheno
 sacred
+pymongo
 matplotlib
 seaborn
 pandas

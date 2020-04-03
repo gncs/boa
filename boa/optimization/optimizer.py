@@ -27,9 +27,21 @@ class Optimizer:
         self.verbose = verbose
         self.create_checkpoints = checkpoints
 
-    def optimize(self, f: AbstractObjective, model: MultiOutputGPRegressionModel, acq_fun: AbstractAcquisition, xs: np.array,
-                 ys: np.array, candidate_xs: np.array, optimizer_restarts: int, initialization: str, iters: int,
-                 fit_joint: bool, model_optimizer: str) -> Tuple[np.ndarray, np.ndarray]:
+    def optimize(self,
+                 f: AbstractObjective,
+                 model: MultiOutputGPRegressionModel,
+                 acq_fun: AbstractAcquisition,
+                 xs: np.array,
+                 ys: np.array,
+                 candidate_xs: np.array,
+                 optimizer_restarts: int,
+                 initialization: str,
+                 iters: int,
+                 fit_joint: bool,
+                 model_optimizer: str,
+                 map_estimate: bool,
+                 marginalize_hyperparameters: bool,
+                 mcmc_kwargs: dict = {}) -> Tuple[np.ndarray, np.ndarray]:
 
         xs = xs.copy()
         ys = ys.copy()
@@ -53,13 +65,18 @@ class Optimizer:
                 if candidate_xs.size == 0:
                     break
 
-                acquisition_values = acq_fun.evaluate(model=model, xs=xs, ys=ys, candidate_xs=candidate_xs)
+                acquisition_values, y_preds = acq_fun.evaluate(model=model,
+                                                               marginalize_hyperparameters=marginalize_hyperparameters,
+                                                               mcmc_kwargs=mcmc_kwargs,
+                                                               xs=xs,
+                                                               ys=ys,
+                                                               candidate_xs=candidate_xs)
                 max_acquisition_index = np.argmax(acquisition_values)
                 eval_point = candidate_xs[max_acquisition_index]
+                y_pred = y_preds[max_acquisition_index]
 
                 eval_points.append(eval_point)
 
-                y_pred, _ = eval_model.predict(eval_point)
                 eval_model = eval_model.condition_on(eval_point, y_pred)
 
                 candidate_xs = np.delete(candidate_xs, max_acquisition_index, axis=0)
@@ -78,18 +95,23 @@ class Optimizer:
             for i, o in zip(inp, outp):
                 model = model.condition_on(i.reshape((1, -1)), o.reshape((1, -1)))
 
-            try:
-                model.fit(optimizer_restarts=optimizer_restarts,
-                          optimizer=model_optimizer,
-                          initialization=initialization,
-                          iters=iters,
-                          fit_joint=fit_joint)
-            except Exception as e:
-                print_message('Error: ' + str(e))
-                if not self.strict:
-                    print_message('Failed to update model, continuing.')
-                else:
-                    raise e
+            if marginalize_hyperparameters or map_estimate:
+                model.initialize_hyperparameters(length_scale_init_mode=initialization)
+
+            if not marginalize_hyperparameters:
+                try:
+                    model.fit(optimizer_restarts=optimizer_restarts,
+                              optimizer=model_optimizer,
+                              initialization=initialization,
+                              iters=iters,
+                              map_estimate=map_estimate,
+                              fit_joint=fit_joint)
+                except Exception as e:
+                    print_message('Error: ' + str(e))
+                    if not self.strict:
+                        print_message('Failed to update model, continuing.')
+                    else:
+                        raise e
 
             if self.create_checkpoints:
                 self.create_checkpoint(f=f, xs=xs, ys=ys)
