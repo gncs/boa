@@ -23,7 +23,7 @@ from not_tf_opt import AbstractVariable, BoundedVariable, UnconstrainedVariable,
 tfd = tfp.distributions
 tfb = tfp.bijectors
 
-logger = setup_logger(__name__, level=logging.DEBUG, to_console=True)
+logger = setup_logger(__name__, level=logging.CRITICAL, to_console=True)
 
 
 class ModelError(Exception):
@@ -364,10 +364,10 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
             ls_rand_range = tf.minimum(l2_percentiles[2] - l2_percentiles[1],
                                        l2_percentiles[3] - l2_percentiles[2])
 
-            ls_init += tf.random.uniform(shape=(gp_input_dim,),
-                                         minval=-ls_rand_range,
-                                         maxval=ls_rand_range,
-                                         dtype=self.dtype)
+            # ls_init += tf.random.uniform(shape=(gp_input_dim,),
+            #                              minval=-ls_rand_range,
+            #                              maxval=ls_rand_range,
+            #                              dtype=self.dtype)
 
             sqrt_gp_input_dim = tf.sqrt(tf.cast(gp_input_dim, self.dtype))
 

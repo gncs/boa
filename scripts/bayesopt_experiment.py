@@ -49,7 +49,7 @@ def bayesopt_config(dataset):
     rounds = 5
 
     # BayesOpt iterations
-    max_num_iterations = 120
+    max_num_iterations = 50
     warmup_dataset_size = 25
     batch_size = 1
 
@@ -62,7 +62,7 @@ def bayesopt_config(dataset):
     # GP kernel to use.
     kernel = "matern52"
 
-    use_input_transforms = True
+    use_input_transforms = False
     use_output_transforms = False
 
     map_estimate = False
@@ -84,7 +84,7 @@ def bayesopt_config(dataset):
     }
 
     # Number of random initializations to try in a single training cycle.
-    model_optimizer_restarts = 3
+    model_optimizer_restarts = 1
 
     # Optimization algorithm to use when fitting the models' hyperparameters.
     model_optimizer = "l-bfgs-b"

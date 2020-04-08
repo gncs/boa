@@ -2,6 +2,7 @@ import datetime
 import sys
 from typing import Tuple
 
+import tensorflow as tf
 import numpy as np
 
 from boa.acquisition.abstract import AbstractAcquisition
@@ -65,7 +66,7 @@ class Optimizer:
                 if candidate_xs.size == 0:
                     break
 
-                acquisition_values, y_preds = acq_fun.evaluate(model=model,
+                acquisition_values, y_preds = acq_fun.evaluate(model=eval_model,
                                                                marginalize_hyperparameters=marginalize_hyperparameters,
                                                                mcmc_kwargs=mcmc_kwargs,
                                                                xs=xs,
@@ -74,6 +75,12 @@ class Optimizer:
                 max_acquisition_index = np.argmax(acquisition_values)
                 eval_point = candidate_xs[max_acquisition_index]
                 y_pred = y_preds[max_acquisition_index]
+
+                print()
+                print(f"Eval point: {eval_point}")
+                print()
+                print(f"prediction at eval point: {y_pred}")
+                print()
 
                 eval_points.append(eval_point)
 
@@ -92,8 +99,16 @@ class Optimizer:
             xs = np.vstack((xs, inp))
             ys = np.vstack((ys, outp))
 
+            error = np.sqrt(np.sum((outp - y_pred)**2, axis=0))
+
+            print(f"Actual: {outp}")
+            print()
+            print(f"RMSE: {error}")
+
             for i, o in zip(inp, outp):
                 model = model.condition_on(i.reshape((1, -1)), o.reshape((1, -1)))
+                print(model.xs.value().shape)
+                print("------------")
 
             if marginalize_hyperparameters or map_estimate:
                 model.initialize_hyperparameters(length_scale_init_mode=initialization)
