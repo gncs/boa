@@ -35,14 +35,14 @@ class SMSEGO(AbstractAcquisition):
                  ys: np.ndarray,
                  candidate_xs: np.ndarray,
                  marginalize_hyperparameters: bool,
-                 mcmc_kwargs: dict = None) -> Tuple[np.ndarray, np.ndarray]:
+                 mcmc_kwargs: dict = {}) -> Tuple[np.ndarray, np.ndarray]:
         ys = self.slice_output(ys)
 
         # Model predictions for candidates
         pred_means, pred_var = model.predict(candidate_xs,
-                                   numpy=True,
-                                   marginalize_hyperparameters=marginalize_hyperparameters,
-                                   mcmc_kwargs=mcmc_kwargs)
+                                             numpy=True,
+                                             marginalize_hyperparameters=marginalize_hyperparameters,
+                                             **mcmc_kwargs)
 
         means = self.slice_output(pred_means)
         var = self.slice_output(pred_var)

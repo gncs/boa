@@ -76,11 +76,18 @@ class Optimizer:
                 eval_point = candidate_xs[max_acquisition_index]
                 y_pred = y_preds[max_acquisition_index]
 
-                print()
-                print(f"Eval point: {eval_point}")
-                print()
-                print(f"prediction at eval point: {y_pred}")
-                print()
+                if self.verbose:
+                    print(f"Max acq_value: {np.max(acquisition_values)}")
+                    print(f"Min acq_value: {np.min(acquisition_values)}")
+                    print(f"median acq: {np.percentile(acquisition_values, 50)}")
+                    print(f"25 acq: {np.percentile(acquisition_values, 25)}")
+                    print(f"75 acq: {np.percentile(acquisition_values, 75)}")
+                    print(f"acq shape {acquisition_values.shape}")
+                    print(f"eval shape {candidate_xs.shape}\n")
+
+                    print(f"Eval point: \n{eval_point}\n")
+                    print(f"prediction at eval point:\n{y_pred}")
+                    print("=================================================")
 
                 eval_points.append(eval_point)
 
@@ -99,28 +106,22 @@ class Optimizer:
             xs = np.vstack((xs, inp))
             ys = np.vstack((ys, outp))
 
-            error = np.sqrt(np.sum((outp - y_pred)**2, axis=0))
-
-            print(f"Actual: {outp}")
-            print()
-            print(f"RMSE: {error}")
-
             for i, o in zip(inp, outp):
                 model = model.condition_on(i.reshape((1, -1)), o.reshape((1, -1)))
-                print(model.xs.value().shape)
-                print("------------")
 
             if marginalize_hyperparameters or map_estimate:
                 model.initialize_hyperparameters(length_scale_init_mode=initialization)
 
             if not marginalize_hyperparameters:
                 try:
+                    print("Fitting model to new data!")
                     model.fit(optimizer_restarts=optimizer_restarts,
                               optimizer=model_optimizer,
                               initialization=initialization,
                               iters=iters,
                               map_estimate=map_estimate,
                               fit_joint=fit_joint)
+                    # model.initialize_hyperparameters(length_scale_init_mode=initialization)
                 except Exception as e:
                     print_message('Error: ' + str(e))
                     if not self.strict:

@@ -25,7 +25,6 @@ def data_config():
     dataset_base_path = f"{ROOT_DIR}/../resources/"
 
     if name == "fft":
-        targets = ('avg_power', 'cycle', 'total_area')
         dataset_path = f"{dataset_base_path}/fft_dataset.csv"
 
         separator = " "
@@ -53,7 +52,6 @@ def data_config():
         ]
 
         output_labels = [
-            'cycle',
             'avg_power',
             'idle_fu_cycles',
             'avg_fu_power',
@@ -62,7 +60,6 @@ def data_config():
             'avg_mem_power',
             'avg_mem_dynamic_power',
             'avg_mem_leakage_power',
-            'total_area',
             'fu_area',
             'mem_area',
             'num_double_precision_fp_multipliers',
@@ -71,7 +68,11 @@ def data_config():
             # 'num_bit-wise_operators_32',
             # 'num_shifters_32',
             'num_registers_32',
+            'cycle',
+            'total_area',
         ]
+        targets = ('avg_power', 'cycle', 'total_area')
+
 
         input_transforms = {
            'cache_size': "log",
@@ -275,6 +276,11 @@ def data_config():
             'num_register': "log"
         }
 
+    # Rearrange output labels so that targets are last
+    for target in targets:
+        output_labels.remove(target)
+        output_labels.append(target)
+
 
 DataTuple = namedtuple('DataTuple', field_names=['df', 'input_labels', 'output_labels'])
 
@@ -292,29 +298,3 @@ def load_dataset(dataset_path, separator, input_labels, output_labels) -> DataTu
     return DataTuple(df=df[input_labels + output_labels],
                      input_labels=input_labels,
                      output_labels=output_labels)
-
-
-@dataset_ingredient.capture
-def prepare_ff_gp_data(data):
-    return data.df
-
-
-@dataset_ingredient.capture
-def prepare_ff_gp_aux_data(data, targets, input_labels, output_labels):
-    inputs = input_labels + output_labels
-
-    for x in targets:
-        inputs.remove(x)
-
-    return data.df
-
-
-@dataset_ingredient.capture
-def prepare_gpar_data(data, targets, output_labels):
-    output_labels = output_labels.copy()
-
-    for target in targets:
-        output_labels.remove(target)
-        output_labels.append(target)
-
-    return data.df

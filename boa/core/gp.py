@@ -285,7 +285,7 @@ class GaussianProcess(object):
 
         return sample
 
-    def predict(self, xs, latent=True, with_jitter=True):
+    def predict(self, xs, latent=True, with_jitter=False):
         """
         :param xs: Input points for which we are predicting the output
         :param latent: if True, we will _NOT_ add on the learned noise process for prediction

@@ -56,11 +56,10 @@ def f(x):
     """
     Target function (noise free).
     """
-    return (np.sinc(3 * x) + 0.5 * (x - 0.5)**2).reshape(-1, 1)
+    return (np.sinc(3 * x) + 0.5 * (x - 0.5) ** 2).reshape(-1, 1)
 
 
 def manual_optimization(x_train, y_train):
-
     # Infer GP
     model = FullyFactorizedGPModel(kernel="rbf", input_dim=1, output_dim=1, verbose=False)
 
@@ -79,12 +78,17 @@ def manual_optimization(x_train, y_train):
 
     # Perform optimization without the optimizer interface
     for i in range(5):
-
         y_cont, var_cont = model.predict(x_cont)
 
         logger.debug(f"{data_x.shape} {data_y.shape} {x_cont.shape} {y_cont.shape} {var_cont.shape}")
 
-        acquisition_values = acq.evaluate(model=model, xs=data_x, ys=data_y, candidate_xs=x_cont)
+        #model.initialize_hyperpriors_and_bijectors(length_scale_init_mode="l2_median")
+
+        acquisition_values, pred_means = acq.evaluate(model=model,
+                                                      xs=data_x,
+                                                      ys=data_y,
+                                                      candidate_xs=x_cont,
+                                                      marginalize_hyperparameters=False)
 
         eval_point = x_cont[np.argmax(acquisition_values)]
 
@@ -110,7 +114,7 @@ def manual_optimization(x_train, y_train):
 
         model = model.condition_on(inp.reshape([-1, 1]), outp)
 
-        model.fit(optimizer_restarts=3)
+        model.fit(optimizer_restarts=3,)
 
 
 def automated_optimization(x_train, y_train):
@@ -149,7 +153,7 @@ def automated_optimization(x_train, y_train):
     acq = SMSEGO(gain=1, epsilon=0.1, reference=[2])
 
     # Set up the optimizer
-    optimizer = Optimizer(max_num_iterations=4, batch_size=1, strict=True)
+    optimizer = Optimizer(max_num_iterations=12, batch_size=1, strict=True)
 
     data_x, data_y = optimizer.optimize(f=objective,
                                         model=model,
@@ -158,6 +162,8 @@ def automated_optimization(x_train, y_train):
                                         ys=y_train,
                                         candidate_xs=x_cont,
                                         initialization='l2_median',
+                                        marginalize_hyperparameters=False,
+                                        map_estimate=False,
                                         iters=200,
                                         fit_joint=False,
                                         model_optimizer='l-bfgs-b',
@@ -166,7 +172,12 @@ def automated_optimization(x_train, y_train):
     model = model.condition_on(data_x, data_y, keep_previous=False)
 
     y_cont, var_cont = model.predict(x_cont)
-    acquisition_values = acq.evaluate(model=model, xs=data_x, ys=data_y, candidate_xs=x_cont)
+    acquisition_values, _ = acq.evaluate(model=model,
+                                      xs=data_x,
+                                      ys=data_y,
+                                      candidate_xs=x_cont,
+                                      marginalize_hyperparameters=False,
+                                      )
 
     fig = plot(xs=x_cont,
                fs=f(x_cont),

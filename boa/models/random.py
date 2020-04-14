@@ -22,7 +22,7 @@ class RandomModel(MultiOutputGPRegressionModel):
         self.num_samples = num_samples
 
     def has_explicit_length_scales(self):
-        return False
+        return True
 
     def gp_input(self, index, xs, ys):
         return xs
@@ -55,17 +55,12 @@ class RandomModel(MultiOutputGPRegressionModel):
         tf.random.set_seed(self._internal_state)
         self._internal_state += 1
 
-        pred_mean = tf.random.normal(mean=ys_mean,
-                                     stddev=ys_std,
-                                     shape=(xs.shape[0], self.output_dim),
-                                     dtype=tf.float64)
-
         pred_samples = tf.random.normal(mean=ys_mean,
                                         stddev=ys_std,
                                         shape=(self.num_samples, xs.shape[0], self.output_dim),
                                         dtype=tf.float64)
 
-        _, pred_var = tf.nn.moments(pred_samples, axes=[0], keepdims=False)
+        pred_mean, pred_var = tf.nn.moments(pred_samples, axes=[0], keepdims=False)
 
         if numpy:
             pred_mean = pred_mean.numpy()
