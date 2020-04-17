@@ -121,7 +121,6 @@ class Optimizer:
                               iters=iters,
                               map_estimate=map_estimate,
                               fit_joint=fit_joint)
-                    # model.initialize_hyperparameters(length_scale_init_mode=initialization)
                 except Exception as e:
                     print_message('Error: ' + str(e))
                     if not self.strict:

@@ -583,41 +583,6 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                     hyperparams = self.initialize_gp_hyperparameters(index=i,
                                                                      length_scale_init_mode=length_scale_init_mode)
 
-                    length_scales, signal_amplitude, noise_amplitude = hyperparams
-                    # =================================================================
-                    # Debugging stuff
-                    # =================================================================
-                    if debugging_trace:
-                        gp = GaussianProcess(kernel=self.kernel_name,
-                                             input_dim=self.gp_input_dim(index=i),
-                                             signal_amplitude=signal_amplitude(),
-                                             length_scales=length_scales(),
-                                             noise_amplitude=noise_amplitude())
-
-                        gp_input = standardize(self.gp_train_input(index=i))
-
-                        K = dense((gp.signal + gp.noise + gp.jitter).kernel(gp_input))
-                        print(f"Kernel matrix: {K}")
-
-                        eigvals, _ = tf.linalg.eig(K)
-                        eigvals = tf.cast(eigvals, tf.float64)
-                        print(f"Eigenvalues: {eigvals.numpy()}")
-
-                        # Largest eigenvalue divided by the smallest
-                        condition_number = eigvals[-1] / eigvals[0]
-
-                        # Effective degrees of freedom
-                        edof = tf.reduce_sum(eigvals / (eigvals + noise_amplitude()))
-
-                        print(f"Condition number before opt: {condition_number}")
-                        print(f"Effective degrees of freedom before opt: {edof}")
-                        print(f"Length Scales: {length_scales().numpy()}")
-                        print(f"Noise coeff: {noise_amplitude()}")
-                        print(f"Signal coeff: {signal_amplitude()}")
-                    # =================================================================
-                    # End of Debugging stuff
-                    # =================================================================
-
                     loss = np.inf
 
                     negative_gp_log_prob = lambda: -self.gp_log_prob(xs=self.xs,
@@ -636,42 +601,6 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                                                                  max_iterations=iters,
                                                                  trace=False)
 
-                            # =================================================================
-                            # Debugging stuff
-                            # =================================================================
-                            if debugging_trace:
-                                gp = GaussianProcess(kernel=self.kernel_name,
-                                                     input_dim=self.gp_input_dim(index=i),
-                                                     signal_amplitude=signal_amplitude(),
-                                                     length_scales=length_scales(),
-                                                     noise_amplitude=noise_amplitude())
-
-                                gp_input = standardize(self.gp_train_input(index=i))
-
-                                K = dense((gp.signal + gp.noise + gp.jitter).kernel(gp_input))
-
-                                print(f"Kernel matrix: {K}")
-
-                                eigvals, _ = tf.linalg.eig(K)
-                                eigvals = tf.cast(eigvals, tf.float64)
-
-                                # Largest eigenvalue divided by the smallest
-                                condition_number = eigvals[-1] / eigvals[0]
-
-                                # Effective degrees of freedom
-                                edof = tf.reduce_sum(eigvals / (eigvals + noise_amplitude()))
-
-                                print("-" * 40)
-                                print(f"Eigenvalues after opt: {eigvals.numpy()}")
-                                print(f"Condition number after opt: {condition_number}")
-                                print(f"Effective degrees of freedom after opt: {edof}")
-                                print(f"Length Scales: {length_scales().numpy()}")
-                                print(f"Noise coeff: {noise_amplitude()}")
-                                print(f"Signal coeff: {signal_amplitude()}")
-                                print("=" * 40)
-                            # =================================================================
-                            # End of Debugging stuff
-                            # =================================================================
                             if diverged:
                                 logger.error(f"Model diverged, restarting iteration {restart_index}! "
                                              f"(loss was {loss:.3f})")
@@ -1125,16 +1054,6 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
     def create_gp(self, index, signal_amplitude=None, length_scales=None, noise_amplitude=None):
         # Hash the hyperparameters for the i-th GP
-        # param_hash = tensor_hash(self.noise_amplitude(index)()) + \
-        #              tensor_hash(self.signal_amplitude(index)()) + \
-        #              tensor_hash(self.length_scales(index)())
-        #
-        # # If the hashes match, do nothing
-        # if param_hash == self._gp_hyperparameter_hashes[index]:
-        #     return
-        #
-        # # Store the new hash
-        # self._gp_hyperparameter_hashes[index] = param_hash
 
         if signal_amplitude is None:
             signal_amplitude = self.signal_amplitude(index)()

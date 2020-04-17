@@ -10,12 +10,7 @@ from boa.objective.abstract import AbstractObjective
 
 from boa.core import transform_df
 
-from boa.models import MultiOutputGPRegressionModel
-from boa.models.random import RandomModel
-from boa.models.fully_factorized_gp import FullyFactorizedGPModel
-from boa.models.gpar import GPARModel
-from boa.models.matrix_factorized_gpar import MatrixFactorizedGPARModel
-
+from boa.models import RandomModel, FullyFactorizedGPModel, GPARModel, MatrixFactorizedGPARModel
 from boa.acquisition.smsego import SMSEGO
 
 from boa.optimization.data import Data, generate_data, FileHandler
@@ -245,6 +240,10 @@ def main(dataset,
 
     ds = load_dataset()
     df = ds.df
+
+    # Transform the data before it is passed to anything.
+    if use_input_transforms:
+        df = transform_df(df, dataset["input_transforms"])
 
     # Setup optimizer
     bo_optimizer = Optimizer(max_num_iterations=max_num_iterations,
