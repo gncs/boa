@@ -10,7 +10,6 @@ from boa.models.fully_factorized_gp import FullyFactorizedGPModel
 from boa.models.gpar import GPARModel
 from boa.models.random import RandomModel
 from boa.models.matrix_factorized_gpar import MatrixFactorizedGPARModel
-from boa.models.gpar_perm import PermutedGPARModel
 
 from boa.core import transform_df, back_transform
 from boa import ROOT_DIR
@@ -23,7 +22,6 @@ from sacred.observers import MongoObserver
 from sacred.utils import apply_backspaces_and_linefeeds
 
 from dataset_config import dataset_ingredient, load_dataset
-from dataset_config import prepare_gpar_data, prepare_ff_gp_data, prepare_ff_gp_aux_data
 
 ex = Experiment("fitting_experiment", ingredients=[dataset_ingredient])
 database_url = "127.0.0.1:27017"
@@ -36,7 +34,7 @@ ex.observers.append(MongoObserver(url=database_url,
 
 @ex.config
 def experiment_config(dataset):
-    task = "fft"
+    task = dataset["name"]
     model = "gpar"
     verbose = True
 
@@ -58,6 +56,7 @@ def experiment_config(dataset):
     kernel = "matern52"
 
     marginalize_hyperparameters = False
+    empirical_bayes_for_marginalization = False
 
     mcmc_kwargs = {}
 
@@ -74,7 +73,6 @@ def experiment_config(dataset):
             "leapfrog_steps": leapfrog_steps,
             "step_size": step_size,
         }
-
 
     # Number of random initializations to try in a single training cycle.
     num_optimizer_restarts = 5
@@ -134,9 +132,17 @@ def run_experiment(model,
                    rounds,
                    verbose,
                    marginalize_hyperparameters,
+                   empirical_bayes_for_marginalization,
                    _log,
                    _seed,
                    mcmc_kwargs={}):
+
+    input_labels = dataset["input_labels"]
+    output_labels = dataset["output_labels"]
+
+    input_transforms = dataset["input_transforms"]
+    output_transforms = dataset["output_transforms"]
+
     # Make sure the directory exists
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -157,43 +163,46 @@ def run_experiment(model,
 
             experiment = {'index': index,
                           'size': size,
-                          'inputs': dataset["input_labels"],
-                          'outputs': dataset["output_labels"],
+                          'inputs': input_labels,
+                          'outputs': output_labels,
                           'input_transformed': use_input_transforms,
                           'output_transformed': use_output_transforms}
 
             if matrix_factorized:
                 experiment["latent_size"] = model.latent_dim
 
-            train, test = train_test_split(data, train_size=size, test_size=200, random_state=_seed + index)
+            train, test = train_test_split(data,
+                                           train_size=size,
+                                           test_size=200,
+                                           random_state=_seed + index)
 
             ys_transforms = None
 
             # Transform inputs
             if use_input_transforms:
-                train = transform_df(train, dataset["input_transforms"])
-                test = transform_df(test, dataset["input_transforms"])
+                train = transform_df(train, input_transforms)
+                test = transform_df(test, input_transforms)
 
             # Transform outputs
             if use_output_transforms:
-                train = transform_df(train, dataset["output_transforms"])
+                train = transform_df(train, output_transforms)
 
-                ys_transforms = [(dataset["output_transforms"][k]
-                                  if k in dataset["output_transforms"]
+                ys_transforms = [(output_transforms[k]
+                                  if k in output_transforms
                                   else None)
-                                 for k in dataset["output_labels"]]
+                                 for k in output_labels]
                 print(ys_transforms)
 
             start_time = time.time()
             try:
-                model = model.condition_on(train[dataset["input_labels"]].values,
-                                           train[dataset["output_labels"]].values[:, :],
+                model = model.condition_on(train[input_labels].values,
+                                           train[output_labels].values,
                                            keep_previous=False)
 
-                if map_estimate or marginalize_hyperparameters:
-                    model.initialize_hyperpriors_and_bijectors(length_scale_init_mode=initialization)
+                if map_estimate:
+                    model.initialize_hyperpriors(length_scale_init_mode=initialization)
 
-                if not marginalize_hyperparameters:
+                if not marginalize_hyperparameters or empirical_bayes_for_marginalization:
                     model.fit(ys_transforms=ys_transforms,
                               fit_joint=fit_joint,
                               map_estimate=map_estimate,
@@ -216,7 +225,11 @@ def run_experiment(model,
             start_time = time.time()
 
             try:
-                mean, variance = model.predict(test[dataset["input_labels"]].values,
+                if marginalize_hyperparameters:
+                    model.initialize_hyperpriors(length_scale_init_mode=initialization,
+                                                 empirical_bayes=empirical_bayes_for_marginalization)
+
+                mean, variance = model.predict(test[input_labels].values,
                                                marginalize_hyperparameters=marginalize_hyperparameters,
                                                numpy=True,
                                                **mcmc_kwargs)
@@ -226,8 +239,8 @@ def run_experiment(model,
                 # Going to be the median, exp(mu) NOT the expected value exp(mu + var/2)!
                 if use_output_transforms:
                     mean, variance = back_transform(mean, variance,
-                                                    dataset["output_labels"],
-                                                    dataset["output_transforms"])
+                                                    output_labels,
+                                                    output_transforms)
 
             except Exception as e:
                 _log.exception("Prediction failed: {}, saving model!".format(str(e)))
@@ -235,7 +248,7 @@ def run_experiment(model,
 
             experiment['predict_time'] = time.time() - start_time
 
-            diff = (test[dataset["output_labels"]].values - mean)
+            diff = (test[output_labels].values - mean)
 
             experiment['mean_abs_err'] = np.mean(np.abs(diff), axis=0).tolist()
             experiment['mean_squ_err'] = np.mean(np.square(diff), axis=0).tolist()
@@ -259,41 +272,36 @@ def run_experiment(model,
 def main(dataset, model, kernel, verbose, latent_dim=None):
     data = load_dataset()
 
-    if model in ['random', 'ff-gp']:
-        df = prepare_ff_gp_data(data)
+    input_dim = len(dataset["input_labels"])
+    output_dim = len(dataset["output_labels"])
 
-        if model == 'ff-gp':
-            surrogate_model = FullyFactorizedGPModel(kernel=kernel,
-                                                     input_dim=len(dataset["input_labels"]),
-                                                     output_dim=len(dataset["output_labels"]),
-                                                     verbose=verbose)
-        elif model == "random":
-            surrogate_model = RandomModel(input_dim=len(dataset["input_labels"]),
-                                          output_dim=len(dataset["output_labels"]),
-                                          seed=42,
-                                          num_samples=50)
+    if model == "random":
+        surrogate_model = RandomModel(input_dim=input_dim,
+                                      output_dim=output_dim,
+                                      seed=42,
+                                      num_samples=50)
 
-    elif model in ["gpar", "mf-gpar", "p-gpar"]:
-        df = prepare_gpar_data(data)
+    elif model == 'ff-gp':
+        surrogate_model = FullyFactorizedGPModel(kernel=kernel,
+                                                 input_dim=input_dim,
+                                                 output_dim=output_dim,
+                                                 verbose=verbose)
 
-        if model == 'gpar':
-            surrogate_model = GPARModel(kernel=kernel,
-                                        input_dim=len(dataset["input_labels"]),
-                                        output_dim=len(dataset["output_labels"]),
-                                        verbose=verbose)
+    elif model == 'gpar':
+        surrogate_model = GPARModel(kernel=kernel,
+                                    input_dim=input_dim,
+                                    output_dim=output_dim,
+                                    verbose=verbose)
 
-        elif model == 'mf-gpar':
-            surrogate_model = MatrixFactorizedGPARModel(kernel=kernel,
-                                                        input_dim=len(dataset["input_labels"]),
-                                                        output_dim=len(dataset["output_labels"]),
-                                                        latent_dim=latent_dim,
-                                                        verbose=verbose)
+    elif model == 'mf-gpar':
+        surrogate_model = MatrixFactorizedGPARModel(kernel=kernel,
+                                                    input_dim=input_dim,
+                                                    output_dim=output_dim,
+                                                    latent_dim=latent_dim,
+                                                    verbose=verbose)
 
-        elif model == 'p-gpar':
-            surrogate_model = PermutedGPARModel(kernel=kernel,
-                                                input_dim=len(dataset["input_labels"]),
-                                                output_dim=len(dataset["output_labels"]),
-                                                verbose=verbose)
+    else:
+        raise NotImplementedError
 
-    results = run_experiment(model=surrogate_model,
-                             data=df)
+    run_experiment(model=surrogate_model,
+                   data=data.df)

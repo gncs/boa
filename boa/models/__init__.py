@@ -1,1 +1,5 @@
-
+from .multi_output_gp_regression_model import MultiOutputGPRegressionModel
+from .random import RandomModel
+from .fully_factorized_gp import FullyFactorizedGPModel
+from .gpar import GPARModel
+from .matrix_factorized_gpar import MatrixFactorizedGPARModel

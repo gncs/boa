@@ -10,11 +10,7 @@ from boa.objective.abstract import AbstractObjective
 
 from boa.core import transform_df
 
-from boa.models.random import RandomModel
-from boa.models.fully_factorized_gp import FullyFactorizedGPModel
-from boa.models.gpar import GPARModel
-from boa.models.matrix_factorized_gpar import MatrixFactorizedGPARModel
-
+from boa.models import RandomModel, FullyFactorizedGPModel, GPARModel, MatrixFactorizedGPARModel
 from boa.acquisition.smsego import SMSEGO
 
 from boa.optimization.data import Data, generate_data, FileHandler
@@ -28,7 +24,7 @@ from sacred.utils import apply_backspaces_and_linefeeds
 
 import datetime
 
-from dataset_config import prepare_ff_gp_data, prepare_gpar_data, load_dataset, dataset_ingredient
+from dataset_config import load_dataset, dataset_ingredient
 
 ex = Experiment("bayesopt_experiment", ingredients=[dataset_ingredient])
 database_url = "127.0.0.1:27017"
@@ -41,7 +37,7 @@ ex.observers.append(MongoObserver(url=database_url,
 
 @ex.config
 def bayesopt_config(dataset):
-    task = "fft"
+    task = dataset["name"]
     model = "gpar"
     verbose = True
 
@@ -49,8 +45,8 @@ def bayesopt_config(dataset):
     rounds = 5
 
     # BayesOpt iterations
-    max_num_iterations = 50
-    warmup_dataset_size = 25
+    max_num_iterations = 120
+    warmup_dataset_size = 10
     batch_size = 1
 
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -62,7 +58,7 @@ def bayesopt_config(dataset):
     # GP kernel to use.
     kernel = "matern52"
 
-    use_input_transforms = False
+    use_input_transforms = True
     use_output_transforms = False
 
     map_estimate = False
@@ -81,10 +77,10 @@ def bayesopt_config(dataset):
             "num_burnin_steps": num_burnin_steps,
             "leapfrog_steps": leapfrog_steps,
             "step_size": step_size,
-    }
+        }
 
     # Number of random initializations to try in a single training cycle.
-    model_optimizer_restarts = 1
+    model_optimizer_restarts = 3
 
     # Optimization algorithm to use when fitting the models' hyperparameters.
     model_optimizer = "l-bfgs-b"
@@ -157,16 +153,18 @@ class Objective(AbstractObjective):
 
 
 @ex.capture
-def optimize(objective,
-             model,
+def optimize(model,
+             objective,
+             optimizer,
+
+             dataset,
+
              model_optimizer,
              model_optimizer_restarts,
              initialization,
              iters,
              fit_joint,
-             optimizer,
              warmup_dataset_size,
-             acq,
              seed: int,
              verbose,
              map_estimate,
@@ -175,6 +173,10 @@ def optimize(objective,
     np.random.seed(seed)
     tf.random.set_seed(seed)
 
+    # Setup acquisition function
+    acq_config = get_default_acq_config(objective.data, objective_labels=dataset["targets"])
+    acq = SMSEGO(**acq_config)
+
     candidates = objective.get_candidates()
 
     data = generate_data(objective=objective, size=warmup_dataset_size, seed=seed)
@@ -182,9 +184,10 @@ def optimize(objective,
     model = model.condition_on(xs=data.input, ys=data.output)
 
     if map_estimate or marginalize_hyperparameters:
-        model.initialize_hyperpriors_and_bijectors(length_scale_init_mode=initialization)
+        model.initialize_hyperpriors(length_scale_init_mode=initialization)
 
     if not marginalize_hyperparameters:
+        print("Fitting model to initial data!")
         model.fit(optimizer_restarts=model_optimizer_restarts,
                   optimizer=model_optimizer,
                   iters=iters,
@@ -214,7 +217,7 @@ def optimize(objective,
 def get_default_acq_config(df: pd.DataFrame, objective_labels) -> dict:
     max_values = df[objective_labels].apply(max).values
 
-    return {'gain': 1, 'epsilon': 0.01, 'reference': max_values, 'output_slice': (-3, None)}
+    return {'gain': 1., 'epsilon': 0.01, 'reference': max_values, 'output_slice': (-3, None)}
 
 
 @ex.automain
@@ -232,16 +235,15 @@ def main(dataset,
          _log,
          latent_dim=None,
          num_samples=None):
-
-    targets = dataset["targets"]
     input_labels = dataset["input_labels"]
     output_labels = dataset["output_labels"]
 
     ds = load_dataset()
+    df = ds.df
 
-    # Setup acquisition function
-    acq_config = get_default_acq_config(ds.df, objective_labels=targets)
-    smsego_acq = SMSEGO(**acq_config)
+    # Transform the data before it is passed to anything.
+    if use_input_transforms:
+        df = transform_df(df, dataset["input_transforms"])
 
     # Setup optimizer
     bo_optimizer = Optimizer(max_num_iterations=max_num_iterations,
@@ -250,7 +252,6 @@ def main(dataset,
 
     # Setup models
     if model == "random":
-        df = prepare_ff_gp_data(ds)
 
         surrogate_model = RandomModel(input_dim=len(input_labels),
                                       output_dim=len(output_labels),
@@ -259,14 +260,12 @@ def main(dataset,
                                       verbose=verbose)
 
     if model == "ff-gp":
-        df = prepare_ff_gp_data(ds)
 
         surrogate_model = FullyFactorizedGPModel(kernel=kernel,
                                                  input_dim=len(input_labels),
                                                  output_dim=len(output_labels),
                                                  verbose=verbose)
     elif model in ["gpar", "mf-gpar"]:
-        df = prepare_gpar_data(ds, targets=targets)
         if model == "gpar":
             surrogate_model = GPARModel(kernel=kernel,
                                         input_dim=len(input_labels),
@@ -279,21 +278,18 @@ def main(dataset,
                                                         output_dim=len(output_labels),
                                                         latent_dim=latent_dim,
                                                         verbose=verbose)
-    if use_input_transforms:
-        df = transform_df(df, dataset["input_transforms"])
 
     # Run the optimization
     for seed in range(rounds):
+        os.makedirs(os.path.dirname(log_path.format(seed)), exist_ok=True)
         results = optimize(objective=Objective(df=df,
                                                input_labels=input_labels,
                                                output_labels=output_labels),
                            model=surrogate_model,
                            optimizer=bo_optimizer,
-                           acq=smsego_acq,
                            seed=seed,
                            verbose=verbose)
 
-        os.makedirs(os.path.dirname(log_path.format(seed)), exist_ok=True)
         _log.info(f"Saving model to {log_path.format(seed)}!")
         handler = FileHandler(path=log_path.format(seed))
         handler.save(results)
