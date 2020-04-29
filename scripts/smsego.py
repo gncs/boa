@@ -56,7 +56,7 @@ def f(x):
     """
     Target function (noise free).
     """
-    return (np.sinc(3 * x) + 0.5 * (x - 0.5) ** 2).reshape(-1, 1)
+    return (np.sinc(3 * x) + 0.5 * (x - 0.5)**2).reshape(-1, 1)
 
 
 def manual_optimization(x_train, y_train):
@@ -114,7 +114,7 @@ def manual_optimization(x_train, y_train):
 
         model = model.condition_on(inp.reshape([-1, 1]), outp)
 
-        model.fit(optimizer_restarts=3,)
+        model.fit(optimizer_restarts=3, )
 
 
 def automated_optimization(x_train, y_train):
@@ -172,12 +172,13 @@ def automated_optimization(x_train, y_train):
     model = model.condition_on(data_x, data_y, keep_previous=False)
 
     y_cont, var_cont = model.predict(x_cont)
-    acquisition_values, _ = acq.evaluate(model=model,
-                                      xs=data_x,
-                                      ys=data_y,
-                                      candidate_xs=x_cont,
-                                      marginalize_hyperparameters=False,
-                                      )
+    acquisition_values, _ = acq.evaluate(
+        model=model,
+        xs=data_x,
+        ys=data_y,
+        candidate_xs=x_cont,
+        marginalize_hyperparameters=False,
+    )
 
     fig = plot(xs=x_cont,
                fs=f(x_cont),

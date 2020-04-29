@@ -55,8 +55,7 @@ def perm_pointwise_distance(x, y, kind="kendall", **kwargs):
     # 2 x (N x M) x D
     cartesian_product = tf.reshape(tf.concat([tile_x, tile_y], axis=0), [2, -1, dim])
 
-    dist_vector = tf.map_fn(lambda t: corr_distance(t, kind, **kwargs),
-                            (cartesian_product[0], cartesian_product[1]),
+    dist_vector = tf.map_fn(lambda t: corr_distance(t, kind, **kwargs), (cartesian_product[0], cartesian_product[1]),
                             dtype=tf.float64)
 
     return tf.reshape(dist_vector, [num_x_points, -1])
@@ -74,14 +73,17 @@ class DiscreteEQ(Kernel):
     @_dispatch(B.Numeric, B.Numeric)
     @uprank
     def __call__(self, x, y):
-        return Dense(self._compute(B.pw_dists2(_round_with_straight_through(x, precision=self.precision),
-                                               _round_with_straight_through(y, precision=self.precision))))
+        return Dense(
+            self._compute(
+                B.pw_dists2(_round_with_straight_through(x, precision=self.precision),
+                            _round_with_straight_through(y, precision=self.precision))))
 
     @_dispatch(B.Numeric, B.Numeric)
     @uprank
     def elwise(self, x, y):
-        return self._compute(B.ew_dists2(_round_with_straight_through(x, precision=self.precision),
-                                         _round_with_straight_through(y, precision=self.precision)))
+        return self._compute(
+            B.ew_dists2(_round_with_straight_through(x, precision=self.precision),
+                        _round_with_straight_through(y, precision=self.precision)))
 
     def _compute(self, dists2):
         return B.exp(-0.5 * dists2)
@@ -106,20 +108,23 @@ class DiscreteMatern52(Kernel):
     @_dispatch(B.Numeric, B.Numeric)
     @uprank
     def __call__(self, x, y):
-        res = Dense(self._compute(B.pw_dists(_round_with_straight_through(x, precision=self.precision),
-                                             _round_with_straight_through(y, precision=self.precision))))
+        res = Dense(
+            self._compute(
+                B.pw_dists(_round_with_straight_through(x, precision=self.precision),
+                           _round_with_straight_through(y, precision=self.precision))))
 
         return res
 
     @_dispatch(B.Numeric, B.Numeric)
     @uprank
     def elwise(self, x, y):
-        return self._compute(B.ew_dists(_round_with_straight_through(x, precision=self.precision),
-                                        _round_with_straight_through(y, precision=self.precision)))
+        return self._compute(
+            B.ew_dists(_round_with_straight_through(x, precision=self.precision),
+                       _round_with_straight_through(y, precision=self.precision)))
 
     def _compute(self, dists):
-        r1 = 5 ** .5 * dists
-        r2 = 5 * dists ** 2 / 3
+        r1 = 5**.5 * dists
+        r2 = 5 * dists**2 / 3
 
         return (1 + r1 + r2) * B.exp(-r1)
 
@@ -192,8 +197,8 @@ class PermutationMatern52(Kernel):
         return self._compute(tf.math.sqrt(perm_elwise_distance(x, y, self.kind, **self.dist_args)))
 
     def _compute(self, dists):
-        r1 = 5 ** .5 * dists
-        r2 = 5 * dists ** 2 / 3
+        r1 = 5**.5 * dists
+        r2 = 5 * dists**2 / 3
 
         return (1 + r1 + r2) * B.exp(-r1 / self.ls)
 
@@ -201,7 +206,6 @@ class PermutationMatern52(Kernel):
     def stretch(self, stretch):
         self.ls = stretch
         return self
-
 
     @property
     def _stationary(self):

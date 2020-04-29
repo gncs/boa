@@ -14,10 +14,12 @@ class AbstractAcquisition:
         pass
 
     @abc.abstractmethod
-    def evaluate(self, model: MultiOutputGPRegressionModel,
+    def evaluate(self,
+                 model: MultiOutputGPRegressionModel,
                  xs: np.ndarray,
                  ys: np.ndarray,
                  candidate_xs: np.ndarray,
                  marginalize_hyperparameters: bool,
+                 denoising: bool,
                  mcmc_kwargs: dict = {}) -> Tuple[np.ndarray, np.ndarray]:
         pass

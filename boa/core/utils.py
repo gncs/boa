@@ -150,12 +150,9 @@ def calculate_euclidean_distance_percentiles(xs, percents, eps=1e-4):
     # print("PED", positive_euclidean_dists.numpy())
 
     try:
-        percentiles = tfp.stats.percentile(positive_euclidean_dists,
-                                    percents,
-                                    axis=0)
+        percentiles = tfp.stats.percentile(positive_euclidean_dists, percents, axis=0)
     except Exception as e:
         print(str(e))
-
 
     return percentiles
 
@@ -168,8 +165,7 @@ def calculate_per_dimension_distance_percentiles(xs, percents, eps=1e-4):
     for i in range(dim_dist_mat.shape[-1]):
         # Remove very small entries
         positive_dists = tf.gather_nd(dim_dist_mat[:, :, i], tf.where(dim_dist_mat[:, :, i] > eps))
-        dim_percentiles.append(tfp.stats.percentile(positive_dists,
-                                                    percents))
+        dim_percentiles.append(tfp.stats.percentile(positive_dists, percents))
 
     return tf.stack(dim_percentiles, axis=1)
 
@@ -184,4 +180,4 @@ def tensor_hash(tensor):
     if not isinstance(tensor, (tf.Tensor, tf.Variable)):
         raise CoreError(f"tensor must be a TF tensor, but had type {type(tensor)}!")
 
-    return hash(tensor.numpy().tostring())
+    return tf.py_function(lambda s: hash(s.numpy().tostring()), inp=[tensor], Tout=tf.int64)

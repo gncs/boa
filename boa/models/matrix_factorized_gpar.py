@@ -64,15 +64,13 @@ class MatrixFactorizedGPARModel(GPARModel):
             BoundedVariable(tf.zeros([self.gp_input_dim(i) - self.input_dim]),
                             lower=-np.inf,
                             upper=np.inf,
-                            name=f"output_length_scales_{i}")
-            for i in range(self.output_dim)]
+                            name=f"output_length_scales_{i}") for i in range(self.output_dim)
+        ]
 
     @property
     def input_length_scales(self):
         ls_mat = tf.matmul(self._left_ls_matrix(), self._right_ls_matrix())
-        ls_mat = map_to_bounded_interval(ls_mat,
-                                         lower=self._input_ls_lower_bound,
-                                         upper=self._input_ls_upper_bound)
+        ls_mat = map_to_bounded_interval(ls_mat, lower=self._input_ls_lower_bound, upper=self._input_ls_upper_bound)
 
         return ls_mat
 
@@ -81,25 +79,20 @@ class MatrixFactorizedGPARModel(GPARModel):
 
     def length_scales(self, index):
         # Wrap in a lambda so it imitates the forward transform of a variable
-        return lambda: tf.concat([self.input_length_scales[index, :],
-                                  self._output_length_scales[index]()], axis=0)
+        return lambda: tf.concat([self.input_length_scales[index, :], self._output_length_scales[index]()], axis=0)
 
     def gp_variables_to_train(self, index, transformed):
         raise ModelError("MF-GPAR model cannot be trained in a factorized manner!")
 
     def gp_assign_variables(self, index, values):
-        raise ModelError("Variables for MF-GPAR model cannot be assigned "
-                         "in a factorized manner!")
+        raise ModelError("Variables for MF-GPAR model cannot be assigned " "in a factorized manner!")
 
     def variables_to_train(self, transformed):
-        signal_amplitudes = [self.signal_amplitude(i)
-                             for i in range(self.output_dim)]
+        signal_amplitudes = [self.signal_amplitude(i) for i in range(self.output_dim)]
 
-        noise_amplitudes = [self.noise_amplitude(i)
-                            for i in range(self.output_dim)]
+        noise_amplitudes = [self.noise_amplitude(i) for i in range(self.output_dim)]
 
-        output_length_scales = [self._output_length_scales[i]
-                                for i in range(self.output_dim)]
+        output_length_scales = [self._output_length_scales[i] for i in range(self.output_dim)]
 
         lls_mat = self._left_ls_matrix
         rls_mat = self._right_ls_matrix
@@ -126,9 +119,7 @@ class MatrixFactorizedGPARModel(GPARModel):
             self._signal_amplitudes[i].assign(signal_amplitudes[i])
             self._noise_amplitudes[i].assign(noise_amplitudes[i])
 
-    def create_all_hyperparameter_initializers(self,
-                                               length_scale_init_mode: str,
-                                               **kwargs):
+    def create_all_hyperparameter_initializers(self, length_scale_init_mode: str, **kwargs):
 
         # Initialize the hyperparameters for regular GPAR
         all_hyperparams = super().create_all_hyperparameter_initializers(length_scale_init_mode=length_scale_init_mode,
@@ -166,9 +157,7 @@ class MatrixFactorizedGPARModel(GPARModel):
         self._input_ls_upper_bound.assign(tf.stack(input_ls_upper_bounds, axis=0))
 
         # backward transform the length-scale matrix
-        ls_mat = map_from_bounded_interval(ls_mat,
-                                           lower=self._input_ls_lower_bound,
-                                           upper=self._input_ls_upper_bound)
+        ls_mat = map_from_bounded_interval(ls_mat, lower=self._input_ls_lower_bound, upper=self._input_ls_upper_bound)
 
         # SVD decomposition of the length scale matrix
         s, u, v = tf.linalg.svd(ls_mat)
@@ -190,16 +179,10 @@ class MatrixFactorizedGPARModel(GPARModel):
 
         return lls_mat, rls_mat, output_length_scales, signal_amplitudes, noise_amplitudes
 
-    def initialize_gp_hyperparameters(self,
-                                      index,
-                                      length_scale_init_mode,
-                                      **kwargs):
-        raise ModelError("The hyperparameters of the MF-GPAR model cannot "
-                         "be initialized for individual GPs!")
+    def initialize_gp_hyperparameters(self, index, length_scale_init_mode, **kwargs):
+        raise ModelError("The hyperparameters of the MF-GPAR model cannot " "be initialized for individual GPs!")
 
-    def initialize_hyperparameters(self,
-                                   length_scale_init_mode,
-                                   **kwargs):
+    def initialize_hyperparameters(self, length_scale_init_mode, **kwargs):
         hyperparams = self.create_all_hyperparameter_initializers(length_scale_init_mode=length_scale_init_mode,
                                                                   **kwargs)
 

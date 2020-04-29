@@ -11,7 +11,6 @@ logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f
 
 
 class RandomModel(MultiOutputGPRegressionModel):
-
     def __init__(self, input_dim, output_dim, seed, num_samples, name="random_model", **kwargs):
 
         super(RandomModel, self).__init__(kernel="rbf", input_dim=input_dim, output_dim=output_dim, name=name, **kwargs)
@@ -101,5 +100,3 @@ class RandomModel(MultiOutputGPRegressionModel):
         model.load_weights(save_path)
 
         return model
-
-

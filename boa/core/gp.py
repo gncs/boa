@@ -52,15 +52,14 @@ class GaussianProcess(object):
         self.noise_amplitude = tf.convert_to_tensor(noise_amplitude, tf.float64)
         self.jitter_amplitude = tf.convert_to_tensor(jitter, tf.float64)
 
-        if self.signal_amplitude <= 0:
+        if signal_amplitude <= 0.:
             raise CoreError(f"Signal amplitude must be strictly positive! {self.signal_amplitude} was given.")
 
-        if self.noise_amplitude <= 0:
+        if noise_amplitude <= 0.:
             raise CoreError(f"Noise amplitude must be strictly positive! {self.noise_amplitude} was given.")
 
-        if self.jitter_amplitude <= 0:
+        if jitter <= 0.:
             raise CoreError(f"Jitter amplitude must be strictly positive! {self.jitter_amplitude} was given.")
-
         # Convert and reshape the length scales
         self.length_scales = tf.convert_to_tensor(length_scales, tf.float64)
 
@@ -238,11 +237,7 @@ class GaussianProcess(object):
 
         return gp
 
-    def log_pdf(self,
-                xs,
-                ys,
-                predictive=False,
-                log_normal=False):
+    def log_pdf(self, xs, ys, predictive=False, log_normal=False):
 
         if predictive:
             xs = self.standardize_predictive_input(xs)
@@ -285,7 +280,7 @@ class GaussianProcess(object):
 
         return sample
 
-    def predict(self, xs, latent=True, with_jitter=False):
+    def predict(self, xs, latent=True, with_jitter=False, denoising=False):
         """
         :param xs: Input points for which we are predicting the output
         :param latent: if True, we will _NOT_ add on the learned noise process for prediction
@@ -303,28 +298,42 @@ class GaussianProcess(object):
         if with_jitter:
             gp = gp + self.jitter
 
-        gp = gp | (self.xs_standardized, self.ys_standardized)
+        if denoising:
+            K = dense(gp.kernel(self.xs_standardized))
+            K_star = dense(self.signal.kernel(self.xs_standardized, xs))
+            K_star_star = dense(self.signal.kernel(xs, xs))
 
-        # dense(X) is a no-op if X is a tensorflow op, or it is X.mat if it is a stheno.Dense
-        prediction = dense(gp.mean(xs))
-        pred_var = dense(gp.kernel.elwise(xs))
+            K_inv_times_K_star = tf.linalg.solve(K, K_star)
+
+            prediction = tf.matmul(K_inv_times_K_star, self.ys_standardized, transpose_a=True)
+
+            pred_var = K_star_star - tf.matmul(K_star, K_inv_times_K_star, transpose_a=True)
+
+            # We care about the variances at the points, not the full covariance matrix
+            pred_var = tf.linalg.diag_part(pred_var)
+
+        else:
+            gp = gp | (self.xs_standardized, self.ys_standardized)
+
+            # dense(X) is a no-op if X is a tensorflow op, or it is X.mat if it is a stheno.Dense
+            prediction = dense(gp.mean(xs))
+            pred_var = dense(gp.kernel.elwise(xs))
 
         prediction = tf.reshape(prediction, (-1, 1))
         prediction = self.unstandardize_predictive_output(prediction)
 
         pred_var = tf.reshape(pred_var, (-1, 1))
-        pred_var = pred_var * (self.ys_mean_and_std[1] ** 2)
+        pred_var = pred_var * (self.ys_mean_and_std[1]**2)
 
         return prediction, pred_var
 
 
 class DiscreteGaussianProcess(GaussianProcess):
-
     def __init__(self,
                  kernel: str,
                  input_dim: int,
                  signal_amplitude,
-                 kernel_args = {},
+                 kernel_args={},
                  jitter: tf.float64 = 1e-10,
                  verbose: bool = False,
                  name: str = "discrete_gaussian_process",
@@ -338,4 +347,3 @@ class DiscreteGaussianProcess(GaussianProcess):
                          jitter=jitter,
                          verbose=verbose,
                          **kwargs)
-

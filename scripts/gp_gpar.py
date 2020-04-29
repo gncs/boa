@@ -32,10 +32,7 @@ def run():
     x_cont = np.hstack([x_cont, x_cont])
 
     # FF-GP model
-    ff_gp = FullyFactorizedGPModel(kernel='rbf',
-                                   input_dim=2,
-                                   output_dim=1,
-                                   verbose=False)
+    ff_gp = FullyFactorizedGPModel(kernel='rbf', input_dim=2, output_dim=1, verbose=False)
     ff_gp = ff_gp.condition_on(x_train, y_train)
     ff_gp.fit(optimizer_restarts=10)
 

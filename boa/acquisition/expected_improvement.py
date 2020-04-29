@@ -6,14 +6,14 @@ from .util import AcquisitionError
 
 
 class ExpectedImprovement(AbstractAcquisition):
-
     def __init__(self, xi):
 
         super().__init__()
 
         self.xi = xi
 
-    def evaluate(self, model: MultiOutputGPRegressionModel, xs: np.ndarray, ys: np.ndarray, candidate_xs: np.ndarray) -> np.ndarray:
+    def evaluate(self, model: MultiOutputGPRegressionModel, xs: np.ndarray, ys: np.ndarray,
+                 candidate_xs: np.ndarray) -> np.ndarray:
 
         if len(ys.shape) < 2:
             ys = ys.reshape([-1, 1])

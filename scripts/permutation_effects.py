@@ -32,8 +32,7 @@ database_url = "127.0.0.1:27017"
 database_name = "boa_fitting_experiments"
 ex.captured_out_filter = apply_backspaces_and_linefeeds
 
-ex.observers.append(MongoObserver(url=database_url,
-                                  db_name=database_name))
+ex.observers.append(MongoObserver(url=database_url, db_name=database_name))
 
 
 @ex.config
@@ -52,6 +51,10 @@ def experiment_config(dataset):
 
     train_dataset_size = 50
     test_dataset_size = 200
+
+    denoising = False
+    fit_joint = False
+    iters = 1000
 
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -75,26 +78,26 @@ def experiment_config(dataset):
 
 
 @ex.automain
-def experiment(dataset,
-
-               rounds,
-               num_permutations,
-               num_targets,
-               train_dataset_size,
-               test_dataset_size,
-               use_input_transforms,
-
-               kernel,
-               initialization,
-               optimizer,
-               num_optimizer_restarts,
-
-               log_path,
-               verbose,
-
-               _seed,
-               _log,
-               ):
+def experiment(
+    dataset,
+    rounds,
+    num_permutations,
+    num_targets,
+    train_dataset_size,
+    test_dataset_size,
+    use_input_transforms,
+    kernel,
+    initialization,
+    optimizer,
+    num_optimizer_restarts,
+    iters,
+    fit_joint,
+    denoising,
+    log_path,
+    verbose,
+    _seed,
+    _log,
+):
     log_dir = os.path.dirname(log_path)
 
     # Make sure the directory exists
@@ -127,10 +130,7 @@ def experiment(dataset,
     if use_input_transforms:
         data = transform_df(data, dataset["input_transforms"])
 
-    model = GPARModel(kernel=kernel,
-                      input_dim=input_dim,
-                      output_dim=output_dim,
-                      verbose=verbose)
+    model = GPARModel(kernel=kernel, input_dim=input_dim, output_dim=output_dim, verbose=verbose)
 
     # Set seed for reproducibility
     np.random.seed(_seed)
@@ -163,20 +163,22 @@ def experiment(dataset,
                 _log.info(f"Training permutation: {permutation}. ({perm_index + 1}/{len(permutations)})")
                 _log.info("-----------------------------------------------------------")
 
-            experiment = {'index': index,
-                          'inputs': input_labels.tolist(),
-                          'outputs': permuted_output_labels.tolist(),
-                          'permutation': permutation,
-                          }
+            experiment = {
+                'index': index,
+                'inputs': input_labels.tolist(),
+                'outputs': permuted_output_labels.tolist(),
+                'permutation': permutation,
+            }
 
-            perm_model = model.condition_on(train_data[input_labels].values,
-                                            train_data[permuted_output_labels].values)
+            perm_model = model.condition_on(train_data[input_labels].values, train_data[permuted_output_labels].values)
 
-            perm_model.fit(fit_joint=False,
+            perm_model.fit(fit_joint=fit_joint,
                            map_estimate=False,
                            length_scale_init_mode=initialization,
                            optimizer=optimizer,
                            optimizer_restarts=num_optimizer_restarts,
+                           iters=iters,
+                           denoising=denoising,
                            trace=True,
                            err_level="raise")
 

@@ -73,16 +73,15 @@ def data_config():
         ]
         targets = ('avg_power', 'cycle', 'total_area')
 
-
         input_transforms = {
-           'cache_size': "log",
-           'cache_assoc': "log",
-           'cache_line_sz': "log",
-           'cache_queue_size': "log",
-           'tlb_page_size': "log",
-           'tlb_max_outstanding_walks': "log",
-           'tlb_assoc': "log",
-           'l2cache_size': "log",
+            'cache_size': "log",
+            'cache_assoc': "log",
+            'cache_line_sz': "log",
+            'cache_queue_size': "log",
+            'tlb_page_size': "log",
+            'tlb_max_outstanding_walks': "log",
+            'tlb_assoc': "log",
+            'l2cache_size': "log",
         }
         output_transforms = {
             'avg_mem_power': "log",
@@ -136,20 +135,19 @@ def data_config():
             'num_register',
         ]
         input_transforms = {
-           'cycle_time': "log",
-           'cache_size': "log",
-           'cache_assoc': "log",
-           'cache_hit_latency': "log",
-           'l2cache_size': "log",
-           'tlb_hit_latency': "log",
-           'tlb_entries': "log"
+            'cycle_time': "log",
+            'cache_size': "log",
+            'cache_assoc': "log",
+            'cache_hit_latency': "log",
+            'l2cache_size': "log",
+            'tlb_hit_latency': "log",
+            'tlb_entries': "log"
         }
         output_transforms = {
             'cycle': "log",
             'avg_power': "log",
             'avg_mem_power': "log",
             'avg_mem_dynamic_power': "log",
-
         }
 
     elif name == "gemm":
@@ -193,13 +191,13 @@ def data_config():
         ]
 
         input_transforms = {
-           'cycle_time': "log",
-           'cache_size': "log",
-           'cache_assoc': "log",
-           'cache_hit_latency': "log",
-           'l2cache_size': "log",
-           'tlb_hit_latency': "log",
-           'tlb_entries': "log"
+            'cycle_time': "log",
+            'cache_size': "log",
+            'cache_assoc': "log",
+            'cache_hit_latency': "log",
+            'l2cache_size': "log",
+            'tlb_hit_latency': "log",
+            'tlb_entries': "log"
         }
         output_transforms = {
             'cycle': "log",
@@ -253,11 +251,11 @@ def data_config():
         ]
 
         input_transforms = {
-           'num_threads': "log",
-           'l2_assoc': "log",
-           'accel_clock_time': "log",
-           'num_accels': "log",
-           'l2_size': "log",
+            'num_threads': "log",
+            'l2_assoc': "log",
+            'accel_clock_time': "log",
+            'num_accels': "log",
+            'l2_size': "log",
         }
         output_transforms = {
             'total_time': "log",
@@ -295,6 +293,4 @@ def load_dataset(dataset_path, separator, input_labels, output_labels) -> DataTu
     with open(dataset_path) as f:
         df = pd.read_csv(f, sep=separator, dtype=np.float64)
 
-    return DataTuple(df=df[input_labels + output_labels],
-                     input_labels=input_labels,
-                     output_labels=output_labels)
+    return DataTuple(df=df[input_labels + output_labels], input_labels=input_labels, output_labels=output_labels)

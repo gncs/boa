@@ -148,8 +148,8 @@ class GPARModel(MultiOutputGPRegressionModel):
                 while j < optimizer_restarts:
                     j += 1
 
-                    hyperparams = self.create_hyperparameter_initializers(index=i,
-                                                                          length_scale_init=self.initialization_heuristic)
+                    hyperparams = self.create_hyperparameter_initializers(
+                        index=i, length_scale_init=self.initialization_heuristic)
 
                     length_scales, signal_amplitude, noise_amplitude = hyperparams
 
@@ -158,13 +158,9 @@ class GPARModel(MultiOutputGPRegressionModel):
                     try:
                         if optimizer == "l-bfgs-b":
                             # Perform L-BFGS-B optimization
-                            res = minimize(function=lambda s, l, n: negative_gp_log_likelihood(train_xs,
-                                                                                               train_ys,
-                                                                                               s, l, n,
-                                                                                               train=True),
-                                           vs=(signal_amplitude,
-                                               length_scales,
-                                               noise_amplitude),
+                            res = minimize(function=lambda s, l, n: negative_gp_log_likelihood(
+                                train_xs, train_ys, s, l, n, train=True),
+                                           vs=(signal_amplitude, length_scales, noise_amplitude),
                                            parallel_iterations=10,
                                            max_iterations=iters)
 

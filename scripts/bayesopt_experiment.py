@@ -26,13 +26,14 @@ import datetime
 
 from dataset_config import load_dataset, dataset_ingredient
 
+tf.config.experimental.set_visible_devices([], 'GPU')
+
 ex = Experiment("bayesopt_experiment", ingredients=[dataset_ingredient])
 database_url = "127.0.0.1:27017"
 database_name = "boa_bayesopt_experiments"
 ex.captured_out_filter = apply_backspaces_and_linefeeds
 
-ex.observers.append(MongoObserver(url=database_url,
-                                  db_name=database_name))
+ex.observers.append(MongoObserver(url=database_url, db_name=database_name))
 
 
 @ex.config
@@ -41,6 +42,9 @@ def bayesopt_config(dataset):
     model = "gpar"
     verbose = True
 
+    if model == "gpar":
+        denoising = True
+
     # Number of experiments to perform
     rounds = 5
 
@@ -48,6 +52,8 @@ def bayesopt_config(dataset):
     max_num_iterations = 120
     warmup_dataset_size = 10
     batch_size = 1
+
+    output_permutation = list(range(len(dataset["output_labels"])))
 
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -117,12 +123,7 @@ tf.config.experimental.set_visible_devices([], 'GPU')
 
 
 class Objective(AbstractObjective):
-    def __init__(self,
-                 df: pd.DataFrame,
-                 input_labels: List[str],
-                 output_labels: List[str],
-                 *args,
-                 **kwargs):
+    def __init__(self, df: pd.DataFrame, input_labels: List[str], output_labels: List[str], *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.data = df
@@ -156,14 +157,13 @@ class Objective(AbstractObjective):
 def optimize(model,
              objective,
              optimizer,
-
              dataset,
-
              model_optimizer,
              model_optimizer_restarts,
              initialization,
              iters,
              fit_joint,
+             denoising,
              warmup_dataset_size,
              seed: int,
              verbose,
@@ -194,6 +194,7 @@ def optimize(model,
                   fit_joint=fit_joint,
                   length_scale_init_mode=initialization,
                   map_estimate=map_estimate,
+                  denoising=denoising,
                   trace=verbose)
 
     xs, ys = optimizer.optimize(f=objective,
@@ -208,6 +209,7 @@ def optimize(model,
                                 model_optimizer=model_optimizer,
                                 optimizer_restarts=3,
                                 map_estimate=map_estimate,
+                                denoising=denoising,
                                 marginalize_hyperparameters=marginalize_hyperparameters,
                                 mcmc_kwargs=mcmc_kwargs)
 
@@ -222,23 +224,26 @@ def get_default_acq_config(df: pd.DataFrame, objective_labels) -> dict:
 
 @ex.automain
 def main(dataset,
-
          rounds,
          model,
          kernel,
          max_num_iterations,
          use_input_transforms,
+         output_permutation,
          batch_size,
          verbose,
          log_path,
          _seed,
          _log,
+         denoising=False,
          latent_dim=None,
          num_samples=None):
     input_labels = dataset["input_labels"]
     output_labels = dataset["output_labels"]
+    output_labels = np.array(output_labels)[output_permutation].tolist()
 
-    ds = load_dataset()
+    # Use the permuted labels
+    ds = load_dataset(output_labels=output_labels)
     df = ds.df
 
     # Transform the data before it is passed to anything.
@@ -246,9 +251,7 @@ def main(dataset,
         df = transform_df(df, dataset["input_transforms"])
 
     # Setup optimizer
-    bo_optimizer = Optimizer(max_num_iterations=max_num_iterations,
-                             batch_size=batch_size,
-                             verbose=verbose)
+    bo_optimizer = Optimizer(max_num_iterations=max_num_iterations, batch_size=batch_size, verbose=verbose)
 
     # Setup models
     if model == "random":
@@ -282,9 +285,7 @@ def main(dataset,
     # Run the optimization
     for seed in range(rounds):
         os.makedirs(os.path.dirname(log_path.format(seed)), exist_ok=True)
-        results = optimize(objective=Objective(df=df,
-                                               input_labels=input_labels,
-                                               output_labels=output_labels),
+        results = optimize(objective=Objective(df=df, input_labels=input_labels, output_labels=output_labels),
                            model=surrogate_model,
                            optimizer=bo_optimizer,
                            seed=seed,

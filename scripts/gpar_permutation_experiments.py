@@ -156,24 +156,9 @@ def generate_neighbourhood(perm, dist=1):
 
 
 @ex.capture
-def run_random_experiment(model,
-                          data,
-                          inputs: Sequence[str],
-                          outputs: Sequence[str],
-
-                          optimizer,
-                          optimizer_restarts,
-                          num_target_dims,
-                          train_size,
-                          validation_size,
-                          test_size,
-                          log_dir,
-                          log_path,
-                          matrix_factorized,
-                          num_samples,
-                          rounds,
-                          _seed,
-                          _log):
+def run_random_experiment(model, data, inputs: Sequence[str], outputs: Sequence[str], optimizer, optimizer_restarts,
+                          num_target_dims, train_size, validation_size, test_size, log_dir, log_path, matrix_factorized,
+                          num_samples, rounds, _seed, _log):
     # Make sure the directory exists
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -196,19 +181,15 @@ def run_random_experiment(model,
     num_permuted_dimensions = len(outputs) - num_target_dims
 
     # Create uniform distribution over permutations
-    uniform_gm = GumbelMatching(weight_matrix=tf.zeros((num_permuted_dimensions,
-                                                        num_permuted_dimensions),
-                                                       dtype=tf.float64))
+    uniform_gm = GumbelMatching(
+        weight_matrix=tf.zeros((num_permuted_dimensions, num_permuted_dimensions), dtype=tf.float64))
 
     _log.info(f"Performing random order search using {num_samples} samples!")
 
     # We "restart" the search rounds number of times
     for index in range(rounds):
 
-        experiment = {'index': index,
-                      'size': train_size,
-                      'inputs': inputs,
-                      'outputs': outputs}
+        experiment = {'index': index, 'size': train_size, 'inputs': inputs, 'outputs': outputs}
 
         # In each round we do a different train-validate split
         train, validate = train_test_split(train_and_validate,
@@ -297,9 +278,7 @@ def run_random_experiment(model,
             model = model.condition_on(train_and_validate[inputs].values,
                                        train_and_validate[outputs].values[:, best_perm],
                                        keep_previous=False)
-            model.fit(optimizer_restarts=optimizer_restarts,
-                      optimizer=optimizer,
-                      trace=True)
+            model.fit(optimizer_restarts=optimizer_restarts, optimizer=optimizer, trace=True)
         except Exception as e:
             _log.exception("Training failed: {}".format(str(e)))
             raise e
@@ -334,23 +313,8 @@ def run_random_experiment(model,
 
 
 @ex.capture
-def run_greedy_experiment(model,
-                          data,
-                          inputs,
-                          outputs,
-
-                          optimizer,
-                          optimizer_restarts,
-                          num_target_dims,
-                          train_size,
-                          validation_size,
-                          test_size,
-                          log_dir,
-                          log_path,
-                          save_dir,
-                          matrix_factorized,
-                          rounds,
-                          _seed,
+def run_greedy_experiment(model, data, inputs, outputs, optimizer, optimizer_restarts, num_target_dims, train_size,
+                          validation_size, test_size, log_dir, log_path, save_dir, matrix_factorized, rounds, _seed,
                           _log):
     # Make sure the directory exists
     if not os.path.exists(log_dir):
@@ -378,10 +342,7 @@ def run_greedy_experiment(model,
         _log.info(f"Training round: {index + 1}/{rounds} for training set size {train_size}, ")
         _log.info("-----------------------------------------------------------")
 
-        experiment = {'index': index,
-                      'size': train_size,
-                      'inputs': inputs,
-                      'outputs': outputs}
+        experiment = {'index': index, 'size': train_size, 'inputs': inputs, 'outputs': outputs}
 
         if matrix_factorized:
             experiment["latent_size"] = model.latent_dim
@@ -438,30 +399,10 @@ def run_greedy_experiment(model,
 
 
 @ex.capture
-def run_hierarchical_bayesopt_experiment(model,
-                                         data,
-                                         inputs,
-                                         outputs,
-
-                                         optimizer,
-                                         optimizer_restarts,
-                                         num_target_dims,
-                                         train_size,
-                                         validation_size,
-                                         test_size,
-                                         num_warmup_samples,
-                                         num_bayesopt_steps,
-                                         num_bayesopt_candidates,
-                                         median_heuristic_only,
-                                         log_dir,
-                                         log_path,
-                                         save_dir,
-                                         matrix_factorized,
-                                         rounds,
-                                         distance_kind,
-                                         xi,
-                                         _seed,
-                                         _log):
+def run_hierarchical_bayesopt_experiment(model, data, inputs, outputs, optimizer, optimizer_restarts, num_target_dims,
+                                         train_size, validation_size, test_size, num_warmup_samples, num_bayesopt_steps,
+                                         num_bayesopt_candidates, median_heuristic_only, log_dir, log_path, save_dir,
+                                         matrix_factorized, rounds, distance_kind, xi, _seed, _log):
     # Make sure the directory exists
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -486,9 +427,8 @@ def run_hierarchical_bayesopt_experiment(model,
         raise Exception("Too many dimensions to optimize, this is not implemented yet!")
 
     # Create uniform distribution over permutations
-    uniform_gm = GumbelMatching(weight_matrix=tf.zeros((num_permuted_dimensions,
-                                                        num_permuted_dimensions),
-                                                       dtype=tf.float64))
+    uniform_gm = GumbelMatching(
+        weight_matrix=tf.zeros((num_permuted_dimensions, num_permuted_dimensions), dtype=tf.float64))
 
     # =========================================================================
     # Perform hierarchical BayesOpt
@@ -498,10 +438,7 @@ def run_hierarchical_bayesopt_experiment(model,
     # We "restart" the search rounds number of times
     for index in range(rounds):
 
-        experiment = {'index': index,
-                      'size': train_size,
-                      'inputs': inputs,
-                      'outputs': outputs}
+        experiment = {'index': index, 'size': train_size, 'inputs': inputs, 'outputs': outputs}
 
         # In each round we do a different train-validate split
         train, validate = train_test_split(train_and_validate,
@@ -600,19 +537,13 @@ def run_hierarchical_bayesopt_experiment(model,
             # Only use the non-target dimensions
             train_permutations.append(warmup_stat['perm'][:-num_target_dims])
 
-        perm_gp = PermutationGPModel(kernel='perm_eq',
-                                     distance_kind=distance_kind,
-                                     input_dim=num_permuted_dimensions)
+        perm_gp = PermutationGPModel(kernel='perm_eq', distance_kind=distance_kind, input_dim=num_permuted_dimensions)
 
         _log.info("Fitting hyperparameters of the permutation surrogate model")
-        perm_gp = perm_gp.condition_on(train_permutations,
-                                       train_log_probs)
+        perm_gp = perm_gp.condition_on(train_permutations, train_log_probs)
 
         try:
-            perm_gp.fit(optimizer_restarts=optimizer_restarts,
-                        optimizer='l-bfgs-b',
-                        trace=True,
-                        err_level='raise')
+            perm_gp.fit(optimizer_restarts=optimizer_restarts, optimizer='l-bfgs-b', trace=True, err_level='raise')
 
         except Exception as e:
             _log.exception("Training the surrogate model failed: {}".format(str(e)))
@@ -699,9 +630,7 @@ def run_hierarchical_bayesopt_experiment(model,
                 model = model.condition_on(train[inputs].values,
                                            train[outputs].values[:, extended_next_evaluation_point],
                                            keep_previous=False)
-                model.fit(optimizer_restarts=optimizer_restarts,
-                          optimizer=optimizer,
-                          trace=True)
+                model.fit(optimizer_restarts=optimizer_restarts, optimizer=optimizer, trace=True)
             except Exception as e:
                 _log.exception("Training failed: {}".format(str(e)))
                 raise e
@@ -768,9 +697,7 @@ def run_hierarchical_bayesopt_experiment(model,
             model = model.condition_on(train_and_validate[inputs].values,
                                        train_and_validate[outputs].values[:, best_perm],
                                        keep_previous=False)
-            model.fit(optimizer_restarts=optimizer_restarts,
-                      optimizer=optimizer,
-                      trace=True)
+            model.fit(optimizer_restarts=optimizer_restarts, optimizer=optimizer, trace=True)
         except Exception as e:
             _log.exception("Training failed: {}".format(str(e)))
             raise e
@@ -832,22 +759,13 @@ def main(model, kernel, initialization, verbose, search_mode, latent_dim=None):
                                             verbose=verbose)
 
     if search_mode == "random_search":
-        results = run_random_experiment(model=surrogate_model,
-                                        data=df,
-                                        inputs=input_labels,
-                                        outputs=output_labels)
+        results = run_random_experiment(model=surrogate_model, data=df, inputs=input_labels, outputs=output_labels)
 
     elif search_mode == "greedy_search":
-        run_greedy_experiment(model=surrogate_model,
-                              data=df,
-                              inputs=input_labels,
-                              outputs=output_labels)
+        run_greedy_experiment(model=surrogate_model, data=df, inputs=input_labels, outputs=output_labels)
 
     elif search_mode == "hbo":
-        run_hierarchical_bayesopt_experiment(model=surrogate_model,
-                                             data=df,
-                                             inputs=input_labels,
-                                             outputs=output_labels)
+        run_hierarchical_bayesopt_experiment(model=surrogate_model, data=df, inputs=input_labels, outputs=output_labels)
 
     else:
         raise NotImplementedError

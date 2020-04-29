@@ -41,6 +41,7 @@ class Optimizer:
                  fit_joint: bool,
                  model_optimizer: str,
                  map_estimate: bool,
+                 denoising: bool,
                  marginalize_hyperparameters: bool,
                  mcmc_kwargs: dict = {}) -> Tuple[np.ndarray, np.ndarray]:
 
@@ -67,6 +68,7 @@ class Optimizer:
                     break
 
                 acquisition_values, y_preds = acq_fun.evaluate(model=eval_model,
+                                                               denoising=denoising,
                                                                marginalize_hyperparameters=marginalize_hyperparameters,
                                                                mcmc_kwargs=mcmc_kwargs,
                                                                xs=xs,
@@ -119,6 +121,7 @@ class Optimizer:
                               optimizer=model_optimizer,
                               initialization=initialization,
                               iters=iters,
+                              denoising=denoising,
                               map_estimate=map_estimate,
                               fit_joint=fit_joint)
                 except Exception as e:

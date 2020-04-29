@@ -6,20 +6,18 @@ from boa.core.utils import setup_logger
 from .multi_output_gp_regression_model import MultiOutputGPRegressionModel, ModelError
 from boa import ROOT_DIR
 
-
 __all__ = ["FullyFactorizedGPModel"]
 
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/ff_gp.log")
 
 
 class FullyFactorizedGPModel(MultiOutputGPRegressionModel):
-
     def __init__(self,
                  kernel: str,
                  input_dim: int,
                  output_dim: int,
                  parallel: bool = False,
-                 name: str = "gp_model",
+                 name: str = "ff_gp_model",
                  verbose=True,
                  **kwargs):
 

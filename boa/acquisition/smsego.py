@@ -30,11 +30,13 @@ class SMSEGO(AbstractAcquisition):
             return ys[:, self.output_slice[0]:self.output_slice[1]]
         return ys
 
-    def evaluate(self, model: MultiOutputGPRegressionModel,
+    def evaluate(self,
+                 model: MultiOutputGPRegressionModel,
                  xs: np.ndarray,
                  ys: np.ndarray,
                  candidate_xs: np.ndarray,
                  marginalize_hyperparameters: bool,
+                 denoising: bool,
                  mcmc_kwargs: dict = {}) -> Tuple[np.ndarray, np.ndarray]:
         ys = self.slice_output(ys)
 
@@ -42,6 +44,7 @@ class SMSEGO(AbstractAcquisition):
         pred_means, pred_var = model.predict(candidate_xs,
                                              numpy=True,
                                              marginalize_hyperparameters=marginalize_hyperparameters,
+                                             denoising=denoising,
                                              **mcmc_kwargs)
 
         means = self.slice_output(pred_means)

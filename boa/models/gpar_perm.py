@@ -53,9 +53,9 @@ class PermutedGPARModel(GPARModel):
             self.length_scales.append(
                 tf.Variable(tf.ones(self.input_dim + i, dtype=tf.float64), name=f"{i}/length_scales"))
 
-            self.signal_amplitudes.append(tf.Variable((1,), dtype=tf.float64, name=f"{i}/signal_amplitude"))
+            self.signal_amplitudes.append(tf.Variable((1, ), dtype=tf.float64, name=f"{i}/signal_amplitude"))
 
-            self.noise_amplitudes.append(tf.Variable((1,), dtype=tf.float64, name=f"{i}/noise_amplitude"))
+            self.noise_amplitudes.append(tf.Variable((1, ), dtype=tf.float64, name=f"{i}/noise_amplitude"))
 
     def permutation_matrix(self, log_mat, temperature, sinkhorn_iterations=20, soft=True):
 
@@ -102,12 +102,12 @@ class PermutedGPARModel(GPARModel):
                 ys_ls_rand_range = tf.minimum(self.ys_euclidean_percentiles[2] - self.ys_euclidean_percentiles[0],
                                               self.ys_euclidean_percentiles[4] - self.ys_euclidean_percentiles[2])
 
-                xs_ls_init += tf.random.uniform(shape=(self.input_dim,),
+                xs_ls_init += tf.random.uniform(shape=(self.input_dim, ),
                                                 minval=-xs_ls_rand_range,
                                                 maxval=xs_ls_rand_range,
                                                 dtype=tf.float64)
 
-                ys_ls_init += tf.random.uniform(shape=(index,),
+                ys_ls_init += tf.random.uniform(shape=(index, ),
                                                 minval=-ys_ls_rand_range,
                                                 maxval=ys_ls_rand_range,
                                                 dtype=tf.float64)
@@ -116,7 +116,7 @@ class PermutedGPARModel(GPARModel):
                 ls_init = tf.concat((xs_ls_init, ys_ls_init), axis=0)
 
             else:
-                ls_init = tf.random.uniform(shape=(self.input_dim + index,),
+                ls_init = tf.random.uniform(shape=(self.input_dim + index, ),
                                             minval=init_minval,
                                             maxval=init_maxval,
                                             dtype=tf.float64)
@@ -125,13 +125,13 @@ class PermutedGPARModel(GPARModel):
             length_scales.append(BoundedVariable(ls_init, lower=3e-2, upper=1e2))
 
             signal_amplitudes.append(
-                BoundedVariable(tf.random.uniform(shape=(1,), minval=init_minval, maxval=init_maxval,
+                BoundedVariable(tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval,
                                                   dtype=tf.float64),
                                 lower=1e-2,
                                 upper=1e2))
 
             noise_amplitudes.append(
-                BoundedVariable(tf.random.uniform(shape=(1,), minval=init_minval, maxval=init_maxval,
+                BoundedVariable(tf.random.uniform(shape=(1, ), minval=init_minval, maxval=init_maxval,
                                                   dtype=tf.float64),
                                 lower=1e-6,
                                 upper=1e2))
@@ -194,10 +194,10 @@ class PermutedGPARModel(GPARModel):
 
                         return -gp.log_pdf(gp_input, ys[:, i:i + 1], normalize_with_input=True)
 
-                    loss, converged, diverged = minimize(negative_gp_log_likelihood,
-                                                         vs=(signal_amplitudes[i], length_scales[i],
-                                                             noise_amplitudes[i]),
-                                                         parallel_iterations=10)
+                    loss, converged, diverged = minimize(
+                        negative_gp_log_likelihood,
+                        vs=(signal_amplitudes[i], length_scales[i], noise_amplitudes[i]),
+                        parallel_iterations=10)
 
                     if diverged:
                         logger.error(f"Model diverged, restarting iteration {j} (loss was {loss:.3f})!")
@@ -251,8 +251,8 @@ class PermutedGPARModel(GPARModel):
                             if hard_forward_permutation:
                                 # Forward pass: use hard permutation
                                 # Backward pass: pretend we used the soft permutation all along
-                                permuted_output = soft_permuted_ys + tf.stop_gradient(
-                                    hard_permuted_ys_ - soft_permuted_ys)
+                                permuted_output = soft_permuted_ys + tf.stop_gradient(hard_permuted_ys_ -
+                                                                                      soft_permuted_ys)
                             else:
                                 permuted_output = soft_permuted_ys
 

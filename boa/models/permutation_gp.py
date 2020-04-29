@@ -24,13 +24,7 @@ logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f
 
 
 class PermutationGPModel(MultiOutputGPRegressionModel):
-
-    def __init__(self,
-                 kernel: str,
-                 distance_kind: str,
-                 input_dim: int,
-                 name: str = "permutation_gp_model",
-                 **kwargs):
+    def __init__(self, kernel: str, distance_kind: str, input_dim: int, name: str = "permutation_gp_model", **kwargs):
         super().__init__(kernel=kernel,
                          kernel_args={"kind": distance_kind},
                          input_dim=input_dim,
@@ -47,7 +41,7 @@ class PermutationGPModel(MultiOutputGPRegressionModel):
         self.noise_amplitude = tf.Variable(1e-1, dtype=tf.float64, name="noise_amplitude")
 
     def create_hyperparameter_initializers(self, init_minval=0.1, init_maxval=1.):
-        length_scale = BoundedVariable(tf.random.uniform(shape=(1,),
+        length_scale = BoundedVariable(tf.random.uniform(shape=(1, ),
                                                          minval=init_minval,
                                                          maxval=init_maxval,
                                                          dtype=tf.float64),
@@ -55,7 +49,7 @@ class PermutationGPModel(MultiOutputGPRegressionModel):
                                        upper=1e4,
                                        dtype=tf.float64)
 
-        signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
+        signal_amplitude = BoundedVariable(tf.random.uniform(shape=(1, ),
                                                              minval=init_minval,
                                                              maxval=init_maxval,
                                                              dtype=tf.float64),
@@ -63,7 +57,7 @@ class PermutationGPModel(MultiOutputGPRegressionModel):
                                            upper=1e2,
                                            dtype=tf.float64)
 
-        noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1,),
+        noise_amplitude = BoundedVariable(tf.random.uniform(shape=(1, ),
                                                             minval=init_minval,
                                                             maxval=init_maxval,
                                                             dtype=tf.float64),
@@ -73,8 +67,15 @@ class PermutationGPModel(MultiOutputGPRegressionModel):
 
         return length_scale, signal_amplitude, tf.cast(1e-1, tf.float64)  # noise_amplitude
 
-    def fit(self, xs, ys, optimizer='l-bfgs-b', optimizer_restarts=1, iters=1000, trace=False,
-            err_level="catch", median_heuristic_only=False) -> None:
+    def fit(self,
+            xs,
+            ys,
+            optimizer='l-bfgs-b',
+            optimizer_restarts=1,
+            iters=1000,
+            trace=False,
+            err_level="catch",
+            median_heuristic_only=False) -> None:
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
@@ -233,10 +234,7 @@ class PermutationGPModel(MultiOutputGPRegressionModel):
                 norm_xs = cond_model.normalize_with_training_data(xs, output=False)
                 norm_ys = cond_model.normalize_with_training_data(ys, output=True)
 
-                model_log_prob = model.log_pdf(norm_xs,
-                                               norm_ys,
-                                               latent=latent,
-                                               with_jitter=False)
+                model_log_prob = model.log_pdf(norm_xs, norm_ys, latent=latent, with_jitter=False)
 
             log_prob = log_prob + model_log_prob
 

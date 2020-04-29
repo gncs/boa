@@ -54,9 +54,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         :param kwargs:
         """
 
-        super(MultiOutputGPRegressionModel, self).__init__(name=name,
-                                                           dtype=tf.float64,
-                                                           **kwargs)
+        super(MultiOutputGPRegressionModel, self).__init__(name=name, dtype=tf.float64, **kwargs)
 
         # Check if the specified kernel is available
         if kernel in GaussianProcess.AVAILABLE_KERNELS:
@@ -85,25 +83,24 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         # ---------------------------------------------------------------------
         # Model hyperparameters
         # ---------------------------------------------------------------------
-        self._signal_amplitudes: List[BoundedVariable] = [BoundedVariable([0.],
-                                                                          lower=-np.inf,
-                                                                          upper=np.inf,
-                                                                          name=f"signal_amplitude_{i}")
-                                                          for i in range(self.output_dim)]
+        self._signal_amplitudes: List[BoundedVariable] = [
+            BoundedVariable([0.], lower=-np.inf, upper=np.inf, name=f"signal_amplitude_{i}")
+            for i in range(self.output_dim)
+        ]
 
-        self._noise_amplitudes: List[BoundedVariable] = [BoundedVariable([0.],
-                                                                         lower=-np.inf,
-                                                                         upper=np.inf,
-                                                                         name=f"noise_amplitude_{i}")
-                                                         for i in range(self.output_dim)]
+        self._noise_amplitudes: List[BoundedVariable] = [
+            BoundedVariable([0.], lower=-np.inf, upper=np.inf, name=f"noise_amplitude_{i}")
+            for i in range(self.output_dim)
+        ]
 
         # Create hyperparameters
         if self.has_explicit_length_scales():
-            self._length_scales: List[BoundedVariable] = [BoundedVariable(tf.zeros([self.gp_input_dim(i)]),
-                                                                          lower=-np.inf,
-                                                                          upper=np.inf,
-                                                                          name=f"length_scales_{i}")
-                                                          for i in range(self.output_dim)]
+            self._length_scales: List[BoundedVariable] = [
+                BoundedVariable(tf.zeros([self.gp_input_dim(i)]),
+                                lower=-np.inf,
+                                upper=np.inf,
+                                name=f"length_scales_{i}") for i in range(self.output_dim)
+            ]
 
         # ---------------------------------------------------------------------
         # Flags
@@ -173,8 +170,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
             variable.assign(value)
 
     def variables_to_train(self, transformed):
-        variables = [self.gp_variables_to_train(i, transformed=transformed)
-                     for i in range(self.output_dim)]
+        variables = [self.gp_variables_to_train(i, transformed=transformed) for i in range(self.output_dim)]
 
         return variables
 
@@ -246,13 +242,10 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
         return model
 
-    def initialize_hyperpriors(self,
-                               length_scale_init_mode,
-                               empirical_bayes=False,
-                               **kwargs):
+    def initialize_hyperpriors(self, length_scale_init_mode, empirical_bayes=False, **kwargs):
 
-        length_scales, signal_amplitudes, noise_amplitudes = self.create_all_hyperparameter_initializers(length_scale_init_mode=length_scale_init_mode,
-                                                                                                         **kwargs)
+        length_scales, signal_amplitudes, noise_amplitudes = self.create_all_hyperparameter_initializers(
+            length_scale_init_mode=length_scale_init_mode, **kwargs)
 
         sa_lowers = []
         sa_uppers = []
@@ -300,23 +293,20 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                 na_locs[i] = self.noise_amplitude(i)()
                 ls_locs[i] = self.length_scales(i)()
 
-        self.signal_amplitude_priors = [tfd.Independent(tfd.LogNormal(loc=sa_loc,
-                                                                      scale=3. * tf.ones_like(sa_upper)),
-                                                        reinterpreted_batch_ndims=1)
-                                        for sa_loc, sa_upper, sa_lower
-                                        in zip(sa_locs, sa_uppers, sa_lowers)]
+        self.signal_amplitude_priors = [
+            tfd.Independent(tfd.LogNormal(loc=sa_loc, scale=3. * tf.ones_like(sa_upper)), reinterpreted_batch_ndims=1)
+            for sa_loc, sa_upper, sa_lower in zip(sa_locs, sa_uppers, sa_lowers)
+        ]
 
-        self.noise_amplitude_priors = [tfd.Independent(tfd.LogNormal(loc=na_loc,
-                                                                     scale=3. * tf.ones_like(na_upper)),
-                                                       reinterpreted_batch_ndims=1)
-                                       for na_loc, na_upper, na_lower
-                                       in zip(na_locs, na_uppers, na_lowers)]
+        self.noise_amplitude_priors = [
+            tfd.Independent(tfd.LogNormal(loc=na_loc, scale=3. * tf.ones_like(na_upper)), reinterpreted_batch_ndims=1)
+            for na_loc, na_upper, na_lower in zip(na_locs, na_uppers, na_lowers)
+        ]
 
-        self.length_scales_priors = [tfd.Independent(tfd.LogNormal(loc=ls_loc,
-                                                                   scale=3. * tf.ones_like(ls_lower)),
-                                                     reinterpreted_batch_ndims=1)
-                                     for ls_loc, ls_lower
-                                     in zip(ls_locs, ls_lowers)]
+        self.length_scales_priors = [
+            tfd.Independent(tfd.LogNormal(loc=ls_loc, scale=3. * tf.ones_like(ls_lower)), reinterpreted_batch_ndims=1)
+            for ls_loc, ls_lower in zip(ls_locs, ls_lowers)
+        ]
 
         self.hyperpriors_initialized = True
         self.hyperprior_ls_init_mode = length_scale_init_mode
@@ -367,8 +357,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
             marginal_percentiles = tf.cast(tf.convert_to_tensor(marginal_percentiles), self.dtype)
 
             # Set the new statistics
-            self._gp_input_statistics[index] = {"l2": l2_percentiles,
-                                                "marginal": marginal_percentiles}
+            self._gp_input_statistics[index] = {"l2": l2_percentiles, "marginal": marginal_percentiles}
 
         # ---------------------------------------------------------------------
         # Random initialization
@@ -392,8 +381,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
             # Center on the medians
             ls_init = l2_percentiles[2]
 
-            ls_rand_range = tf.minimum(l2_percentiles[2] - l2_percentiles[1],
-                                       l2_percentiles[3] - l2_percentiles[2])
+            ls_rand_range = tf.minimum(l2_percentiles[2] - l2_percentiles[1], l2_percentiles[3] - l2_percentiles[2])
 
             ls_init += tf.random.uniform(shape=(gp_input_dim,),
                                          minval=-ls_rand_range,
@@ -465,9 +453,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
         return length_scales, signal_amplitude, noise_amplitude
 
-    def create_all_hyperparameter_initializers(self,
-                                               length_scale_init_mode: str,
-                                               **kwargs):
+    def create_all_hyperparameter_initializers(self, length_scale_init_mode: str, **kwargs):
         """
         Initializes the hyperparameters for every GP in the joint model
         :param length_scale_init_mode:
@@ -493,10 +479,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
         return length_scales, signal_amplitudes, noise_amplitudes
 
-    def initialize_gp_hyperparameters(self,
-                                      index,
-                                      length_scale_init_mode,
-                                      **kwargs):
+    def initialize_gp_hyperparameters(self, index, length_scale_init_mode, **kwargs):
 
         hyperparams = self.create_hyperparameter_initializers(index=index,
                                                               length_scale_init_mode=length_scale_init_mode,
@@ -510,9 +493,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
         return self._length_scales[index], self._signal_amplitudes[index], self._noise_amplitudes[index]
 
-    def initialize_hyperparameters(self,
-                                   length_scale_init_mode,
-                                   **kwargs):
+    def initialize_hyperparameters(self, length_scale_init_mode, **kwargs):
 
         hyperparam_list = []
 
@@ -526,6 +507,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         return hyperparam_list
 
     def fit(self,
+            denoising=True,
             fit_joint=False,
             map_estimate=False,
             optimizer="l-bfgs-b",
@@ -565,6 +547,9 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         # ---------------------------------------------------------------------
         if not fit_joint:
 
+            # This list will store the means in case we wish to fit a denoising GPAR
+            means = []
+
             # Iterate the optimization for each dimension
             for i in range(self.output_dim):
 
@@ -580,18 +565,23 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                     # Increase step
                     restart_index = restart_index + 1
 
-                    hyperparams = self.initialize_gp_hyperparameters(index=i,
-                                                                     length_scale_init_mode=length_scale_init_mode)
+                    self.initialize_gp_hyperparameters(index=i,
+                                                       length_scale_init_mode=length_scale_init_mode)
+
+                    hyperparams = self.gp_variables_to_train(index=i, transformed=False)
 
                     loss = np.inf
 
                     negative_gp_log_prob = lambda: -self.gp_log_prob(xs=self.xs,
                                                                      ys=self.ys,
                                                                      index=i,
+                                                                     denoising=denoising,
+                                                                     means=(means if denoising else None),
                                                                      joint=map_estimate,
                                                                      predictive=False,
                                                                      average=True)
                     try:
+
                         if optimizer == "l-bfgs-b":
                             # Perform L-BFGS-B optimization
                             loss, converged, diverged = minimize(function=negative_gp_log_prob,
@@ -664,6 +654,9 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
                 self.gp_assign_variables(i, best_fit_values)
 
+                mean, _ = self.gp_predict(xs=self.gp_predictive_input(xs=self.xs, means=means), index=i, denoising=True)
+                means.append(mean)
+
         # ---------------------------------------------------------------------
         # Fitting the GPs together
         # ---------------------------------------------------------------------
@@ -677,15 +670,13 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
                 restart_index = restart_index + 1
 
-                hyperparams = self.initialize_hyperparameters(length_scale_init_mode=length_scale_init_mode)
+                self.initialize_hyperparameters(length_scale_init_mode=length_scale_init_mode)
+                hyperparams = self.variables_to_train(transformed=False)
 
                 loss = np.inf
 
-                negative_model_log_likelihood = lambda: -self.log_prob(xs=self.xs,
-                                                                       ys=self.ys,
-                                                                       predictive=False,
-                                                                       joint=map_estimate,
-                                                                       average=True)
+                negative_model_log_likelihood = lambda: -self.log_prob(
+                    xs=self.xs, ys=self.ys, denoising=denoising, predictive=False, joint=map_estimate, average=True)
                 try:
                     if optimizer == "l-bfgs-b":
                         # Perform L-BFGS-B optimization
@@ -753,8 +744,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                     logger.info(f"Iteration {restart_index}: Loss: {loss:.3f}")
 
                 if np.isnan(loss) or np.isinf(loss):
-                    logger.error(f"Iteration {restart_index}: Loss was {loss}, "
-                                 f"restarting training iteration!")
+                    logger.error(f"Iteration {restart_index}: Loss was {loss}, " f"restarting training iteration!")
                     restart_index = restart_index - 1
                     continue
 
@@ -788,9 +778,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         :param index:
         :return:
         """
-        return self.gp_input(index,
-                             xs=self.xs,
-                             ys=self.ys)
+        return self.gp_input(index, xs=self.xs, ys=self.ys)
 
     def gp_train_output(self, index):
         """
@@ -798,10 +786,9 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         :param index:
         :return:
         """
-        return self.gp_output(index,
-                              ys=self.ys)
+        return self.gp_output(index, ys=self.ys)
 
-    def gp_predict(self, xs, index, signal_amplitude=None, length_scales=None, noise_amplitude=None):
+    def gp_predict(self, xs, index, signal_amplitude=None, length_scales=None, noise_amplitude=None, denoising=False):
 
         # if not self.trained:
         #     logger.warning("Using untrained model for prediction!")
@@ -816,10 +803,9 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                        noise_amplitude=noise_amplitude)
 
         # Condition the model on the training data
-        model = self.models[index] | (self.gp_train_input(index=index),
-                                      self.gp_train_output(index=index))
+        model = self.models[index] | (self.gp_train_input(index=index), self.gp_train_output(index=index))
 
-        mean, var = model.predict(xs, latent=False, with_jitter=False)
+        mean, var = model.predict(xs, latent=False, with_jitter=False, denoising=denoising)
 
         return mean, var
 
@@ -827,6 +813,8 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                     xs,
                     ys,
                     index,
+                    denoising=True,
+                    means=None,
                     predictive=True,
                     average=False,
                     joint=False,
@@ -843,7 +831,13 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                        noise_amplitude=noise_amplitude)
 
         # Select appropriate slices of data
-        gp_input = self.gp_input(index=index, xs=xs, ys=ys)
+        if denoising:
+            if means is None:
+                raise ModelError("When using a denoising log probability, the means must be provided! (None was given)")
+            gp_input = self.gp_predictive_input(xs=xs, means=means)
+        else:
+            gp_input = self.gp_input(index=index, xs=xs, ys=ys)
+
         gp_output = self.gp_output(index=index, ys=ys)
 
         # Get the model
@@ -856,9 +850,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
             # Condition the model
             model = model | (gp_train_input, gp_train_output)
 
-        log_prob = model.log_pdf(gp_input,
-                                 gp_output,
-                                 predictive=predictive)
+        log_prob = model.log_pdf(gp_input, gp_output, predictive=predictive)
 
         # If we are using the joint log-probability, we add on the log prob of the hyperparameteres
         if joint:
@@ -881,11 +873,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
         return log_prob
 
-    def predict(self, xs,
-                numpy=False,
-                marginalize_hyperparameters=False,
-                num_samples=50,
-                **kwargs):
+    def predict(self, xs, numpy=False, marginalize_hyperparameters=False, num_samples=50, denoising=False, **kwargs):
 
         xs = self._validate_and_convert(xs, output=False)
 
@@ -895,8 +883,8 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         if marginalize_hyperparameters:
             logger.info("Marginalizing hyperparameters!")
 
-            [signal_amplitudes, length_scales, noise_amplitudes], traces = self.sample_hyperposterior(num_samples=num_samples,
-                                                                                                      **kwargs)
+            [signal_amplitudes, length_scales,
+             noise_amplitudes], traces = self.sample_hyperposterior(num_samples=num_samples, **kwargs)
 
             num_accepted = tf.reduce_sum(tf.cast(traces.is_accepted, tf.int32)).numpy()
 
@@ -905,18 +893,17 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
             all_means = [[] for _ in range(num_samples)]
             all_variances = [[] for _ in range(num_samples)]
 
-            for samp_index, (sa_vec, ls_vec, na_vec) in enumerate(zip(signal_amplitudes,
-                                                                      length_scales,
-                                                                      noise_amplitudes)):
+            for samp_index, (sa_vec, ls_vec, na_vec) in enumerate(
+                    zip(signal_amplitudes, length_scales, noise_amplitudes)):
 
                 sa_list, ls_list, na_list = self.hyperparameters_from_vectors(sa_vec, ls_vec, na_vec)
 
                 for i in range(self.output_dim):
-                    mean, var = self.gp_predict(self.gp_predictive_input(xs=xs,
-                                                                         means=all_means[samp_index]),
+                    mean, var = self.gp_predict(self.gp_predictive_input(xs=xs, means=all_means[samp_index]),
                                                 signal_amplitude=sa_list[i],
                                                 length_scales=ls_list[i],
                                                 noise_amplitude=na_list[i],
+                                                denoising=denoising,
                                                 index=i)
 
                     all_means[samp_index].append(mean)
@@ -930,8 +917,8 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
         else:
             for i in range(self.output_dim):
-                mean, var = self.gp_predict(self.gp_predictive_input(xs=xs,
-                                                                     means=means),
+                mean, var = self.gp_predict(self.gp_predictive_input(xs=xs, means=means),
+                                            denoising=denoising,
                                             index=i)
 
                 means.append(mean)
@@ -946,34 +933,49 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
         return means, variances
 
-    def log_prob(self, xs, ys,
+    def log_prob(self,
+                 xs,
+                 ys,
+                 denoising=True,
                  predictive=True,
                  numpy=False,
                  average=False,
                  joint=False,
                  signal_amplitudes=None,
                  length_scales=None,
-                 noise_amplitudes=None
-                 ):
+                 noise_amplitudes=None):
 
         xs, ys = self._validate_and_convert_input_output(xs, ys)
 
         log_prob = 0.
 
+        means = []
+
         for i in range(self.output_dim):
-            current_log_prob = self.gp_log_prob(xs,
-                                                ys,
-                                                index=i,
-                                                predictive=predictive,
-                                                average=average,
-                                                joint=joint,
-                                                signal_amplitude=(
-                                                    signal_amplitudes[i] if signal_amplitudes is not None else None),
-                                                length_scales=(length_scales[i] if length_scales is not None else None),
-                                                noise_amplitude=(
-                                                    noise_amplitudes[i] if noise_amplitudes is not None else None))
+            current_log_prob = self.gp_log_prob(
+                xs=xs,
+                ys=ys,
+                index=i,
+                predictive=predictive,
+                denoising=denoising,
+                means=(means if denoising else None),
+                average=average,
+                joint=joint,
+                signal_amplitude=(signal_amplitudes[i] if signal_amplitudes is not None else None),
+                length_scales=(length_scales[i] if length_scales is not None else None),
+                noise_amplitude=(noise_amplitudes[i] if noise_amplitudes is not None else None))
 
             log_prob = log_prob + current_log_prob
+
+            mean, _ = self.gp_predict(
+                xs=self.gp_predictive_input(xs=xs, means=means),
+                index=i,
+                denoising=denoising,
+                signal_amplitude=(signal_amplitudes[i] if signal_amplitudes is not None else None),
+                length_scales=(length_scales[i] if length_scales is not None else None),
+                noise_amplitude=(noise_amplitudes[i] if noise_amplitudes is not None else None))
+
+            means.append(mean)
 
         if numpy:
             log_prob = log_prob.numpy()
@@ -997,14 +999,8 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
         return sa_list, ls_list, na_list
 
-    def sample_hyperposterior(self,
-                              num_samples,
-                              num_burnin_steps,
-                              step_size=0.03,
-                              leapfrog_steps=10):
-
+    def sample_hyperposterior(self, num_samples, num_burnin_steps, step_size=0.03, leapfrog_steps=10):
         def joint_vectorized_log_prob(sas, lss, nas):
-
             sa_list, ls_list, na_list = self.hyperparameters_from_vectors(sas, lss, nas)
 
             return self.log_prob(xs=self.xs,
@@ -1021,27 +1017,24 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
             tf.concat([nap.sample() for nap in self.noise_amplitude_priors], axis=0)
         ]
 
-        return tfp.mcmc.sample_chain(
-            num_results=num_samples,
-            num_burnin_steps=num_burnin_steps,
-            current_state=init_state,
-            kernel=tfp.mcmc.SimpleStepSizeAdaptation(
-                tfp.mcmc.TransformedTransitionKernel(
-                    inner_kernel=tfp.mcmc.HamiltonianMonteCarlo(
-                        target_log_prob_fn=joint_vectorized_log_prob,
-                        step_size=step_size,
-                        num_leapfrog_steps=leapfrog_steps,
-                    ),
-                    bijector=[
-                        tfb.Softplus(),
-                        tfb.Softplus(),
-                        tfb.Softplus(),
-                    ]
-                ),
-                num_adaptation_steps=int(num_burnin_steps * 0.8),
-            ),
-            trace_fn=lambda _, pkr: pkr.inner_results.inner_results
-        )
+        return tfp.mcmc.sample_chain(num_results=num_samples,
+                                     num_burnin_steps=num_burnin_steps,
+                                     current_state=init_state,
+                                     kernel=tfp.mcmc.SimpleStepSizeAdaptation(
+                                         tfp.mcmc.TransformedTransitionKernel(
+                                             inner_kernel=tfp.mcmc.HamiltonianMonteCarlo(
+                                                 target_log_prob_fn=joint_vectorized_log_prob,
+                                                 step_size=step_size,
+                                                 num_leapfrog_steps=leapfrog_steps,
+                                             ),
+                                             bijector=[
+                                                 tfb.Softplus(),
+                                                 tfb.Softplus(),
+                                                 tfb.Softplus(),
+                                             ]),
+                                         num_adaptation_steps=int(num_burnin_steps * 0.8),
+                                     ),
+                                     trace_fn=lambda _, pkr: pkr.inner_results.inner_results)
 
     @abc.abstractmethod
     def get_config(self):
@@ -1109,8 +1102,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         if not len(xs.shape) == 2:
             raise ModelError("The input must be of rank 2!")
 
-        if (not output and xs.shape[1] != self.input_dim) or \
-                (output and xs.shape[1] != self.output_dim):
+        if (not output and xs.shape[1] != self.input_dim) or (output and xs.shape[1] != self.output_dim):
             out_text = 'output' if output else 'input'
             raise ModelError(f"The second dimension of the {out_text} "
                              f"is incorrect: {xs.shape[1]} (expected {self.output_dim if output else self.input_dim})!")

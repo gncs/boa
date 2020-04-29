@@ -16,7 +16,7 @@ tf.config.experimental.set_visible_devices([], 'GPU')
 
 # Target function (noise free).
 def f(x):
-    return (np.sinc(3 * x) + 0.5 * (x - 0.5) ** 2).reshape(-1, 1)
+    return (np.sinc(3 * x) + 0.5 * (x - 0.5)**2).reshape(-1, 1)
 
 
 @pytest.fixture
@@ -32,23 +32,14 @@ def data():
 
 @pytest.fixture
 def gp():
-    return GaussianProcess(kernel="rbf",
-                           input_dim=1,
-                           signal_amplitude=1,
-                           length_scales=1,
-                           noise_amplitude=0.01)
+    return GaussianProcess(kernel="rbf", input_dim=1, signal_amplitude=1, length_scales=1, noise_amplitude=0.01)
 
 
 @pytest.mark.parametrize(
     'kernel, signal_amplitude, length_scales, noise_amplitude',
-    [("bla", 1, 1, 0.01),
-     ("rbf", -1, 1, 0.01),
-     ("rbf", 1, -1, 0.01),
-     ("rbf", 1, 1, -0.01),
-     ("rbf", 1, np.array([1, 1, 0, 1, 1, 1]), 0.01),
-     ("rbf", 1, 1, 0),
-     ("rbf", 1, tf.ones((4, 4), dtype=tf.float64), 0.01)
-     ],
+    [("bla", 1, 1, 0.01), ("rbf", -1, 1, 0.01), ("rbf", 1, -1, 0.01), ("rbf", 1, 1, -0.01),
+     ("rbf", 1, np.array([1, 1, 0, 1, 1, 1]), 0.01), ("rbf", 1, 1, 0),
+     ("rbf", 1, tf.ones((4, 4), dtype=tf.float64), 0.01)],
 )
 def test_init(kernel, signal_amplitude, length_scales, noise_amplitude):
 
@@ -99,17 +90,14 @@ def test_gp_data_standardization():
     test_xs = tf.random.uniform(shape=(10, 3))
     test_ys = tf.random.uniform(shape=(10, 1))
 
-    gp = GaussianProcess(kernel='rbf',
-                         input_dim=3,
-                         signal_amplitude=1.,
-                         length_scales=1.,
-                         noise_amplitude=0.1)
+    gp = GaussianProcess(kernel='rbf', input_dim=3, signal_amplitude=1., length_scales=1., noise_amplitude=0.1)
 
     mean, std = gp.xs_mean_and_std
 
     gp = gp | (test_xs[:5, :], test_ys[:5, :])
 
     print(gp.xs_mean_and_std)
+
 
 def test_log_pdf():
     pass
