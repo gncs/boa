@@ -204,7 +204,7 @@ class MatrixFactorizedGPARModel(GPARModel):
         with open(save_path + ".json", "r") as config_file:
             config = json.load(config_file)
 
-        model = GPARModel.from_config(config, )
+        model = MatrixFactorizedGPARModel.from_config(config, )
 
         model.load_weights(save_path)
         model.create_gps()

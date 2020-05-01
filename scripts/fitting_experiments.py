@@ -10,6 +10,7 @@ from boa.models.fully_factorized_gp import FullyFactorizedGPModel
 from boa.models.gpar import GPARModel
 from boa.models.random import RandomModel
 from boa.models.matrix_factorized_gpar import MatrixFactorizedGPARModel
+from boa.models.svd_gpar import SVDFactorizedGPARModel
 
 from boa.core import transform_df, back_transform
 from boa import ROOT_DIR
@@ -97,7 +98,7 @@ def experiment_config(dataset):
         log_dir = f"{log_dir}/{model}/{current_time}/"
         log_path = f"{log_dir}/{model}_experiments.json"
 
-    elif model == "mf-gpar":
+    elif model in ["mf-gpar", "svd-gpar"]:
         fit_joint = True
         # Effective dimension of the factorization.
         latent_dim = 5
@@ -290,6 +291,13 @@ def main(dataset, model, kernel, verbose, latent_dim=None):
                                                     output_dim=output_dim,
                                                     latent_dim=latent_dim,
                                                     verbose=verbose)
+
+    elif model == 'svd-gpar':
+        surrogate_model = SVDFactorizedGPARModel(kernel=kernel,
+                                                 input_dim=input_dim,
+                                                 output_dim=output_dim,
+                                                 latent_dim=latent_dim,
+                                                 verbose=verbose)
 
     else:
         raise NotImplementedError
