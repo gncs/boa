@@ -11,9 +11,9 @@ from tqdm import trange
 from boa.models.multi_output_gp_regression_model import ModelError
 from .gpar import GPARModel
 
-from boa.core.utils import setup_logger
+from boa.core.utils import setup_logger, tensor_hash, tf_custom_gradient_method
 from not_tf_opt import AbstractVariable, BoundedVariable, UnconstrainedVariable, PositiveVariable
-from not_tf_opt import map_to_bounded_interval, map_from_bounded_interval, minimize
+from not_tf_opt import map_to_bounded_interval, map_from_bounded_interval, minimize, get_reparametrizations
 
 from boa import ROOT_DIR
 
@@ -57,7 +57,7 @@ class SVDFactorizedGPARModel(GPARModel):
 
         self._right_householder_vectors = [UnconstrainedVariable(tf.ones(i, dtype=tf.float64),
                                                                  name=f"right_householder_vector_{i}")
-                                           for i in range(0, self.input_dim + 1, 1)]
+                                           for i in range(1, self.input_dim + 1, 1)]
 
         self._singular_values = PositiveVariable(
             tf.ones(tf.minimum(self.input_dim, self.output_dim), dtype=tf.float64),
@@ -81,6 +81,28 @@ class SVDFactorizedGPARModel(GPARModel):
                             upper=np.inf,
                             name=f"output_length_scales_{i}") for i in range(self.output_dim)
         ]
+
+        self._cached_input_length_scales = tf.Variable(tf.zeros([output_dim, input_dim], dtype=tf.float64),
+                                                       trainable=False,
+                                                       name="cached_input_length_scales")
+
+        self._cached_lhv_jacobians = {lhv.var.name: tf.Variable(tf.zeros((output_dim, input_dim) + lhv.shape,
+                                                                     dtype=tf.float64),
+                                                            name=f"cached_lhv_{i}_jacobian",
+                                                            trainable=False)
+                                      for i, lhv in enumerate(self._left_householder_vectors)}
+
+        self._cached_rhv_jacobians = {rhv.var.name: tf.Variable(tf.zeros((output_dim, input_dim) + rhv.shape,
+                                                                     dtype=tf.float64),
+                                                            name=f"cached_rhv_{i}_jacobian",
+                                                            trainable=False)
+                                      for i, rhv in enumerate(self._right_householder_vectors)}
+
+        self._cached_sv_jacobians = tf.Variable(tf.ones((output_dim, input_dim) + self._singular_values.shape,
+                                                        dtype=tf.float64),
+                                                name="cached_singular_values_jacobian")
+
+        self._input_length_scale_hash = tf.Variable(42, dtype=tf.int64, name="input_length_scale_hash", trainable=False)
 
     def householder_reflector(self, v, dim, as_matrix=False):
 
@@ -137,6 +159,70 @@ class SVDFactorizedGPARModel(GPARModel):
         ls_mat = map_to_bounded_interval(svd, lower=self._input_ls_lower_bound, upper=self._input_ls_upper_bound)
 
         return ls_mat
+
+    @property
+    @tf_custom_gradient_method
+    def _input_length_scales(self):
+
+        input_scale_variables = get_reparametrizations([self._right_householder_vectors,
+                                                        self._left_householder_vectors,
+                                                        self._singular_values])
+
+        # Determine if there were any changes, i.e. whether the length scales should be recomputed
+        ils_hash = tensor_hash(input_scale_variables)
+
+        if ils_hash != int(self._input_length_scale_hash):
+
+            print("Recalculating Jacobians!")
+            self._input_length_scale_hash.assign(ils_hash)
+
+            with tf.GradientTape() as tape:
+                ils = self._input_length_scales()
+
+            ils_jac = tape.jacobian(ils, input_scale_variables)
+
+            assert len(ils_jac[0]) == len(self._right_householder_vectors), len(ils_jac[0])
+            assert len(ils_jac[1]) == len(self._left_householder_vectors), len(ils_jac[1])
+            assert ils_jac[2].shape == self._cached_sv_jacobians.shape
+
+            for i in range(len(ils_jac[0])):
+                self._cached_rhv_jacobians[self._right_householder_vectors[i].var.name].assign(ils_jac[0][i])
+
+            for i in range(len(ils_jac[1])):
+                self._cached_lhv_jacobians[self._left_householder_vectors[i].var.name].assign(ils_jac[1][i])
+
+            self._cached_sv_jacobians.assign(ils_jac[2])
+
+            self._cached_input_length_scales.assign(ils)
+
+        else:
+            print("Reusing gradients")
+
+        def grad(dy, variables):
+
+            grads = []
+
+            for variable in variables:
+
+                # Calculate appropriate Vector - Jacobian products
+                if variable.name in self._cached_lhv_jacobians:
+                    vjp = tf.einsum('ij, ijk -> k', dy, self._cached_lhv_jacobians[variable.name])
+
+                elif variable.name in self._cached_rhv_jacobians:
+                    vjp = tf.einsum('ij, ijk -> k', dy, self._cached_rhv_jacobians[variable.name])
+
+                elif variable.name == self._singular_values.var.name:
+                    vjp = tf.einsum('ij, ijk -> k', dy, self._cached_sv_jacobians)
+
+                else:
+                    print(variable.name)
+                    vjp = None
+
+                grads.append(vjp)
+
+            return (), grads
+
+        return self._cached_input_length_scales.value(), grad
 
     def has_explicit_length_scales(self):
         return False
@@ -242,7 +328,7 @@ class SVDFactorizedGPARModel(GPARModel):
                                     for i in range(self.output_dim, 0, -1)]
 
         right_householder_vectors = [UnconstrainedVariable(tf.random.normal(shape=(i,), dtype=tf.float64))
-                                     for i in range(0, self.input_dim + 1, 1)]
+                                     for i in range(1, self.input_dim + 1, 1)]
 
         # backward transform the length-scale matrix
         ls_mat = map_from_bounded_interval(ls_mat, lower=self._input_ls_lower_bound, upper=self._input_ls_upper_bound)
@@ -257,9 +343,9 @@ class SVDFactorizedGPARModel(GPARModel):
             return tf.reduce_sum(tf.math.squared_difference(a, b))
 
         left_loss = lambda vectors: frobenius_loss(u, self.orthogonal_transform(vectors, dim=self.output_dim,
-                                                                                 as_matrix=True))
+                                                                                as_matrix=True))
         right_loss = lambda vectors: frobenius_loss(v, self.orthogonal_transform(vectors, dim=self.input_dim,
-                                                                                  as_matrix=True))
+                                                                                 as_matrix=True))
 
         res, converged, diverged = minimize(left_loss,
                                             vs=[left_householder_vectors])
