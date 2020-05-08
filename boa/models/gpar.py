@@ -24,7 +24,6 @@ class GPARModel(MultiOutputGPRegressionModel):
                  output_dim: int,
                  denoising: bool = False,
                  verbose: bool = False,
-                 _create_length_scales: bool = True,
                  name: str = "gpar_model",
                  **kwargs):
         """
@@ -245,7 +244,7 @@ class GPARModel(MultiOutputGPRegressionModel):
                         best_validation_log_prob = valid_log_prob
 
                         # Assign the hyperparameters for each input to the model variables
-                        self.length_scales[i].assign(length_scales())
+                        self.gp_length_scales[i].assign(length_scales())
                         self.signal_amplitudes[i].assign(signal_amplitude())
                         self.noise_amplitudes[i].assign(noise_amplitude())
 

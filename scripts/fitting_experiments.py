@@ -11,6 +11,7 @@ from boa.models.gpar import GPARModel
 from boa.models.random import RandomModel
 from boa.models.matrix_factorized_gpar import MatrixFactorizedGPARModel
 from boa.models.svd_gpar import SVDFactorizedGPARModel
+from boa.models.matrix_factorized_gpar_v2 import MatrixFactorizedGPARModelV2
 
 from boa.core import transform_df, back_transform
 from boa import ROOT_DIR
@@ -90,6 +91,8 @@ def experiment_config(dataset):
     # Number of training iterations to allow either for L-BFGS-B or Adam.
     iters = 1000
 
+    learning_rate = 1e-1
+
     matrix_factorized = False
 
     fit_joint = False
@@ -98,7 +101,7 @@ def experiment_config(dataset):
         log_dir = f"{log_dir}/{model}/{current_time}/"
         log_path = f"{log_dir}/{model}_experiments.json"
 
-    elif model in ["mf-gpar", "svd-gpar"]:
+    elif model in ["mf-gpar", "mf-gpar-v2", "svd-gpar"]:
         fit_joint = True
         # Effective dimension of the factorization.
         latent_dim = 5
@@ -137,10 +140,10 @@ def run_experiment(model,
                    verbose,
                    marginalize_hyperparameters,
                    empirical_bayes_for_marginalization,
+                   learning_rate,
                    _log,
                    _seed,
                    mcmc_kwargs={}):
-
     input_labels = dataset["input_labels"]
     output_labels = dataset["output_labels"]
 
@@ -157,7 +160,7 @@ def run_experiment(model,
     np.random.seed(_seed)
     tf.random.set_seed(_seed)
 
-    for size in [25, 50, 100, 150, 200]:
+    for size in [10, 15, 20, 25, 50, 100, 150, 200]:
         for index in range(rounds):
 
             if verbose:
@@ -209,6 +212,7 @@ def run_experiment(model,
                               optimizer_restarts=num_optimizer_restarts,
                               optimizer=optimizer,
                               trace=True,
+                              rate=learning_rate,
                               err_level="raise",
                               iters=iters)
             except Exception as e:
@@ -291,6 +295,12 @@ def main(dataset, model, kernel, verbose, latent_dim=None):
                                                     output_dim=output_dim,
                                                     latent_dim=latent_dim,
                                                     verbose=verbose)
+    elif model == 'mf-gpar-v2':
+        surrogate_model = MatrixFactorizedGPARModelV2(kernel=kernel,
+                                                      input_dim=input_dim,
+                                                      output_dim=output_dim,
+                                                      latent_dim=latent_dim,
+                                                      verbose=verbose)
 
     elif model == 'svd-gpar':
         surrogate_model = SVDFactorizedGPARModel(kernel=kernel,

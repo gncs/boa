@@ -5,6 +5,7 @@ from typing import List
 
 import numpy as np
 import tensorflow as tf
+import tensorflow_probability as tfp
 
 from tqdm import trange
 
@@ -20,6 +21,11 @@ from boa import ROOT_DIR
 logger = setup_logger(__name__, level=logging.DEBUG, to_console=True, log_file=f"{ROOT_DIR}/../logs/mf_gpar.log")
 
 tfl = tf.linalg
+
+
+__all__ = [
+    "SVDFactorizedGPARModel"
+]
 
 
 class SVDFactorizedGPARModel(GPARModel):
@@ -39,10 +45,13 @@ class SVDFactorizedGPARModel(GPARModel):
             kernel=kernel,
             input_dim=input_dim,
             output_dim=output_dim,
-            _create_length_scales=False,  # Never create the length scales in the parent class
             verbose=verbose,
             name=name,
             **kwargs)
+
+        max_latent_dim = min(input_dim, output_dim)
+        if latent_dim > max_latent_dim:
+            print(f"Latent dimension must be less than min(input_dim, output_dim) = {max_latent_dim}, but was {latent_dim}!")
 
         self.latent_dim = latent_dim
 
@@ -53,15 +62,19 @@ class SVDFactorizedGPARModel(GPARModel):
         # Since in SVD, we have M = USV^T, and the composition of Householder transformations will reflect this structure
         self._left_householder_vectors = [UnconstrainedVariable(tf.ones(i, dtype=tf.float64),
                                                                 name=f"left_householder_vector_{i}")
-                                          for i in range(self.output_dim, 0, -1)]
+                                          for i in range(self.output_dim,
+                                                         self.output_dim - self.latent_dim,
+                                                         -1)]
 
         self._right_householder_vectors = [UnconstrainedVariable(tf.ones(i, dtype=tf.float64),
                                                                  name=f"right_householder_vector_{i}")
-                                           for i in range(1, self.input_dim + 1, 1)]
+                                           for i in range(self.input_dim - self.latent_dim + 1,
+                                                          self.input_dim + 1,
+                                                          1)]
 
-        self._singular_values = PositiveVariable(
-            tf.ones(tf.minimum(self.input_dim, self.output_dim), dtype=tf.float64),
-            name="singular_values")
+        self._singular_values_reparam = PositiveVariable(
+            tf.ones(self.latent_dim, dtype=tf.float64),
+            name="singular_values_reparameterization")
 
         self._input_ls_lower_bound = tf.Variable(tf.zeros([0, 0], dtype=tf.float64),
                                                  shape=(None, None),
@@ -82,27 +95,29 @@ class SVDFactorizedGPARModel(GPARModel):
                             name=f"output_length_scales_{i}") for i in range(self.output_dim)
         ]
 
-        self._cached_input_length_scales = tf.Variable(tf.zeros([output_dim, input_dim], dtype=tf.float64),
-                                                       trainable=False,
-                                                       name="cached_input_length_scales")
+    @property
+    def singular_values(self):
+        """
+        since self._singular_values_reparam always contains positive entries,
+        this will ensure that this result is always is positive descending
+        :return:
+        """
+        return tf.cumsum(self._singular_values_reparam())[::-1]
 
-        self._cached_lhv_jacobians = {lhv.var.name: tf.Variable(tf.zeros((output_dim, input_dim) + lhv.shape,
-                                                                     dtype=tf.float64),
-                                                            name=f"cached_lhv_{i}_jacobian",
-                                                            trainable=False)
-                                      for i, lhv in enumerate(self._left_householder_vectors)}
+    def assign_singular_values(self, v):
+        """
+        v is assumed to be positive descending
 
-        self._cached_rhv_jacobians = {rhv.var.name: tf.Variable(tf.zeros((output_dim, input_dim) + rhv.shape,
-                                                                     dtype=tf.float64),
-                                                            name=f"cached_rhv_{i}_jacobian",
-                                                            trainable=False)
-                                      for i, rhv in enumerate(self._right_householder_vectors)}
+        #TODO: Add check
+        :param v:
+        :return:
+        """
+        if isinstance(v, AbstractVariable):
+            v = v()
 
-        self._cached_sv_jacobians = tf.Variable(tf.ones((output_dim, input_dim) + self._singular_values.shape,
-                                                        dtype=tf.float64),
-                                                name="cached_singular_values_jacobian")
+        reparam = tf.concat([v[:-1] - v[1:], v[-1:]], axis=0)[::-1]
 
-        self._input_length_scale_hash = tf.Variable(42, dtype=tf.int64, name="input_length_scale_hash", trainable=False)
+        self._singular_values_reparam.assign(reparam)
 
     def householder_reflector(self, v, dim, as_matrix=False):
 
@@ -139,114 +154,64 @@ class SVDFactorizedGPARModel(GPARModel):
 
     @property
     def input_length_scales(self):
-        left_orth = self.orthogonal_transform(self._left_householder_vectors, self.output_dim)
-        right_orth = self.orthogonal_transform(self._right_householder_vectors, self.input_dim)
-        scaling = tfl.LinearOperatorDiag(self._singular_values())
+        left_orth = self.orthogonal_transform(self._left_householder_vectors, self.output_dim).to_dense()
+        right_orth = self.orthogonal_transform(self._right_householder_vectors, self.input_dim).to_dense()
 
-        # We need to chop one of the orthogonal matrices
-        if self.output_dim > self.input_dim:
-            scaling_times_right_orth = tfl.LinearOperatorComposition([scaling, right_orth]).to_dense()
-            left_orth = left_orth.to_dense()[:, :self.input_dim]
+        # Chop of the "unnecessary parts"
+        left_orth = left_orth[:, :self.latent_dim]
+        right_orth = right_orth[:self.latent_dim, :]
 
-            svd = tf.matmul(left_orth, scaling_times_right_orth)
+        scaling = tfl.diag(self.singular_values)
 
-        else:
-            left_orth_times_scaling = tfl.LinearOperatorComposition([left_orth, scaling]).to_dense()
-            right_orth = right_orth.to_dense()[:self.output_dim, :]
-
-            svd = tf.matmul(left_orth_times_scaling, right_orth)
+        svd = tf.einsum('nd, dd, dm -> nm', left_orth, scaling, right_orth)
 
         ls_mat = map_to_bounded_interval(svd, lower=self._input_ls_lower_bound, upper=self._input_ls_upper_bound)
 
         return ls_mat
 
-    @property
-    @tf_custom_gradient_method
-    def _input_length_scales(self):
-
-        input_scale_variables = get_reparametrizations([self._right_householder_vectors,
-                                                        self._left_householder_vectors,
-                                                        self._singular_values])
-
-        # Determine if there were any changes, i.e. whether the length scales should be recomputed
-        ils_hash = tensor_hash(input_scale_variables)
-
-        if ils_hash != int(self._input_length_scale_hash):
-
-            print("Recalculating Jacobians!")
-            self._input_length_scale_hash.assign(ils_hash)
-
-            with tf.GradientTape() as tape:
-                ils = self._input_length_scales()
-
-            ils_jac = tape.jacobian(ils, input_scale_variables)
-
-            assert len(ils_jac[0]) == len(self._right_householder_vectors), len(ils_jac[0])
-            assert len(ils_jac[1]) == len(self._left_householder_vectors), len(ils_jac[1])
-            assert ils_jac[2].shape == self._cached_sv_jacobians.shape
-
-            for i in range(len(ils_jac[0])):
-                self._cached_rhv_jacobians[self._right_householder_vectors[i].var.name].assign(ils_jac[0][i])
-
-            for i in range(len(ils_jac[1])):
-                self._cached_lhv_jacobians[self._left_householder_vectors[i].var.name].assign(ils_jac[1][i])
-
-            self._cached_sv_jacobians.assign(ils_jac[2])
-
-            self._cached_input_length_scales.assign(ils)
-
-        else:
-            print("Reusing gradients")
-
-        def grad(dy, variables):
-
-            grads = []
-
-            for variable in variables:
-
-                # Calculate appropriate Vector - Jacobian products
-                if variable.name in self._cached_lhv_jacobians:
-                    vjp = tf.einsum('ij, ijk -> k', dy, self._cached_lhv_jacobians[variable.name])
-
-                elif variable.name in self._cached_rhv_jacobians:
-                    vjp = tf.einsum('ij, ijk -> k', dy, self._cached_rhv_jacobians[variable.name])
-
-                elif variable.name == self._singular_values.var.name:
-                    vjp = tf.einsum('ij, ijk -> k', dy, self._cached_sv_jacobians)
-
-                else:
-                    print(variable.name)
-                    vjp = None
-
-                grads.append(vjp)
-
-            return (), grads
-
-        return self._cached_input_length_scales.value(), grad
-
     def has_explicit_length_scales(self):
         return False
 
-    def length_scales(self, index):
+    def gp_length_scales(self, index):
         # Wrap in a lambda so it imitates the forward transform of a variable
         return lambda: tf.concat([self.input_length_scales[index, :], self._output_length_scales[index]()], axis=0)
 
+    def length_scales(self):
+        """
+        Using this function is a much more efficient way of getting every length scale compared
+        to calling self.gp_length_scales with every index.
+
+        :return:
+        """
+        print(self.singular_values)
+
+        input_length_scales = self.input_length_scales
+        output_length_scales = self._output_length_scales
+
+        s = tf.linalg.svd(input_length_scales, compute_uv=False)
+        print(s)
+
+        length_scales = [tf.concat([input_length_scales[i, :], output_length_scales[i]()], axis=0)
+                         for i in range(self.output_dim)]
+
+        return list(map(lambda x: (lambda: x), length_scales))
+
     def gp_variables_to_train(self, index, transformed):
-        raise ModelError("MF-GPAR model cannot be trained in a factorized manner!")
+        raise ModelError("SVD-GPAR model cannot be trained in a factorized manner!")
 
     def gp_assign_variables(self, index, values):
-        raise ModelError("Variables for MF-GPAR model cannot be assigned " "in a factorized manner!")
+        raise ModelError("Variables for SVD-GPAR model cannot be assigned " "in a factorized manner!")
 
     def variables_to_train(self, transformed):
-        signal_amplitudes = [self.signal_amplitude(i) for i in range(self.output_dim)]
+        signal_amplitudes = [self.gp_signal_amplitude(i) for i in range(self.output_dim)]
 
-        noise_amplitudes = [self.noise_amplitude(i) for i in range(self.output_dim)]
+        noise_amplitudes = [self.gp_noise_amplitude(i) for i in range(self.output_dim)]
 
         output_length_scales = [self._output_length_scales[i] for i in range(self.output_dim)]
 
-        left_householder_vectors = [self._left_householder_vectors[i] for i in range(self.output_dim)]
-        right_householder_vectors = [self._right_householder_vectors[i] for i in range(self.input_dim)]
-        singular_values = self._singular_values
+        left_householder_vectors = [self._left_householder_vectors[i] for i in range(self.latent_dim)]
+        right_householder_vectors = [self._right_householder_vectors[i] for i in range(self.latent_dim)]
+        singular_values = self._singular_values_reparam
 
         if transformed:
             # Forward transform everything
@@ -257,7 +222,7 @@ class SVDFactorizedGPARModel(GPARModel):
             left_householder_vectors = [lhv() for lhv in left_householder_vectors]
             right_householder_vectors = [rhv() for rhv in right_householder_vectors]
 
-            singular_values = singular_values()
+            singular_values = self.singular_values
 
         return (signal_amplitudes,
                 noise_amplitudes,
@@ -280,20 +245,39 @@ class SVDFactorizedGPARModel(GPARModel):
             self._signal_amplitudes[i].assign(signal_amplitudes[i])
             self._noise_amplitudes[i].assign(noise_amplitudes[i])
 
+        for i in range(self.latent_dim):
             self._left_householder_vectors[i].assign(left_householder_vectors[i])
-
-        for i in range(self.input_dim):
             self._right_householder_vectors[i].assign(right_householder_vectors[i])
 
-        self._singular_values.assign(singular_values)
+        self.assign_singular_values(singular_values)
 
-    def create_all_hyperparameter_initializers(self, length_scale_init_mode: str, **kwargs):
+    def create_all_hyperparameter_initializers(self, length_scale_init_mode: str, use_gpar_init=False, **kwargs):
 
-        # Initialize the hyperparameters for regular GPAR
-        all_hyperparams = super().create_all_hyperparameter_initializers(length_scale_init_mode=length_scale_init_mode,
-                                                                         **kwargs)
+        if use_gpar_init:
+            print("Fitting GPAR model first!")
+            # Initialize by fitting GPAR first
+            starting_model = GPARModel(kernel=self.kernel_name,
+                                       input_dim=self.input_dim,
+                                       output_dim=self.output_dim)
 
-        joint_length_scales, signal_amplitudes, noise_amplitudes = all_hyperparams
+            starting_model = starting_model.condition_on(self.xs, self.ys)
+
+            starting_model.fit(length_scale_init_mode=length_scale_init_mode,
+                               fit_joint=False,
+                               optimizer_restarts=2)
+
+            print(f"GPAR model fit! Log prob: {starting_model.log_prob(self.xs, self.ys, predictive=False, average=True)}")
+
+            joint_length_scales = starting_model.length_scales()
+            signal_amplitudes = starting_model.signal_amplitudes()
+            noise_amplitudes = starting_model.noise_amplitudes()
+
+        else:
+            # Initialize the hyperparameters for regular GPAR
+            all_hyperparams = super().create_all_hyperparameter_initializers(length_scale_init_mode=length_scale_init_mode,
+                                                                             **kwargs)
+
+            joint_length_scales, signal_amplitudes, noise_amplitudes = all_hyperparams
 
         # Separate the input and output length scales
         input_length_scales = []
@@ -324,38 +308,20 @@ class SVDFactorizedGPARModel(GPARModel):
         self._input_ls_lower_bound.assign(tf.stack(input_ls_lower_bounds, axis=0))
         self._input_ls_upper_bound.assign(tf.stack(input_ls_upper_bounds, axis=0))
 
-        left_householder_vectors = [UnconstrainedVariable(tf.random.normal(shape=(i,), dtype=tf.float64))
-                                    for i in range(self.output_dim, 0, -1)]
-
-        right_householder_vectors = [UnconstrainedVariable(tf.random.normal(shape=(i,), dtype=tf.float64))
-                                     for i in range(1, self.input_dim + 1, 1)]
-
         # backward transform the length-scale matrix
         ls_mat = map_from_bounded_interval(ls_mat, lower=self._input_ls_lower_bound, upper=self._input_ls_upper_bound)
+        #ls_mat = tfp.math.softplus_inverse(ls_mat)
 
         # SVD decomposition of the length scale matrix
         s, u, v = tf.linalg.svd(ls_mat, full_matrices=True)
 
-        singular_values = PositiveVariable(s)
+        singular_values = PositiveVariable(s[:self.latent_dim])
 
-        # Minimize the Frobenius norm between the components of the SVD and our orthogonal matrices
-        def frobenius_loss(a, b):
-            return tf.reduce_sum(tf.math.squared_difference(a, b))
+        left_householder_vectors = [UnconstrainedVariable(lhv)
+                                    for lhv in find_householder_vectors(u)[::-1][:self.latent_dim]]
 
-        left_loss = lambda vectors: frobenius_loss(u, self.orthogonal_transform(vectors, dim=self.output_dim,
-                                                                                as_matrix=True))
-        right_loss = lambda vectors: frobenius_loss(v, self.orthogonal_transform(vectors, dim=self.input_dim,
-                                                                                 as_matrix=True))
-
-        res, converged, diverged = minimize(left_loss,
-                                            vs=[left_householder_vectors])
-
-        print(f"Left res: {res}, conv: {converged}, div: {diverged}, U frobenius norm: {tf.reduce_sum(u * u)}")
-
-        res, converged, diverged = minimize(right_loss,
-                                            vs=[right_householder_vectors])
-
-        print(f"Right res: {res}, conv: {converged}, div: {diverged}, V frobenius norm: {tf.reduce_sum(v * v)}")
+        right_householder_vectors = [UnconstrainedVariable(rhv)
+                                     for rhv in find_householder_vectors(v)[-self.latent_dim:]]
 
         return (left_householder_vectors,
                 right_householder_vectors,
@@ -383,16 +349,15 @@ class SVDFactorizedGPARModel(GPARModel):
             self._signal_amplitudes[i].assign_var(signal_amplitudes[i])
             self._noise_amplitudes[i].assign_var(noise_amplitudes[i])
 
+        for i in range(self.latent_dim):
             self._left_householder_vectors[i].assign_var(left_householder_vectors[i])
-
-        for i in range(self.input_dim):
             self._right_householder_vectors[i].assign_var(right_householder_vectors[i])
 
-        self._singular_values.assign_var(singular_values)
+        self.assign_singular_values(singular_values)
 
         return (self._left_householder_vectors,
                 self._right_householder_vectors,
-                self._singular_values,
+                self._singular_values_reparam,
                 self._output_length_scales,
                 self._signal_amplitudes,
                 self._noise_amplitudes)
@@ -425,3 +390,26 @@ class SVDFactorizedGPARModel(GPARModel):
     @staticmethod
     def from_config(config, **kwargs):
         return SVDFactorizedGPARModel(**config)
+
+
+def find_householder_vectors(orthogonal_mat):
+    def solve_reflection_vector(orthogonal_mat):
+        leading_coeff = tf.math.sqrt((1. - orthogonal_mat[0, 0]) / 2.)
+        remaining_coeffs = orthogonal_mat[1:, 0] / (-2. * leading_coeff)
+        return tf.concat([[leading_coeff], remaining_coeffs], axis=0)
+
+    n = orthogonal_mat.shape[0]
+    dtype = orthogonal_mat.dtype
+
+    if n == 1:
+        return [tf.ones(1, dtype=dtype)]
+
+    u = solve_reflection_vector(orthogonal_mat)
+
+    next_block = tf.linalg.solve(tf.eye(n - 1, dtype=dtype) - 2. * u[None, 1:] * u[1:, None],
+                                 orthogonal_mat[1:, 1:])
+
+    reflection_vectors = find_householder_vectors(next_block)
+    reflection_vectors.append(u)
+
+    return reflection_vectors
