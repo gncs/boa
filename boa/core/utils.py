@@ -1,9 +1,12 @@
+import functools
 import tensorflow as tf
 import tensorflow_probability as tfp
 import logging
 
 import numpy as np
-import pandas as pd
+
+from typing import Iterable
+from not_tf_opt import AbstractVariable
 
 logger = logging.getLogger()
 logger.setLevel(logging.CRITICAL)
@@ -177,7 +180,31 @@ def tensor_hash(tensor):
     :return:
     """
 
-    if not isinstance(tensor, (tf.Tensor, tf.Variable)):
-        raise CoreError(f"tensor must be a TF tensor, but had type {type(tensor)}!")
+    if isinstance(tensor, (tf.Tensor, tf.Variable, AbstractVariable)):
+        if isinstance(tensor, AbstractVariable):
+            tensor = tensor()
 
-    return tf.py_function(lambda s: hash(s.numpy().tostring()), inp=[tensor], Tout=tf.int64)
+        return tf.py_function(lambda s: hash(s.numpy().tostring()), inp=[tensor], Tout=tf.int64)
+
+    elif isinstance(tensor, Iterable):
+        return sum([tensor_hash(t) for t in tensor])
+
+    else:
+        raise CoreError(f"tensor must be an iterable or a TF tensor, but had type {type(tensor)}!")
+
+
+def tf_custom_gradient_method(f):
+    """
+    Allows to declare a class method to have custom gradients.
+    Taken from: https://stackoverflow.com/questions/54819947/defining-custom-gradient-as-a-class-method-in-tensorflow
+    :param f:
+    :return:
+    """
+    @functools.wraps(f)
+    def wrapped(self, *args, **kwargs):
+        if not hasattr(self, '_tf_custom_gradient_wrappers'):
+            self._tf_custom_gradient_wrappers = {}
+        if f not in self._tf_custom_gradient_wrappers:
+            self._tf_custom_gradient_wrappers[f] = tf.custom_gradient(lambda *a, **kw: f(self, *a, **kw))
+        return self._tf_custom_gradient_wrappers[f](*args, **kwargs)
+    return wrapped

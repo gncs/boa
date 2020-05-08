@@ -58,9 +58,9 @@ def test_copy(gp):
 
     # Check equality of kernel parameters
     assert tf.reduce_all(tf.equal(gp_copy.kernel_name, gp.kernel_name))
-    assert tf.reduce_all(tf.equal(gp_copy.signal_amplitude, gp.signal_amplitude))
-    assert tf.reduce_all(tf.equal(gp_copy.noise_amplitude, gp.noise_amplitude))
-    assert tf.reduce_all(tf.equal(gp_copy.length_scales, gp.length_scales))
+    assert tf.reduce_all(tf.equal(gp_copy.gp_signal_amplitude, gp.gp_signal_amplitude))
+    assert tf.reduce_all(tf.equal(gp_copy.gp_noise_amplitude, gp.gp_noise_amplitude))
+    assert tf.reduce_all(tf.equal(gp_copy.gp_length_scales, gp.gp_length_scales))
 
     # Equality of assigned data
     assert tf.reduce_all(tf.equal(gp_copy.xs, gp.xs))

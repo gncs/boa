@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Callable
 
 import abc
 import logging
@@ -134,23 +134,32 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         self.hyperpriors_initialized = False
         self.hyperprior_ls_init_mode = None
 
-    def length_scales(self, index):
+    def gp_length_scales(self, index):
         return self._length_scales[index]
 
-    def signal_amplitude(self, index):
+    def gp_signal_amplitude(self, index):
         return self._signal_amplitudes[index]
 
-    def noise_amplitude(self, index):
+    def gp_noise_amplitude(self, index):
         return self._noise_amplitudes[index]
+
+    def length_scales(self):
+        return self._length_scales
+
+    def signal_amplitudes(self):
+        return self._signal_amplitudes
+
+    def noise_amplitudes(self):
+        return self._noise_amplitudes
 
     @abc.abstractmethod
     def has_explicit_length_scales(self):
         pass
 
     def gp_variables_to_train(self, index, transformed):
-        ls = self.length_scales(index)
-        sa = self.signal_amplitude(index)
-        na = self.noise_amplitude(index)
+        ls = self.gp_length_scales(index)
+        sa = self.gp_signal_amplitude(index)
+        na = self.gp_noise_amplitude(index)
 
         if transformed:
             ls = ls()
@@ -289,9 +298,9 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
         if empirical_bayes:
             for i in range(self.output_dim):
-                sa_locs[i] = self.signal_amplitude(i)()
-                na_locs[i] = self.noise_amplitude(i)()
-                ls_locs[i] = self.length_scales(i)()
+                sa_locs[i] = self.gp_signal_amplitude(i)()
+                na_locs[i] = self.gp_noise_amplitude(i)()
+                ls_locs[i] = self.gp_length_scales(i)()
 
         self.signal_amplitude_priors = [
             tfd.Independent(tfd.LogNormal(loc=sa_loc, scale=3. * tf.ones_like(sa_upper)), reinterpreted_batch_ndims=1)
@@ -719,7 +728,7 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
                 except Exception as e:
                     for i in range(self.output_dim):
-                        print(f"{i}: {self.length_scales(i)()}")
+                        print(f"{i}: {self.gp_length_scales(i)()}")
                     raise e
 
                 except tf.errors.InvalidArgumentError as e:
@@ -855,13 +864,13 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         # If we are using the joint log-probability, we add on the log prob of the hyperparameteres
         if joint:
             if signal_amplitude is None:
-                signal_amplitude = self.signal_amplitude(index)()
+                signal_amplitude = self.gp_signal_amplitude(index)()
 
             if length_scales is None:
-                length_scales = self.length_scales(index)()
+                length_scales = self.gp_length_scales(index)()
 
             if noise_amplitude is None:
-                noise_amplitude = self.noise_amplitude(index)()
+                noise_amplitude = self.gp_noise_amplitude(index)()
 
             log_prob += self.signal_amplitude_priors[index].log_prob(signal_amplitude)
             log_prob += self.length_scales_priors[index].log_prob(length_scales)
@@ -916,9 +925,19 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
             variances = tf.reduce_mean(all_variances, axis=0)
 
         else:
+            # We use the "aggregate getters" for the hyperparameters.
+            # This allows us to be much more efficient when the hyperparameters need to
+            # be pre-calculated, as it is in the case of MF-GPAR.
+            signal_amplitudes = self.signal_amplitudes()
+            noise_amplitudes = self.noise_amplitudes()
+            length_scales = self.length_scales()
+
             for i in range(self.output_dim):
                 mean, var = self.gp_predict(self.gp_predictive_input(xs=xs, means=means),
                                             denoising=denoising,
+                                            signal_amplitude=signal_amplitudes[i],
+                                            noise_amplitude=noise_amplitudes[i],
+                                            length_scales=length_scales[i],
                                             index=i)
 
                 means.append(mean)
@@ -949,6 +968,18 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
         log_prob = 0.
 
+        # We use the "aggregate getters" for the hyperparameters.
+        # This allows us to be much more efficient when the hyperparameters need to
+        # be pre-calculated, as it is in the case of MF-GPAR.
+        if signal_amplitudes is None:
+            signal_amplitudes = self.signal_amplitudes()
+
+        if noise_amplitudes is None:
+            noise_amplitudes = self.noise_amplitudes()
+
+        if length_scales is None:
+            length_scales = self.length_scales()
+
         means = []
 
         for i in range(self.output_dim):
@@ -961,9 +992,9 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                 means=(means if denoising else None),
                 average=average,
                 joint=joint,
-                signal_amplitude=(signal_amplitudes[i] if signal_amplitudes is not None else None),
-                length_scales=(length_scales[i] if length_scales is not None else None),
-                noise_amplitude=(noise_amplitudes[i] if noise_amplitudes is not None else None))
+                signal_amplitude=signal_amplitudes[i],
+                length_scales=length_scales[i],
+                noise_amplitude=noise_amplitudes[i])
 
             log_prob = log_prob + current_log_prob
 
@@ -971,9 +1002,9 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
                 xs=self.gp_predictive_input(xs=xs, means=means),
                 index=i,
                 denoising=denoising,
-                signal_amplitude=(signal_amplitudes[i] if signal_amplitudes is not None else None),
-                length_scales=(length_scales[i] if length_scales is not None else None),
-                noise_amplitude=(noise_amplitudes[i] if noise_amplitudes is not None else None))
+                signal_amplitude=signal_amplitudes[i],
+                length_scales=length_scales[i],
+                noise_amplitude=noise_amplitudes[i])
 
             means.append(mean)
 
@@ -1049,13 +1080,24 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
         # Hash the hyperparameters for the i-th GP
 
         if signal_amplitude is None:
-            signal_amplitude = self.signal_amplitude(index)()
+            signal_amplitude = self.gp_signal_amplitude(index)
 
         if length_scales is None:
-            length_scales = self.length_scales(index)()
+            length_scales = self.gp_length_scales(index)
 
         if noise_amplitude is None:
-            noise_amplitude = self.noise_amplitude(index)()
+            noise_amplitude = self.gp_noise_amplitude(index)
+
+        # If the hyperparameters need to be calculated, e.g. they are
+        # instances of ntfo.AbstractVariable, call them.
+        if isinstance(signal_amplitude, Callable):
+            signal_amplitude = signal_amplitude()
+
+        if isinstance(noise_amplitude, Callable):
+            noise_amplitude = noise_amplitude()
+
+        if isinstance(length_scales, Callable):
+            length_scales = length_scales()
 
         # Create GP
         gp = GaussianProcess(kernel=self.kernel_name,
