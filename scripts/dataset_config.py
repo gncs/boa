@@ -150,6 +150,71 @@ def data_config():
             'avg_mem_dynamic_power': "log",
         }
 
+    elif name == "stencil3d_v2":
+        targets = ('avg_power', 'cycle', 'total_area')
+        dataset_path = f"{dataset_base_path}/stencil3d_dataset_v2.csv"
+
+        separator = ","
+
+        input_labels = [
+            "cycle_time",
+            "pipelining",
+            "cache_size",
+            "cache_assoc",
+            "cache_hit_latency",
+            "cache_line_sz",
+            "cache_queue_size",
+            "tlb_hit_latency",
+            "tlb_miss_latency",
+            "tlb_entries",
+            "tlb_max_outstanding_walks",
+            "tlb_assoc",
+            "tlb_bandwidth",
+            "l2cache_size",
+            "pipelined_dma",
+            "ignore_cache_flush",
+        ]
+
+        output_labels = [
+            'cycle',
+            'avg_power',
+            'fu_power',
+            'avg_fu_dynamic_power',
+            'avg_fu_leakage_power',
+            'avg_mem_power',
+            'avg_mem_dynamic_power',
+            'avg_mem_leakage_power',
+            'total_area',
+            'fu_area',
+            'mem_area',
+            #             'num_sp_multiplier',
+            #             'num_sp_adder',
+            #             'num_dp_multiplier',
+            #             'num_dp_adder',
+            #             'num_trig_unit',
+            #             'num_multiplier',
+            #             'num_adder',
+            #             'num_bit_wise',
+            #             'num_shifter',
+            'num_register'
+        ]
+
+        input_transforms = {
+            'cycle_time': "log",
+            'cache_size': "log",
+            'cache_assoc': "log",
+            'cache_hit_latency': "log",
+            'l2cache_size': "log",
+            'tlb_hit_latency': "log",
+            'tlb_entries': "log"
+        }
+        output_transforms = {
+            'cycle': "log",
+            'avg_power': "log",
+            'avg_mem_power': "log",
+            'avg_mem_dynamic_power': "log",
+        }
+
     elif name == "gemm":
         targets = ('avg_power', 'cycle', 'total_area')
         dataset_path = f"{dataset_base_path}/gemm_dataset.csv"
@@ -188,6 +253,76 @@ def data_config():
             # 'num_bit_wise',
             # 'num_shifter',
             'num_register',
+        ]
+
+        input_transforms = {
+            'cycle_time': "log",
+            'cache_size': "log",
+            'cache_assoc': "log",
+            'cache_hit_latency': "log",
+            'l2cache_size': "log",
+            'tlb_hit_latency': "log",
+            'tlb_entries': "log"
+        }
+        output_transforms = {
+            'cycle': "log",
+            'avg_power': "log",
+            'fu_power': "log",
+            'avg_fu_dynamic_power': "log",
+            'avg_mem_power': "log",
+            'avg_mem_dynamic_power': "log",
+            'total_area': "log",
+            'mem_area': "log",
+            'fu_area': "log"
+        }
+
+    elif name == "gemm_v2":
+        targets = ('avg_power', 'cycle', 'total_area')
+        dataset_path = f"{dataset_base_path}/gemm_dataset_v2.csv"
+
+        separator = ","
+
+        input_labels = [
+            "cycle_time",
+            "pipelining",
+            "cache_size",
+            "cache_assoc",
+            "cache_hit_latency",
+            "cache_line_sz",
+            "cache_queue_size",
+            "tlb_hit_latency",
+            "tlb_miss_latency",
+            "tlb_entries",
+            "tlb_max_outstanding_walks",
+            "tlb_assoc",
+            "tlb_bandwidth",
+            "l2cache_size",
+            "pipelined_dma",
+            "ignore_cache_flush",
+        ]
+
+        output_labels = [
+            'cycle',
+            'avg_power',
+            'fu_power',
+            'avg_fu_dynamic_power',
+            'avg_fu_leakage_power',
+            'avg_mem_power',
+            'avg_mem_dynamic_power',
+            'avg_mem_leakage_power',
+            'total_area',
+            'fu_area',
+            'mem_area',
+            #             'num_sp_multiplier',
+            #             'num_sp_adder',
+            #             'num_dp_multiplier',
+            #             'num_dp_adder',
+            #             'num_trig_unit',
+            #             'num_multiplier',
+            #             'num_adder',
+            #             'num_bit_wise',
+            #             'num_shifter',
+            'num_register'
         ]
 
         input_transforms = {
