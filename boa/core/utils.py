@@ -1,3 +1,4 @@
+import json
 import functools
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -5,11 +6,19 @@ import logging
 
 import numpy as np
 
-from typing import Iterable
+from typing import Iterable, NamedTuple, Union, List, Callable
 from not_tf_opt import AbstractVariable
 
 logger = logging.getLogger()
 logger.setLevel(logging.CRITICAL)
+
+
+class InputSpec(NamedTuple):
+    name: str
+    domain: Union[List, np.array, tf.Tensor]
+    dependencies: List[str] = []
+    formula: Callable = None
+    constraints: List[Callable] = None
 
 
 class CoreError(Exception):
@@ -208,3 +217,15 @@ def tf_custom_gradient_method(f):
             self._tf_custom_gradient_wrappers[f] = tf.custom_gradient(lambda *a, **kw: f(self, *a, **kw))
         return self._tf_custom_gradient_wrappers[f](*args, **kwargs)
     return wrapped
+
+class NumpyEncoder(json.JSONEncoder):
+   def default(self, obj):
+       if isinstance(obj, np.integer):
+           return int(obj)
+       elif isinstance(obj, np.floating):
+           return float(obj)
+       elif isinstance(obj, np.ndarray):
+           return obj.tolist()
+       else:
+           return super(NumpyEncoder, self).default(obj)
+
