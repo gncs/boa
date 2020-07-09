@@ -3,6 +3,8 @@ from typing import List
 import numpy as np
 import tensorflow as tf
 
+import networkx as nx
+
 from pyscenarios.sobol import sobol
 
 from boa.core import InputSpec
@@ -19,16 +21,17 @@ class SobolGrid(Grid):
     """
 
     def __init__(self,
-                 dim_spec: List[InputSpec],
+                 dim_specs: List[InputSpec],
                  seed: int,
-                 percent: float = 0.,
+                 fraction: float = 0.,
                  num_grid_points: int = 0,
-                 skip: int = 2000):
+                 skip: int = 2000,
+                 **kwargs):
 
-        super().__init__(dim_spec)
+        super().__init__(dim_specs, **kwargs)
 
         # If num_grid_points is given
-        if percent <= 0. and num_grid_points > 0:
+        if fraction <= 0. and num_grid_points > 0:
 
             if self.max_grid_points < num_grid_points:
                 raise ValueError(f"num_grid_points ({num_grid_points}) must be less than "
@@ -36,15 +39,15 @@ class SobolGrid(Grid):
 
             self.num_grid_points = num_grid_points
 
-        elif percent > 0. and num_grid_points <= 0:
+        elif fraction > 0. and num_grid_points <= 0:
 
-            if percent >= 1.:
-                raise ValueError(f"percent must bel less than 1, but {percent} was given.")
+            if fraction >= 1.:
+                raise ValueError(f"percent must bel less than 1, but {fraction} was given.")
 
-            self.num_grid_points = int(np.ceil(percent * self.max_grid_points))
+            self.num_grid_points = int(np.ceil(fraction * self.max_grid_points))
 
         else:
-            raise ValueError(f"Either percent ({percent}) or num_grid_points ({num_grid_points}) "
+            raise ValueError(f"Either percent ({fraction}) or num_grid_points ({num_grid_points}) "
                              f"has to be valid!")
 
         # Create grid
@@ -56,13 +59,13 @@ class SobolGrid(Grid):
         self.points = np.empty_like(self.cube_grid)
 
         # Convert these points to valid settings
-        for dim, (_, domain) in enumerate(self.dim_spec):
+        for dim, spec in enumerate(self.dim_spec):
             # Can't just scale, shift then round -> there might be gaps in domain
             # Hence, sample the index first, then select item from domain with index
-            indices = self.cube_grid[:, dim] * len(domain)
+            indices = self.cube_grid[:, dim] * len(spec.domain)
             indices = np.floor(indices).astype(np.int32)
 
-            self.points[:, dim] = domain[indices]
+            self.points[:, dim] = spec.domain[indices]
 
         # Eliminate duplicate grid points
         self.points = np.unique(self.points, axis=0)
@@ -79,15 +82,4 @@ class SobolGrid(Grid):
 
         return samples
 
-    def input_settings_from_points(self, points):
 
-        input_settings_list = []
-
-        for point in points:
-            # TODO: Depending on the type and domain of the input dimension, int() might not be appropriet for everything
-            input_settings = {name: int(value.numpy())
-                              for (name, _), value in zip(self.dim_spec, point)}
-
-            input_settings_list.append(input_settings)
-
-        return input_settings_list

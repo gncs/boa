@@ -14,14 +14,12 @@ class SMSEGO(AbstractAcquisition):
             self,
             gain: float,
             epsilon: float,
-            reference: List[float],
             output_slice: Optional[Tuple[int, int]] = None,
     ) -> None:
         super().__init__()
 
         self.gain = gain
         self.epsilon = epsilon
-        self.reference = np.array(reference)
         self.output_slice = output_slice
 
     def slice_output(self, ys: np.ndarray):
@@ -35,17 +33,16 @@ class SMSEGO(AbstractAcquisition):
                  xs: np.ndarray,
                  ys: np.ndarray,
                  candidate_xs: np.ndarray,
-                 marginalize_hyperparameters: bool,
-                 denoising: bool,
-                 mcmc_kwargs: dict = {}) -> Tuple[np.ndarray, np.ndarray]:
+                 reference=None,
+                 ) -> Tuple[np.ndarray, np.ndarray]:
         ys = self.slice_output(ys)
 
         # Model predictions for candidates
         pred_means, pred_var = model.predict(candidate_xs,
                                              numpy=True,
-                                             marginalize_hyperparameters=marginalize_hyperparameters,
-                                             denoising=denoising,
-                                             **mcmc_kwargs)
+                                             marginalize_hyperparameters=False,
+                                             denoising=False,
+                                             **{})
 
         means = self.slice_output(pred_means)
         var = self.slice_output(pred_var)
@@ -57,7 +54,12 @@ class SMSEGO(AbstractAcquisition):
         ys_std = np.maximum(np.std(ys, axis=0), 1e-5)
 
         ys_normalized = (ys - ys_mean) / ys_std
-        reference_normalized = (self.reference - ys_mean) / ys_std
+
+        if reference is None:
+            # According to Section 3.1 in the SMS-EGO paper
+            reference = np.max(ys, axis=0) + 1.
+
+        reference_normalized = (reference - ys_mean) / ys_std
 
         # Normalize
         candidate_ys_normalized = (candidate_ys - ys_mean) / ys_std

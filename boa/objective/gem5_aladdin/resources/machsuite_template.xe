@@ -17,6 +17,8 @@ set simulator "$simulator"
 set memory_type "cache"
 
 # Parameters for evaluation points come below
+set tlb_page_size 4096
+set cache_line_sz 64
 $evaluation_settings
 
 source "../machsuite_constants.xe"

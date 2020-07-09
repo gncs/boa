@@ -6,7 +6,7 @@ import logging
 
 import numpy as np
 
-from typing import Iterable, NamedTuple, Union, List, Callable
+from typing import Iterable, NamedTuple, Union, List, Tuple, Callable
 from not_tf_opt import AbstractVariable
 
 logger = logging.getLogger()
@@ -15,10 +15,8 @@ logger.setLevel(logging.CRITICAL)
 
 class InputSpec(NamedTuple):
     name: str
-    domain: Union[List, np.array, tf.Tensor]
-    dependencies: List[str] = []
-    formula: Callable = None
-    constraints: List[Callable] = None
+    domain: Union[Tuple, List, np.array, tf.Tensor]
+    formula: Callable = (lambda x: x)
 
 
 class CoreError(Exception):
@@ -177,6 +175,7 @@ def calculate_per_dimension_distance_percentiles(xs, percents, eps=1e-4):
     for i in range(dim_dist_mat.shape[-1]):
         # Remove very small entries
         positive_dists = tf.gather_nd(dim_dist_mat[:, :, i], tf.where(dim_dist_mat[:, :, i] > eps))
+
         dim_percentiles.append(tfp.stats.percentile(positive_dists, percents))
 
     return tf.stack(dim_percentiles, axis=1)
