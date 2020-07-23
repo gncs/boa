@@ -33,7 +33,7 @@ database_url = "127.0.0.1:27017"
 database_name = "boa_bayesopt_experiments"
 ex.captured_out_filter = apply_backspaces_and_linefeeds
 
-ex.observers.append(MongoObserver(url=database_url, db_name=database_name))
+#ex.observers.append(MongoObserver(url=database_url, db_name=database_name))
 
 
 @ex.config
@@ -163,12 +163,12 @@ def optimize(model,
              initialization,
              iters,
              fit_joint,
-             denoising,
              warmup_dataset_size,
              seed: int,
              verbose,
              map_estimate,
              marginalize_hyperparameters,
+             denoising=False,
              mcmc_kwargs={}) -> Data:
     np.random.seed(seed)
     tf.random.set_seed(seed)

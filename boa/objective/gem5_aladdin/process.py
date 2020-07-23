@@ -56,9 +56,12 @@ def parse_file(file_path: str, regexps: dict) -> Dict[str, float]:
 
     results = {}
     for key, regexp in regexps.items():
-        try:
-            results[key] = float(regexp.search(contents).groups()[0])
-        except Exception:
-            raise Exception("Failed to parse regular expression '" + regexp.pattern + "'")
+        match = regexp.search(contents).group(1)
+
+        if match:
+            results[key] = float(match)
+
+        else:
+            raise ValueError(f"No match found for {key}!")
 
     return results

@@ -5,10 +5,12 @@ scikit-learn
 not-tf-opt
 stheno
 sacred
+networkx
 pymongo
 matplotlib
 seaborn
 pandas
+pyscenarios
 jupyter
 pytest
 pytest-cov

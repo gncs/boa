@@ -1,0 +1,26 @@
+use benchmarks.designsweeptypes.Gem5DesignSweep
+
+begin Gem5DesignSweep boa_experiment
+
+use benchmarks.machsuite.$task
+
+# This should contain any of 3 lines:
+# 1. generate configs
+# 2. generate trace
+# 3. generate gem5_binary
+$generation_commands
+
+# Set basic parameters
+set output_dir "$output_dir"
+set source_dir "$source_dir"
+set simulator "$simulator"
+set memory_type "cache"
+
+# Parameters for evaluation points come below
+set tlb_page_size 4096
+set cache_line_sz 64
+$evaluation_settings
+
+source "../machsuite_constants.xe"
+
+end boa_experiment
