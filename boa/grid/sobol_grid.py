@@ -2,14 +2,15 @@ from typing import List
 
 import numpy as np
 import tensorflow as tf
-
-import networkx as nx
+import tensorflow_probability as tfp
 
 from pyscenarios.sobol import sobol
 
 from boa.core import InputSpec
 
 from .grid import Grid
+
+tfd = tfp.distributions
 
 
 class SobolGrid(Grid):
@@ -56,22 +57,29 @@ class SobolGrid(Grid):
         # sample points on the unit hypercube
         # Note: this sobol function can only handle input vectors up to dimension 21201.
         self.cube_grid = sobol(size=(skip + self.num_grid_points, self.dimension), d0=seed)[skip:, :]
-        self.points = np.empty_like(self.cube_grid)
+
+        self.points = self._from_cube_to_grid_points(self.cube_grid)
+
+        self.points = tf.convert_to_tensor(self.points)
+        self.points = tf.cast(self.points, tf.float64)
+
+    def _from_cube_to_grid_points(self, cube_points):
+
+        points = np.empty_like(cube_points)
 
         # Convert these points to valid settings
         for dim, spec in enumerate(self.dim_spec):
             # Can't just scale, shift then round -> there might be gaps in domain
             # Hence, sample the index first, then select item from domain with index
-            indices = self.cube_grid[:, dim] * len(spec.domain)
+            indices = cube_points[:, dim] * len(spec.domain)
             indices = np.floor(indices).astype(np.int32)
 
-            self.points[:, dim] = spec.domain[indices]
+            points[:, dim] = spec.domain[indices]
 
         # Eliminate duplicate grid points
-        self.points = np.unique(self.points, axis=0)
+        points = np.unique(points, axis=0)
 
-        self.points = tf.convert_to_tensor(self.points)
-        self.points = tf.cast(self.points, tf.float64)
+        return points
 
     def sample(self, num_grid_points, seed=None):
         if num_grid_points > self.max_grid_points:
@@ -82,4 +90,40 @@ class SobolGrid(Grid):
 
         return samples
 
+    def sample_grid_around_point(self, point, num_samples, scale=0.3, seed=None, add_to_grid=False):
+        # Note: a scale (std dev) of 0.3 corresponds to approximately a 90% of not changing for a single dimension
+        if len(point.shape) != 1:
+            raise ValueError(f"Passed point must be rank-1, but had shape: {point.shape}")
 
+        # Build bounds on what the indices can be
+        high_bounds = np.empty_like(point)
+        low_bounds = np.empty_like(point)
+
+        for dim, spec in enumerate(self.dim_spec):
+            # How many items in the domain are larger than the current points dimension
+            high_bounds[dim] = np.sum(spec.domain > point[dim]).astype(high_bounds.dtype)
+
+            # How many items in the domain are smaller than the current points dimension. Note the negative
+            low_bounds[dim] = -np.sum(spec.domain < point[dim]).astype(low_bounds.dtype)
+
+        # The location is set to -0.5, because the distribution is quantized on the intervals
+        # ... (-2, -1] -> -1, (-1, 0] -> 0, (0, 1] -> 1 ...
+        index_change_distribution = tfd.QuantizedDistribution(distribution=tfd.Normal(loc=-0.5 * tf.ones_like(point),
+                                                                                      scale=scale),
+                                                              high=high_bounds,
+                                                              low=low_bounds)
+
+        index_changes = index_change_distribution.sample(num_samples).numpy()
+
+        # Eliminate identical changes
+        index_changes = np.unique(index_changes, axis=0)
+        index_changes = tf.convert_to_tensor(index_changes, point.dtype)
+
+        samples = point[None, :] + index_changes
+
+        if add_to_grid:
+            new_points = tf.concat([self.points, samples], axis=0).numpy()
+            new_points = np.unique(new_points, axis=0)
+            self.points = tf.convert_to_tensor(new_points, dtype=tf.float64)
+
+        return samples

@@ -29,10 +29,11 @@ class Grid(abc.ABC):
                 not all(map(lambda x: isinstance(x, InputSpec), dim_specs)):
             raise TypeError("dim_spec must be a list of InputSpecs!")
 
-        # Convert all domains to numpy arrays
+        # Convert all domains to numpy arrays and sort them in ascending order
+        # Note: the sorting is crucial, further code assumes the domains are sorted.
         # Note: make sure every `formula` field is occupied
         self.dim_spec = [InputSpec(name,
-                                   np.array(domain).astype(np.float64),
+                                   np.sort(np.array(domain).astype(np.float64)),
                                    formula
                                    )
                          for name, domain, formula in dim_specs]

@@ -19,15 +19,15 @@ tf.config.experimental.set_visible_devices([], 'GPU')
 
 config = {
     "run": {
-        "experiment_dir": "test_21",
+        "experiment_dir": "test_gpar_grid_refined_2",
         "seed": 42,
-        "num_grid_points": 200000,
+        "num_grid_points": 20000,
         "num_warmup_points": 10,
-        "max_num_iterations": 100,
-        "model": "gpar",
+        "max_num_iterations": 50,
     },
 
     "boa": {
+        "model": "gpar",
         "optimizer": "l-bfgs-b",
         "optimizer_restarts": 3,
         "iters": 1000,
@@ -105,9 +105,18 @@ config = {
     ],
 
     "outputs": [
+        'idle_fu_cycles',
+        'avg_fu_cycles',
+        'avg_fu_dynamic_power',
+        'avg_fu_leakage_power',
+        'avg_mem_power',
+        'avg_mem_dynamic_power',
+        'avg_mem_leakage_power',
+        'fu_area',
+        'mem_area',
         "cycle",
         "avg_power",
-        "total_area"
+        "total_area",
     ],
 
     "num_targets": 3,
@@ -120,6 +129,20 @@ gem5_copy_items = ["designsweeptypes.py"]
 
 smaug_experiment_dir = "/scratch/gf332/BayesOpt/smaug"
 aladdin_experiment_dir = "/scratch/gf332/BayesOpt/gem5-aladdin"
+
+
+def pareto_frontier(points):
+    points = points.numpy()
+
+    is_pareto = np.ones(points.shape[0], dtype=bool)
+
+    for i, point in enumerate(points):
+
+        if is_pareto[i]:
+            is_pareto[is_pareto] = np.any(points[is_pareto, :] < point, axis=1)
+            is_pareto[i] = True
+
+    return tf.convert_to_tensor(is_pareto)
 
 
 def run_experiment(task):
@@ -217,11 +240,9 @@ def run_experiment(task):
                                         input_dim=len(config["inputs"]),
                                         output_dim=len(config["outputs"]),
                                         verbose=True),
-    }[config["model"]]
+    }[config["boa"]["model"]]
 
     acq_fun = SMSEGO(**config["boa"]["acq_config"])
-
-    candidate_xs = grid.points
 
     surrogate_model = surrogate_model.condition_on(xs=warmup_xs,
                                                    ys=warmup_ys)
@@ -239,7 +260,10 @@ def run_experiment(task):
     # BO loop
     # -------------------------------------------------------------------------
 
+    better_counter = 0
     for eval_index in range(config["run"]["max_num_iterations"]):
+
+        print(f"{grid.points.shape[0]} points in the grid at iteration {eval_index + 1}")
         # ---------------------------------------------------------------------
         # Step 1: Evaluate acquisition function on every grid point
         # ---------------------------------------------------------------------
@@ -248,13 +272,37 @@ def run_experiment(task):
         acquisition_values, y_preds = acq_fun.evaluate(model=eval_model,
                                                        xs=eval_model.xs.numpy(),
                                                        ys=eval_model.ys.numpy(),
-                                                       candidate_xs=candidate_xs.numpy())
+                                                       candidate_xs=grid.points.numpy())
 
         # ---------------------------------------------------------------------
         # Step 2: Find maximum of acquisition function
         # ---------------------------------------------------------------------
         max_acquisition_index = np.argmax(acquisition_values)
-        eval_x = candidate_xs[max_acquisition_index]
+
+        pf_indices = pareto_frontier(tf.convert_to_tensor(y_preds[:, -config["num_targets"]:]))
+
+        num_pareto_points = tf.reduce_sum(tf.cast(pf_indices, tf.int32))
+        num_extra_samples_per_point = 1000 // num_pareto_points + 1
+
+        print(f"{num_pareto_points} Pareto optimal points in grid, adding {num_extra_samples_per_point} samples around each.")
+
+        pareto_xs = grid.points[pf_indices]
+
+        # Try some extra points around the best solutions
+        for pareto_x in pareto_xs:
+            grid.sample_grid_around_point(pareto_x, num_samples=num_extra_samples_per_point, add_to_grid=True)
+
+        acquisition_values_, y_preds_ = acq_fun.evaluate(model=eval_model,
+                                                         xs=eval_model.xs.numpy(),
+                                                         ys=eval_model.ys.numpy(),
+                                                         candidate_xs=grid.points.numpy())
+
+        max_acquisition_index_ = np.argmax(acquisition_values_)
+        eval_x = grid.points[max_acquisition_index_]
+
+        if max_acquisition_index != max_acquisition_index_:
+            better_counter += 1
+            print(f"{better_counter}th time new eval point was better")
 
         # ---------------------------------------------------------------------
         # Step 3: Run Gem5 simulation at selected location
@@ -295,6 +343,8 @@ def run_experiment(task):
 
         np.save(os.path.join(eval_dir, "xs.npy"), surrogate_model.xs.numpy())
         np.save(os.path.join(eval_dir, "ys.npy"), surrogate_model.ys.numpy())
+
+    print(f"{better_counter} new eval points were better!")
 
 
 if __name__ == "__main__":
