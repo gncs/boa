@@ -107,12 +107,18 @@ def setup_logger(name,
 
 
 def standardize(x, min_std=1e-10):
+
+    mean, std = get_mean_and_std(x, min_std)
+
+    return (x - mean) / std
+
+
+def get_mean_and_std(x, min_std=1e-10):
     # Calculate data statistics
     mean, var = tf.nn.moments(x, axes=[0], keepdims=True)
     std = tf.maximum(tf.sqrt(var), min_std)
 
-    return (x - mean) / std
-
+    return mean, std
 
 def distance_matrix(xs, eps=1e-12):
     """

@@ -39,10 +39,7 @@ class SMSEGO(AbstractAcquisition):
 
         # Model predictions for candidates
         pred_means, pred_var = model.predict(candidate_xs,
-                                             numpy=True,
-                                             marginalize_hyperparameters=False,
-                                             denoising=False,
-                                             **{})
+                                             numpy=True)
 
         means = self.slice_output(pred_means)
         var = self.slice_output(pred_var)
