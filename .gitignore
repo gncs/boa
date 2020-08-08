@@ -3,6 +3,8 @@ models/
 logs/
 logs-old/
 *.log
+plots/script_plots/*
+plots/notebook_plots/*
 
 # Temporary model files
 models-old/

@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 
 from boa.models import GPARModel, FullyFactorizedGPModel, RandomModel
+from boa.models.bnn.multi_output_bnn import BasicBNN
 from boa.acquisition.smsego import SMSEGO
 from boa.core.utils import InputSpec
 from boa.grid import SobolGrid
@@ -19,7 +20,7 @@ tf.config.experimental.set_visible_devices([], 'GPU')
 
 config = {
     "run": {
-        "experiment_dir": "test_gpar_grid_refined_2",
+        "experiment_dir": "test_bnn_out_std",
         "seed": 42,
         "num_grid_points": 20000,
         "num_warmup_points": 10,
@@ -27,7 +28,7 @@ config = {
     },
 
     "boa": {
-        "model": "gpar",
+        "model": "bnn",
         "optimizer": "l-bfgs-b",
         "optimizer_restarts": 3,
         "iters": 1000,
@@ -240,6 +241,10 @@ def run_experiment(task):
                                         input_dim=len(config["inputs"]),
                                         output_dim=len(config["outputs"]),
                                         verbose=True),
+
+        "bnn": BasicBNN(input_dim=len(config["inputs"]),
+                        output_dim=len(config["outputs"])),
+
     }[config["boa"]["model"]]
 
     acq_fun = SMSEGO(**config["boa"]["acq_config"])
@@ -247,14 +252,19 @@ def run_experiment(task):
     surrogate_model = surrogate_model.condition_on(xs=warmup_xs,
                                                    ys=warmup_ys)
 
-    surrogate_model.fit(optimizer=config["boa"]["optimizer"],
-                        optimizer_restarts=config["boa"]["optimizer_restarts"],
-                        iters=config["boa"]["iters"],
-                        fit_joint=config["boa"]["fit_joint"],
-                        length_scale_init_mode=config["boa"]["length_scale_init"],
-                        map_estimate=False,
-                        denoising=False,
-                        trace=True)
+    if config["boa"]["model"] == "bnn":
+        surrogate_model.fit(num_samples=50,
+                            burnin=2000,
+                            keep_every=100)
+    else:
+        surrogate_model.fit(optimizer=config["boa"]["optimizer"],
+                            optimizer_restarts=config["boa"]["optimizer_restarts"],
+                            iters=config["boa"]["iters"],
+                            fit_joint=config["boa"]["fit_joint"],
+                            length_scale_init_mode=config["boa"]["length_scale_init"],
+                            map_estimate=False,
+                            denoising=False,
+                            trace=True)
 
     # -------------------------------------------------------------------------
     # BO loop
@@ -267,11 +277,9 @@ def run_experiment(task):
         # ---------------------------------------------------------------------
         # Step 1: Evaluate acquisition function on every grid point
         # ---------------------------------------------------------------------
-        eval_model = surrogate_model.copy()
-
-        acquisition_values, y_preds = acq_fun.evaluate(model=eval_model,
-                                                       xs=eval_model.xs.numpy(),
-                                                       ys=eval_model.ys.numpy(),
+        acquisition_values, y_preds = acq_fun.evaluate(model=surrogate_model,
+                                                       xs=surrogate_model.xs.numpy(),
+                                                       ys=surrogate_model.ys.numpy(),
                                                        candidate_xs=grid.points.numpy())
 
         # ---------------------------------------------------------------------
@@ -284,7 +292,8 @@ def run_experiment(task):
         num_pareto_points = tf.reduce_sum(tf.cast(pf_indices, tf.int32))
         num_extra_samples_per_point = 1000 // num_pareto_points + 1
 
-        print(f"{num_pareto_points} Pareto optimal points in grid, adding {num_extra_samples_per_point} samples around each.")
+        print(
+            f"{num_pareto_points} Pareto optimal points in grid, adding {num_extra_samples_per_point} samples around each.")
 
         pareto_xs = grid.points[pf_indices]
 
@@ -292,9 +301,9 @@ def run_experiment(task):
         for pareto_x in pareto_xs:
             grid.sample_grid_around_point(pareto_x, num_samples=num_extra_samples_per_point, add_to_grid=True)
 
-        acquisition_values_, y_preds_ = acq_fun.evaluate(model=eval_model,
-                                                         xs=eval_model.xs.numpy(),
-                                                         ys=eval_model.ys.numpy(),
+        acquisition_values_, y_preds_ = acq_fun.evaluate(model=surrogate_model,
+                                                         xs=surrogate_model.xs.numpy(),
+                                                         ys=surrogate_model.ys.numpy(),
                                                          candidate_xs=grid.points.numpy())
 
         max_acquisition_index_ = np.argmax(acquisition_values_)
@@ -330,14 +339,19 @@ def run_experiment(task):
         # ---------------------------------------------------------------------
         surrogate_model = surrogate_model.condition_on(eval_x, eval_y)
 
-        surrogate_model.fit(optimizer=config["boa"]["optimizer"],
-                            optimizer_restarts=config["boa"]["optimizer_restarts"],
-                            iters=config["boa"]["iters"],
-                            fit_joint=config["boa"]["fit_joint"],
-                            length_scale_init_mode=config["boa"]["length_scale_init"],
-                            map_estimate=False,
-                            denoising=False,
-                            trace=True)
+        if config["boa"]["model"] == "bnn":
+            surrogate_model.fit(num_samples=50,
+                                burnin=2000,
+                                keep_every=100)
+        else:
+            surrogate_model.fit(optimizer=config["boa"]["optimizer"],
+                                optimizer_restarts=config["boa"]["optimizer_restarts"],
+                                iters=config["boa"]["iters"],
+                                fit_joint=config["boa"]["fit_joint"],
+                                length_scale_init_mode=config["boa"]["length_scale_init"],
+                                map_estimate=False,
+                                denoising=False,
+                                trace=True)
 
         surrogate_model.save(os.path.join(eval_dir, "surrogate_model/model"))
 

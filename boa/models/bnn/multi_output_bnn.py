@@ -66,6 +66,7 @@ class BNN(tf.keras.Model, abc.ABC):
         self.model_samples = []
 
         self.xs_stats = None
+        self.ys_stats = None
 
         # ---------------------------------------------------------------------
         # Flags
@@ -151,6 +152,18 @@ class BNN(tf.keras.Model, abc.ABC):
 
         return (xs - self.xs_stats.mean) / self.xs_stats.std
 
+    def standardize_output(self, ys):
+        if self.ys_stats is None:
+            raise ValueError("self.ys_stats hasn't been initialized yet and was None!")
+
+        return (ys - self.ys_stats.mean) / self.ys_stats.std
+
+    def unstandardize_output(self, ys):
+        if self.ys_stats is None:
+            raise ValueError("self.ys_stats hasn't been initialized yet and was None!")
+
+        return ys * self.ys_stats.std + self.ys_stats.mean
+
     def fit(self,
             num_samples,
             burnin,
@@ -161,7 +174,6 @@ class BNN(tf.keras.Model, abc.ABC):
             initialization_rounds=10,
             overestimation_rate=3.,
             seed=None,
-            standardize_data=True,
             ) -> None:
         """
         :param seed:
@@ -181,14 +193,18 @@ class BNN(tf.keras.Model, abc.ABC):
             tf.random.set_seed(seed)
 
         xs = self.xs.value()
+        ys = self.ys.value()
 
         xs_mean, xs_std = get_mean_and_std(xs)
+        ys_mean, ys_std = get_mean_and_std(ys)
 
         self.xs_stats = SufficientStatistics(mean=xs_mean,
                                              std=xs_std)
+        self.ys_stats = SufficientStatistics(mean=ys_mean,
+                                             std=ys_std)
 
-        if standardize_data:
-            xs = self.standardize_input(xs)
+        xs = self.standardize_input(xs)
+        ys = self.standardize_output(ys)
 
         data_size = tf.cast(xs.shape[0], xs.dtype)
 
@@ -208,7 +224,7 @@ class BNN(tf.keras.Model, abc.ABC):
                 self.resample_hyperparameters()
 
             with tf.GradientTape() as tape:
-                data_log_prob = tf.reduce_mean(self.log_prob(xs, self.ys))
+                data_log_prob = tf.reduce_mean(self.log_prob(xs, ys))
 
                 weight_log_prob = self.weight_log_prob() / data_size
                 hyper_log_prob = self.hyper_log_prob() / data_size
@@ -236,18 +252,17 @@ class BNN(tf.keras.Model, abc.ABC):
 
         self.trained.assign(True)
 
-    def predict(self, xs, numpy=False, standardize_data=True, **kwargs):
+    def predict(self, xs, numpy=False, **kwargs):
 
         xs = self._validate_and_convert(xs, output=False)
-
-        if standardize_data:
-            xs = self.standardize_input(xs)
+        xs = self.standardize_input(xs)
 
         predictions = []
 
         for weights in self.model_samples:
             self.set_weights(weights)
             prediction = self(xs)
+            prediction = self.unstandardize_output(prediction)
 
             predictions.append(prediction)
 
@@ -372,7 +387,7 @@ class BasicBNN(BNN):
         ]
 
         log_var_init = tf.cast(tf.math.log(log_var_init), self.dtype)
-        self.likelihood_log_var = tf.Variable(log_var_init * tf.ones(self.output_dim, dtype=self.dtype),
+        self.likelihood_log_var = tf.Variable(log_var_init * tf.zeros(self.output_dim, dtype=self.dtype),
                                               name="likelihood_log_variance")
 
         loc_init = tf.cast(tf.math.log(log_var_prior_loc), self.dtype)

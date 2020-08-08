@@ -99,12 +99,21 @@ class SobolGrid(Grid):
         high_bounds = np.empty_like(point)
         low_bounds = np.empty_like(point)
 
+        # Indices of the point's values in their domain
+        point_indices = np.empty_like(point)
+
         for dim, spec in enumerate(self.dim_spec):
             # How many items in the domain are larger than the current points dimension
             high_bounds[dim] = np.sum(spec.domain > point[dim]).astype(high_bounds.dtype)
 
             # How many items in the domain are smaller than the current points dimension. Note the negative
             low_bounds[dim] = -np.sum(spec.domain < point[dim]).astype(low_bounds.dtype)
+
+            # spec.domain should contain one and only one match
+            point_index = np.where(spec.domain == point[dim])[0]
+            assert point_index.shape[0] == 1
+
+            point_indices[dim] = point_index[0]
 
         # The location is set to -0.5, because the distribution is quantized on the intervals
         # ... (-2, -1] -> -1, (-1, 0] -> 0, (0, 1] -> 1 ...
@@ -117,9 +126,16 @@ class SobolGrid(Grid):
 
         # Eliminate identical changes
         index_changes = np.unique(index_changes, axis=0)
-        index_changes = tf.convert_to_tensor(index_changes, point.dtype)
+        new_indices = point_indices[None, :] + index_changes
+        new_indices = new_indices.astype(np.int32)
 
-        samples = point[None, :] + index_changes
+        samples = np.empty_like(new_indices)
+
+        # Convert these points to valid settings
+        for dim, spec in enumerate(self.dim_spec):
+            samples[:, dim] = spec.domain[new_indices[:, dim]]
+
+        samples = tf.convert_to_tensor(samples, point.dtype)
 
         if add_to_grid:
             new_points = tf.concat([self.points, samples], axis=0).numpy()
