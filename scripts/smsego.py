@@ -3,6 +3,7 @@ import logging
 from typing import List
 
 from boa.models.fully_factorized_gp import FullyFactorizedGPModel
+from boa.models.bnn.multi_output_bnn import BasicBNN
 from boa.acquisition.smsego import SMSEGO
 from boa.objective.abstract import AbstractObjective
 from boa.optimization.optimizer import Optimizer
@@ -59,16 +60,29 @@ def f(x):
     return (np.sinc(3 * x) + 0.5 * (x - 0.5)**2).reshape(-1, 1)
 
 
-def manual_optimization(x_train, y_train):
-    # Infer GP
-    model = FullyFactorizedGPModel(kernel="rbf", input_dim=1, output_dim=1, verbose=False)
+def manual_optimization(x_train, y_train, model_type="gp"):
+
+    if model_type == "gp":
+        model = FullyFactorizedGPModel(kernel="rbf", input_dim=1, output_dim=1, verbose=False)
+    elif model_type == "bnn":
+        model = BasicBNN(input_dim=1, output_dim=1)
+    else:
+        raise NotImplementedError
 
     # Optimize the hyperparameters
     model = model.condition_on(x_train, y_train)
-    model.fit(optimizer_restarts=5)
+
+    if model_type == "gp":
+        model.fit(optimizer_restarts=5)
+    elif model_type == "bnn":
+        model.fit(num_samples=50,
+                  burnin=2000,
+                  keep_every=50)
+    else:
+        raise NotImplementedError
 
     # Set up the acquisition function
-    acq = SMSEGO(gain=1., epsilon=0.1, reference=[2])
+    acq = SMSEGO(gain=1., epsilon=0.1)
 
     # Make predictions and evaluate acquisition function
     x_cont = np.linspace(start=-1.5, stop=1.5, num=200).reshape([-1, 1])
@@ -80,15 +94,10 @@ def manual_optimization(x_train, y_train):
     for i in range(5):
         y_cont, var_cont = model.predict(x_cont)
 
-        logger.debug(f"{data_x.shape} {data_y.shape} {x_cont.shape} {y_cont.shape} {var_cont.shape}")
-
-        #model.initialize_hyperpriors_and_bijectors(length_scale_init_mode="l2_median")
-
         acquisition_values, pred_means = acq.evaluate(model=model,
                                                       xs=data_x,
                                                       ys=data_y,
-                                                      candidate_xs=x_cont,
-                                                      marginalize_hyperparameters=False)
+                                                      candidate_xs=x_cont)
 
         eval_point = x_cont[np.argmax(acquisition_values)]
 
@@ -100,7 +109,7 @@ def manual_optimization(x_train, y_train):
                    points_xs=data_x,
                    points_ys=data_y)
 
-        fig_path = FIG_SAVE_FOLDER + f"/manual_{i}.png"
+        fig_path = FIG_SAVE_FOLDER + f"/{model_type}_manual_{i}.png"
         fig.savefig(fig_path)
         print(f"Saved image to {fig_path}!")
 
@@ -114,7 +123,14 @@ def manual_optimization(x_train, y_train):
 
         model = model.condition_on(inp.reshape([-1, 1]), outp)
 
-        model.fit(optimizer_restarts=3, )
+        if model_type == "gp":
+            model.fit(optimizer_restarts=3)
+        elif model_type == "bnn":
+            model.fit(num_samples=50,
+                      burnin=2000,
+                      keep_every=50)
+        else:
+            raise NotImplementedError
 
 
 def automated_optimization(x_train, y_train):
@@ -201,6 +217,6 @@ if __name__ == "__main__":
     x_train = np.array([-0.25, 0, 0.1]).reshape(-1, 1)
     y_train = f(x_train)
 
-    manual_optimization(x_train, y_train)
+    manual_optimization(x_train, y_train, model_type="gp")
 
-    automated_optimization(x_train, y_train)
+    #automated_optimization(x_train, y_train)
