@@ -12,6 +12,7 @@ from boa.core.utils import setup_logger
 
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns; sns.set()
 import tensorflow as tf
 
 tf.config.experimental.set_visible_devices([], 'GPU')
@@ -21,7 +22,12 @@ FIG_SAVE_FOLDER = "plots/script_plots/smsego"
 
 
 def plot(xs, fs, preds, var, acqs, points_xs, points_ys):
+
+    sns.set_style('whitegrid')
+
     fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(5, 5))
+    ax1.grid(False)
+    ax2.grid(False)
 
     # Solid line
     ax1.plot(xs, fs, color='black', linestyle='dashed', label='f', zorder=-1)
@@ -48,6 +54,7 @@ def plot(xs, fs, preds, var, acqs, points_xs, points_ys):
     ax2.set_xlabel('$X$')
     ax2.set_ylabel('$a(X)$')
 
+    fig.tight_layout()
     fig.subplots_adjust(hspace=0)
 
     return fig
@@ -61,6 +68,7 @@ def f(x):
 
 
 def manual_optimization(x_train, y_train, model_type="gp"):
+
 
     if model_type == "gp":
         model = FullyFactorizedGPModel(kernel="rbf", input_dim=1, output_dim=1, verbose=False)
@@ -109,7 +117,7 @@ def manual_optimization(x_train, y_train, model_type="gp"):
                    points_xs=data_x,
                    points_ys=data_y)
 
-        fig_path = FIG_SAVE_FOLDER + f"/{model_type}_manual_{i}.png"
+        fig_path = FIG_SAVE_FOLDER + f"/{model_type}_manual_{i}.pdf"
         fig.savefig(fig_path)
         print(f"Saved image to {fig_path}!")
 
