@@ -86,6 +86,7 @@ class SobolGrid(Grid):
             raise ValueError(f"num_grid_points ({num_grid_points}) cannot exceed the maximum number "
                              f"of grid points ({self.max_grid_points})!")
 
+        tf.random.set_seed(seed)
         samples = tf.random.shuffle(self.points, seed=seed)[:num_grid_points, :]
 
         return samples

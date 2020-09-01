@@ -225,6 +225,6 @@ if __name__ == "__main__":
     x_train = np.array([-0.25, 0, 0.1]).reshape(-1, 1)
     y_train = f(x_train)
 
-    manual_optimization(x_train, y_train, model_type="gp")
+    manual_optimization(x_train, y_train, model_type="bnn")
 
     #automated_optimization(x_train, y_train)

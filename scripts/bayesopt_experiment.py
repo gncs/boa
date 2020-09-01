@@ -19,7 +19,6 @@ from boa.optimization.optimizer import Optimizer
 from boa import ROOT_DIR
 
 from sacred import Experiment
-from sacred.observers import MongoObserver
 from sacred.utils import apply_backspaces_and_linefeeds
 
 import datetime
