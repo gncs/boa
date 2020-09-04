@@ -23,7 +23,8 @@ class Grid(abc.ABC):
     def __init__(self,
                  dim_specs: List[InputSpec],
                  save_dependency_graph_path: str = None,
-                 verbose: bool = True):
+                 verbose: bool = True,
+                 ):
 
         if not isinstance(dim_specs, List) or \
                 not all(map(lambda x: isinstance(x, InputSpec), dim_specs)):
