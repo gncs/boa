@@ -1,8 +1,10 @@
 from typing import Dict, Tuple, NamedTuple, List
 
 import os
+import fcntl
 import shutil
 import subprocess
+from time import sleep
 
 import json
 import numpy as np
@@ -37,11 +39,17 @@ smaug_tasks = [
 
 
 def train_surrogate_model(surrogate_model, model_config, model):
-    if model == "bnn":
+
+    if model == "sgs":
+        # Random model neds no fitting
+        pass
+
+    elif model == "bnn":
         surrogate_model.fit(num_samples=model_config["num_samples"],
                             burnin=model_config["burnin"],
                             keep_every=model_config["keep_every"])
-    else:
+
+    elif model in ["ff-gp", "gpar-targets", "gpar-full"]:
         surrogate_model.fit(optimizer=model_config["optimizer"],
                             optimizer_restarts=model_config["optimizer_restarts"],
                             iters=model_config["iters"],
@@ -50,6 +58,10 @@ def train_surrogate_model(surrogate_model, model_config, model):
                             map_estimate=False,
                             denoising=False,
                             trace=True)
+
+    else:
+        raise NotImplementedError
+
 
 
 def pareto_frontier(points):
@@ -66,7 +78,8 @@ def pareto_frontier(points):
     return tf.convert_to_tensor(is_pareto)
 
 
-def run_machsuite_simulation_with_configuration(simulation_dir: str,
+def run_machsuite_simulation_with_configuration(task: str,
+                                                simulation_dir: str,
                                                 run_sh_subdir: str,
                                                 simulation_config: str,
                                                 output_order: List[str],
@@ -75,17 +88,31 @@ def run_machsuite_simulation_with_configuration(simulation_dir: str,
                                                 template_generation_out_file_name: str = "template_generation_output.txt",
                                                 generate_design_sweeps_py_path: str = "/workspace/gem5-aladdin/sweeps/generate_design_sweeps.py",
                                                 simulation_output_file_name: str = "simulation_output.txt",
+                                                lockfile_path: str = "/rds/user/gf332/hpc-work/BayesOpt/experiments/singularity.lock",
                                                 stdout_path: str = "outputs/stdout",
                                                 stderr_path: str = "outputs/stderr",
                                                 results_file_name: str = "results.json",
                                                 ):
     os.makedirs(simulation_dir, exist_ok=True)
 
+    run_script_dir = os.path.join(simulation_dir, run_sh_subdir)
+    nonaccel_file_path = os.path.join(run_script_dir, f"{task}-gem5")
+    accel_file_path = os.path.join(run_script_dir, f"{task}-gem5-accel")
+
     # Write template
     with open(os.path.join(simulation_dir, template_name), "w") as template_file:
         template_file.write(simulation_config)
 
     # Generate design sweep
+
+    # Make sure this process is the only one trying to use the write access to singularity
+    lockfile = open(lockfile_path, "w")
+    fcntl.lockf(lockfile, fcntl.LOCK_EX)
+    lockfile.write(str(os.getpid()))
+    lockfile.flush()
+
+    print(f"Lock obtained by PID {os.getpid()}")
+
     print(f"Generating template file in {simulation_dir}!")
     with open(os.path.join(simulation_dir, template_generation_out_file_name), "w") as log_file:
 
@@ -95,7 +122,7 @@ def run_machsuite_simulation_with_configuration(simulation_dir: str,
             "-B",
             "/rds:/rds",
             "-w",
-            "--pwd", # Changes the working directory to the appropriate one
+            "--pwd",  # Changes the working directory to the appropriate one
             simulation_dir,
             singularity_image,
             generate_design_sweeps_py_path,
@@ -105,7 +132,40 @@ def run_machsuite_simulation_with_configuration(simulation_dir: str,
             check=True,
         )
 
-    run_script_dir = os.path.join(simulation_dir, run_sh_subdir)
+        nonaccel_actual_path = os.readlink(nonaccel_file_path)
+        accel_actual_path = os.readlink(accel_file_path)
+
+        os.unlink(nonaccel_file_path)
+        os.unlink(accel_file_path)
+
+        # Copy the compiled binaries
+        result = subprocess.run([
+            "singularity",
+            "exec",
+            singularity_image,
+            "cp",
+            nonaccel_actual_path,
+            nonaccel_file_path],
+            stdout=log_file,
+            stderr=log_file,
+            check=True,
+        )
+
+        result = subprocess.run([
+            "singularity",
+            "exec",
+            singularity_image,
+            "cp",
+            accel_actual_path,
+            accel_file_path],
+            stdout=log_file,
+            stderr=log_file,
+            check=True,
+        )
+
+    # Release lock by closeing the lockfile
+    lockfile.close()
+
     print(f"Running simulation in {run_script_dir}!")
 
     with open(os.path.join(simulation_dir, simulation_output_file_name), "w") as log_file:
@@ -140,6 +200,9 @@ def run_machsuite_simulation_with_configuration(simulation_dir: str,
 
     results = parse_file(os.path.join(simulation_dir, run_sh_subdir, stdout_path),
                          output_regexps)
+
+    os.remove(nonaccel_file_path)
+    os.remove(accel_file_path)
 
     with open(os.path.join(simulation_dir, results_file_name), "w") as results_file:
         json.dump(results, results_file)
@@ -189,13 +252,8 @@ def run_experiment():
         # Create warmup sweep configs
         warmup_inputs_settings = grid.input_settings_from_points(points=warmup_xs)
 
-        warmup_configs = [create_gem5_sweep_config(template_file_path=machsuite_template_path,
-                                                   output_dir=task,
-                                                   input_settings=input_settings)
-                          for input_settings in warmup_inputs_settings]
-
         # Generate warmups
-        for warmup_index, warmup_config in enumerate(warmup_configs):
+        for warmup_index, input_settings in enumerate(warmup_inputs_settings):
 
             warmup_dir_name = f"warmup_{warmup_index}"
             current_warmup_dir = os.path.join(experiment_dir, warmup_dir_name)
@@ -203,11 +261,17 @@ def run_experiment():
             current_warmup_xs_path = os.path.join(warmup_dir, f"warmup_xs_{warmup_index + 1}.npy")
             current_warmup_ys_path = os.path.join(warmup_dir, f"warmup_ys_{warmup_index + 1}.npy")
 
-            if os.path.exists(current_warmup_xs_path):
+            if os.path.exists(current_warmup_ys_path):
                 print(f"{current_warmup_dir}, already exists, skipping!")
+                warmup_ys = tf.convert_to_tensor(np.load(current_warmup_ys_path))
                 continue
 
+            warmup_config = create_gem5_sweep_config(template_file_path=machsuite_template_path,
+                                                     output_dir=os.path.join(current_warmup_dir, task),
+                                                     input_settings=input_settings)
+
             result_vec = run_machsuite_simulation_with_configuration(
+                task=task,
                 simulation_dir=current_warmup_dir,
                 run_sh_subdir=run_sh_subdir,
                 simulation_config=warmup_config,
@@ -219,6 +283,11 @@ def run_experiment():
 
             np.save(current_warmup_xs_path, warmup_xs.numpy())
             np.save(current_warmup_ys_path, warmup_ys.numpy())
+
+            # Remove the simulation files after all important information has been extracted.
+            # This is very important, because the simulation directory is effectively useless after,
+            # can be regenerated easily and takes up a lot of space.
+            shutil.rmtree(os.path.join(current_warmup_dir, task))
 
     else:
         print("Using precomputed warmup points!")
@@ -291,7 +360,6 @@ def run_experiment():
         eval_dir = os.path.join(experiment_dir, eval_dir_name)
 
         grid_save_path = os.path.join(eval_dir, "grid.npy")
-        surrogate_model_save_path = os.path.join(eval_dir, "surrogate_model/model")
 
         xs_save_path = os.path.join(eval_dir, "xs.npy")
         ys_save_path = os.path.join(eval_dir, "ys.npy")
@@ -300,9 +368,8 @@ def run_experiment():
 
             print(f"Evaluation {eval_index} at: {ys_save_path} already exists, skipping!")
 
-            next_xs_save_path = os.path.join(experiment_dir, f"evaluation_{eval_index + 1}", "xs.npy")
-
-            if not os.path.exists(next_xs_save_path):
+            # If the grid is saved in this evaluation directory, it is the latest one.
+            if os.path.exists(grid_save_path):
                 print("Last saved model found")
 
                 grid.points = tf.convert_to_tensor(np.load(grid_save_path))
@@ -360,6 +427,7 @@ def run_experiment():
                                                    input_settings=eval_input_settings)
 
             eval_y = run_machsuite_simulation_with_configuration(
+                task=task,
                 simulation_dir=eval_dir,
                 run_sh_subdir=run_sh_subdir,
                 simulation_config=eval_config,
@@ -384,11 +452,25 @@ def run_experiment():
         tf.random.set_seed(seed + eval_index + 1)
         train_surrogate_model(surrogate_model, model_config, config["run"]["model"])
 
-        surrogate_model.save(surrogate_model_save_path)
-
         np.save(grid_save_path, grid.points.numpy())
         np.save(xs_save_path, surrogate_model.xs.numpy())
         np.save(ys_save_path, surrogate_model.ys.numpy())
+
+        # Remove the simulation files AND the grid from the previous folder,
+        # after all important information has been extracted.
+        # This is very important, because the simulation directory is effectively useless after,
+        # can be regenerated easily and takes up a lot of space.
+
+        # Simulation directory
+        shutil.rmtree(os.path.join(eval_dir, task))
+
+        # Previous grid
+        prev_grid_save_path = os.path.join(experiment_dir, f"evaluation_{eval_index - 1}", "grid.npy")
+
+        if os.path.exists(prev_grid_save_path):
+            os.remove(prev_grid_save_path)
+
+    print("Experiment finised!")
 
 
 if __name__ == "__main__":

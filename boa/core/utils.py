@@ -154,7 +154,7 @@ def dim_distance_matrix(xs):
     return diffs
 
 
-def calculate_euclidean_distance_percentiles(xs, percents, eps=1e-4):
+def calculate_euclidean_distance_percentiles(xs, percents, eps=0.):
     euclidean_dist_mat = distance_matrix(xs)
 
     # print("ED shape", euclidean_dist_mat.shape)

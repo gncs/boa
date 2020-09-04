@@ -99,6 +99,15 @@ def setup_experiment(task,
         method_path = os.path.join(experiment_base_path, method)
         os.makedirs(method_path, exist_ok=False)
 
+        # Write SLURM run script
+        with open(os.path.join(resources_path, "slurm_array.template")) as slurm_template_file:
+            slurm_content_template = Template(slurm_template_file.read())
+
+        slurm_content = slurm_content_template.substitute({"method": method})
+
+        with open(os.path.join(experiment_base_path, f"run_{method}"), "w") as slurm_script:
+            slurm_script.write(slurm_content)
+
         # Create the individual experiment folders
         for index in range(num_experiments):
 
