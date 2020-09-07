@@ -4,7 +4,7 @@ import os
 import fcntl
 import shutil
 import subprocess
-from time import sleep
+import time 
 
 import json
 import numpy as np
@@ -106,12 +106,17 @@ def run_machsuite_simulation_with_configuration(task: str,
     # Generate design sweep
 
     # Make sure this process is the only one trying to use the write access to singularity
+    wait_start_time = time.monotonic()
+
     lockfile = open(lockfile_path, "w")
     fcntl.lockf(lockfile, fcntl.LOCK_EX)
     lockfile.write(str(os.getpid()))
     lockfile.flush()
 
-    print(f"Lock obtained by PID {os.getpid()}")
+    wait_time = time.monotonic() - wait_start_time
+    readable_wait_time = time.strftime("%H hours %M minutes %S seconds", time.gmtime(wait_time))
+
+    print(f"Lock obtained by PID {os.getpid()}. Waited {readable_wait_time} for design generation.")
 
     print(f"Generating template file in {simulation_dir}!")
     with open(os.path.join(simulation_dir, template_generation_out_file_name), "w") as log_file:
@@ -268,7 +273,8 @@ def run_experiment():
 
             warmup_config = create_gem5_sweep_config(template_file_path=machsuite_template_path,
                                                      output_dir=os.path.join(current_warmup_dir, task),
-                                                     input_settings=input_settings)
+                                                     input_settings=input_settings,
+                                                     generation_commands=("configs",))
 
             result_vec = run_machsuite_simulation_with_configuration(
                 task=task,
@@ -424,7 +430,8 @@ def run_experiment():
             eval_input_settings = grid.input_settings_from_points(eval_x)[0]
             eval_config = create_gem5_sweep_config(template_file_path=machsuite_template_path,
                                                    output_dir=task,
-                                                   input_settings=eval_input_settings)
+                                                   input_settings=eval_input_settings,
+                                                   generation_commands=("configs",))
 
             eval_y = run_machsuite_simulation_with_configuration(
                 task=task,
