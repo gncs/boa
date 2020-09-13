@@ -29,8 +29,8 @@ tf.config.experimental.set_visible_devices([], 'GPU')
 
 machsuite_tasks = [
     "fft_transpose",
-    "stencil3d",
-    "gemm"
+    "stencil_stencil3d",
+    "gemm_blocked"
 ]
 
 smaug_tasks = [
@@ -105,18 +105,18 @@ def run_machsuite_simulation_with_configuration(task: str,
 
     # Generate design sweep
 
-    # Make sure this process is the only one trying to use the write access to singularity
-    wait_start_time = time.monotonic()
+    # # Make sure this process is the only one trying to use the write access to singularity
+    # wait_start_time = time.monotonic()
 
-    lockfile = open(lockfile_path, "w")
-    fcntl.lockf(lockfile, fcntl.LOCK_EX)
-    lockfile.write(str(os.getpid()))
-    lockfile.flush()
+    # lockfile = open(lockfile_path, "w")
+    # fcntl.lockf(lockfile, fcntl.LOCK_EX)
+    # lockfile.write(str(os.getpid()))
+    # lockfile.flush()
 
-    wait_time = time.monotonic() - wait_start_time
-    readable_wait_time = time.strftime("%H hours %M minutes %S seconds", time.gmtime(wait_time))
+    # wait_time = time.monotonic() - wait_start_time
+    # readable_wait_time = time.strftime("%H hours %M minutes %S seconds", time.gmtime(wait_time))
 
-    print(f"Lock obtained by PID {os.getpid()}. Waited {readable_wait_time} for design generation.")
+    # print(f"Lock obtained by PID {os.getpid()}. Waited {readable_wait_time} for design generation.")
 
     print(f"Generating template file in {simulation_dir}!")
     with open(os.path.join(simulation_dir, template_generation_out_file_name), "w") as log_file:
@@ -124,9 +124,9 @@ def run_machsuite_simulation_with_configuration(task: str,
         result = subprocess.run([
             "singularity",
             "exec",
-            "-B",
-            "/rds:/rds",
-            "-w",
+            # "-B",
+            # "/rds:/rds",
+            # "-w",
             "--pwd",  # Changes the working directory to the appropriate one
             simulation_dir,
             singularity_image,
@@ -137,39 +137,39 @@ def run_machsuite_simulation_with_configuration(task: str,
             check=True,
         )
 
-        nonaccel_actual_path = os.readlink(nonaccel_file_path)
-        accel_actual_path = os.readlink(accel_file_path)
+        # nonaccel_actual_path = os.readlink(nonaccel_file_path)
+        # accel_actual_path = os.readlink(accel_file_path)
 
-        os.unlink(nonaccel_file_path)
-        os.unlink(accel_file_path)
+        # os.unlink(nonaccel_file_path)
+        # os.unlink(accel_file_path)
 
-        # Copy the compiled binaries
-        result = subprocess.run([
-            "singularity",
-            "exec",
-            singularity_image,
-            "cp",
-            nonaccel_actual_path,
-            nonaccel_file_path],
-            stdout=log_file,
-            stderr=log_file,
-            check=True,
-        )
+    #     # Copy the compiled binaries
+    #     result = subprocess.run([
+    #         "singularity",
+    #         "exec",
+    #         singularity_image,
+    #         "cp",
+    #         nonaccel_actual_path,
+    #         nonaccel_file_path],
+    #         stdout=log_file,
+    #         stderr=log_file,
+    #         check=True,
+    #     )
 
-        result = subprocess.run([
-            "singularity",
-            "exec",
-            singularity_image,
-            "cp",
-            accel_actual_path,
-            accel_file_path],
-            stdout=log_file,
-            stderr=log_file,
-            check=True,
-        )
+    #     result = subprocess.run([
+    #         "singularity",
+    #         "exec",
+    #         singularity_image,
+    #         "cp",
+    #         accel_actual_path,
+    #         accel_file_path],
+    #         stdout=log_file,
+    #         stderr=log_file,
+    #         check=True,
+    #     )
 
-    # Release lock by closeing the lockfile
-    lockfile.close()
+    # # Release lock by closeing the lockfile
+    # lockfile.close()
 
     print(f"Running simulation in {run_script_dir}!")
 
@@ -271,10 +271,11 @@ def run_experiment():
                 warmup_ys = tf.convert_to_tensor(np.load(current_warmup_ys_path))
                 continue
 
-            warmup_config = create_gem5_sweep_config(template_file_path=machsuite_template_path,
+            warmup_config = create_gem5_sweep_config(task=task,
+                                                     template_file_path=machsuite_template_path,
                                                      output_dir=os.path.join(current_warmup_dir, task),
                                                      input_settings=input_settings,
-                                                     generation_commands=("configs",))
+                                                     generation_commands=("configs", "trace"))
 
             result_vec = run_machsuite_simulation_with_configuration(
                 task=task,
@@ -404,17 +405,24 @@ def run_experiment():
         pf_indices = pareto_frontier(tf.convert_to_tensor(y_preds[:, -config["num_targets"]:]))
 
         num_pareto_points = tf.reduce_sum(tf.cast(pf_indices, tf.int32))
-        num_extra_samples_per_point = 1000 // num_pareto_points + 1
+
+        # Make sure we don't get too many gridpoints
+        if grid.num_points() < 10**5:
+            num_extra_samples_per_point = 1000 // num_pareto_points + 1
+
+            pareto_xs = grid.points[pf_indices]
+
+            # Try some extra points around the best solutions
+            for pareto_x in pareto_xs:
+                grid.sample_grid_around_point(pareto_x, num_samples=num_extra_samples_per_point, add_to_grid=True)
+
+        else:
+            num_extra_samples_per_point = 0
 
         print(
             f"{num_pareto_points} Pareto optimal points in grid, adding {num_extra_samples_per_point} samples around each.")
 
-        pareto_xs = grid.points[pf_indices]
-
-        # Try some extra points around the best solutions
-        for pareto_x in pareto_xs:
-            grid.sample_grid_around_point(pareto_x, num_samples=num_extra_samples_per_point, add_to_grid=True)
-
+        
         acquisition_values_, y_preds_ = acq_fun.evaluate(model=surrogate_model,
                                                          xs=surrogate_model.xs.numpy(),
                                                          ys=surrogate_model.ys.numpy(),
@@ -428,10 +436,11 @@ def run_experiment():
         # ---------------------------------------------------------------------
         if task in machsuite_tasks:
             eval_input_settings = grid.input_settings_from_points(eval_x)[0]
-            eval_config = create_gem5_sweep_config(template_file_path=machsuite_template_path,
+            eval_config = create_gem5_sweep_config(task=task,
+                                                   template_file_path=machsuite_template_path,
                                                    output_dir=task,
                                                    input_settings=eval_input_settings,
-                                                   generation_commands=("configs",))
+                                                   generation_commands=("configs", "trace"))
 
             eval_y = run_machsuite_simulation_with_configuration(
                 task=task,

@@ -56,12 +56,12 @@ def parse_file(file_path: str, regexps: dict) -> Dict[str, float]:
 
     results = {}
     for key, regexp in regexps.items():
-        match = regexp.search(contents).group(1)
+        match = regexp.search(contents)
 
         if match:
-            results[key] = float(match)
+            results[key] = float(match.group(1))
 
         else:
-            raise ValueError(f"No match found for {key}!")
+            print(f"No match found for {key}!")
 
     return results

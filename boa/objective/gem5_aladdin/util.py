@@ -15,7 +15,8 @@ class Gem5DockerRunConfig(NamedTuple):
     simulation_dir: str
 
 
-def create_gem5_sweep_config(template_file_path: str,
+def create_gem5_sweep_config(task:str,
+                             template_file_path: str,
                              output_dir: str,
                              input_settings: Dict,
                              source_dir: str = "/workspace/gem5-aladdin/src/aladdin/MachSuite",
@@ -32,7 +33,7 @@ def create_gem5_sweep_config(template_file_path: str,
 
     template = Template(template_file.read())
 
-    sweep_config = template.substitute({"task": "fft_transpose",
+    sweep_config = template.substitute({"task": task,
                                         "generation_commands": generation_commands,
                                         "output_dir": output_dir,
                                         "source_dir": source_dir,

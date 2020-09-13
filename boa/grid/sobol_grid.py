@@ -17,7 +17,7 @@ class SobolGrid(Grid):
     """
     TODO: Handle categorical variables.
 
-    TODO: Spearmint adds additional candidates around current best solution:
+    DONE: Spearmint adds additional candidates around current best solution:
     https://github.com/HIPS/Spearmint/blob/990d27d4477bbc9b0d5cfb2c950fc387decf6ea2/spearmint/choosers/default_chooser.py#L338
     """
 
@@ -144,3 +144,6 @@ class SobolGrid(Grid):
             self.points = tf.convert_to_tensor(new_points, dtype=tf.float64)
 
         return samples
+
+    def num_points(self):
+        return self.points.shape[0]

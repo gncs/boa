@@ -13,8 +13,8 @@ ex = Experiment("setup_boa_experiments")
 
 machsuite_tasks = [
     "fft_transpose",
-    "stencil3d",
-    "gemm"
+    "stencil_stencil3d",
+    "gemm_blocked"
 ]
 
 smaug_tasks = [
@@ -103,7 +103,8 @@ def setup_experiment(task,
         with open(os.path.join(resources_path, "slurm_array.template")) as slurm_template_file:
             slurm_content_template = Template(slurm_template_file.read())
 
-        slurm_content = slurm_content_template.substitute({"method": method})
+        slurm_content = slurm_content_template.substitute({"task": task,
+                                                           "method": method})
 
         with open(os.path.join(experiment_base_path, f"run_{method}"), "w") as slurm_script:
             slurm_script.write(slurm_content)
