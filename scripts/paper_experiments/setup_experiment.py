@@ -14,11 +14,12 @@ ex = Experiment("setup_boa_experiments")
 machsuite_tasks = [
     "fft_transpose",
     "stencil_stencil3d",
-    "gemm_blocked"
+    "gemm_blocked",
 ]
 
 smaug_tasks = [
-    "minerva"
+    "minerva",
+    "lenet5",
 ]
 
 methods = [
@@ -104,7 +105,10 @@ def setup_experiment(task,
             slurm_content_template = Template(slurm_template_file.read())
 
         slurm_content = slurm_content_template.substitute({"task": task,
-                                                           "method": method})
+                                                           "method": method,
+                                                           # SMAUG tasks need more juice
+                                                           "num_cores": 1 if task in machsuite_tasks else 8,
+                                                           })
 
         with open(os.path.join(experiment_base_path, f"run_{method}"), "w") as slurm_script:
             slurm_script.write(slurm_content)
@@ -165,7 +169,30 @@ def setup_experiment(task,
             # SMAUG Tasks
             # ---------------------------------------------------------------------
             elif task in smaug_tasks:
-                raise NotImplementedError
+                template_file_name = "smaug_template.json"
+
+                # Copy the design template
+                shutil.copy(src=os.path.join(resources_path, template_file_name),
+                            dst=os.path.join(experiment_path, template_file_name))
+
+                # Create configuration file
+                config_file_path = os.path.join(resources_path, "smaug_config.pyconf")
+
+                with open(config_file_path) as config_template_file:
+
+                    config_template = Template(config_template_file.read())
+
+                    config = config_template.substitute({"task": task,
+                                                         "experiment_dir": experiment_path,
+                                                         "warmup_base_dir": os.path.join(warmup_folder_base_path, f"warmup_{index}"),
+                                                         "model": method,
+                                                         "seed": index,
+                                                         "num_warmup_points": num_warmup_points,
+                                                         "max_num_evaluations": max_num_evaluations})
+
+                config_target_path = os.path.join(experiment_path, "config.py")
+                with open(config_target_path, "w") as config_target:
+                    config_target.write(config)
 
             else:
                 raise NotImplementedError

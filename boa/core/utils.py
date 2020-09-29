@@ -17,6 +17,7 @@ class InputSpec(NamedTuple):
     name: str
     domain: Union[Tuple, List, np.array, tf.Tensor]
     formula: Callable = (lambda x: x)
+    input_type: type = int
 
 
 class CoreError(Exception):

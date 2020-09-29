@@ -19,6 +19,13 @@ from boa.core import InputSpec
 
 
 class Grid(abc.ABC):
+    """
+    Note: the way categoricals are represented is: 
+    
+    INTERNALLY they are the index of the string value. This allows a fully numeric internal grid.
+    TOWARDS THE SIMULATOR the indicies are converted back to the appropriate strings on-the-fly
+    TOWARDS THE OPTIMIZER the indicies are converted into one-hot vectors
+    """
 
     def __init__(self,
                  dim_specs: List[InputSpec],
@@ -35,9 +42,13 @@ class Grid(abc.ABC):
         # Note: make sure every `formula` field is occupied
         self.dim_spec = [InputSpec(name,
                                    np.sort(np.array(domain).astype(np.float64)),
-                                   formula
-                                   )
-                         for name, domain, formula in dim_specs]
+                                   formula,
+                                   input_type,
+                                   ) if input_type in [int, float] else InputSpec(
+                                       name, domain, formula, input_type)
+                         for name, domain, formula, input_type in dim_specs]
+
+        self.dim_spec_dict = {spec.name: spec for spec in self.dim_spec}
 
         # Build dependency graph
         self.dep_graph = nx.DiGraph()
@@ -120,6 +131,75 @@ class Grid(abc.ABC):
     def sample(self, num_grid_points, seed=None):
         pass
 
+    def one_hot_to_categorical(self, points):
+
+        if tf.rank(points) == 1:
+            points = points[None, :]
+
+        if tf.rank(points) != 2:
+            raise ValueError(f"Points either has to be rank 1 or 2, but was rank {tf.rank(points)}")
+
+
+        new_points = []
+        i = 0
+
+        for spec in self.dim_spec:
+
+            # Handle categorical dimensions
+            if spec.input_type == str:
+                
+                domain_size = len(spec.domain)
+
+                # If we are dealing with a "boolean" categorical
+                if domain_size == 2:
+                    new_points.append(points[:, i:i + 1])
+                    i += 1
+
+                elif domain_size > 2:
+                    one_hot = points[:, i:i + domain_size]
+                    new_points.append(tf.cast(tf.argmax(one_hot, axis=1)[:, None], tf.float64))
+
+                    i += domain_size
+
+                else:
+                    raise ValueError("There shouldn't be a constant dimension!")
+
+            else:
+                new_points.append(points[:, i:i + 1])
+                i += 1
+
+        return tf.concat(new_points, axis=1)
+
+    def index_to_one_hot(self, points):
+
+        new_points = []
+
+        for i, spec in enumerate(self.dim_spec):
+
+            # Handle categorical dimensions
+            if spec.input_type == str:
+                
+                domain_size = len(spec.domain)
+
+                # If we are dealing with a "boolean" categorical
+                if domain_size == 2:
+                    new_points.append(points[:, i:i + 1])
+
+                elif domain_size > 2:
+                    one_hot = tf.one_hot(indices=tf.cast(points[:, i], tf.int32),
+                                         depth=domain_size,
+                                         dtype=tf.float64)
+                    new_points.append(one_hot)
+
+                else:
+                    raise ValueError("There shouldn't be a constant dimension!")
+
+            else:
+                new_points.append(points[:, i:i + 1])
+
+        return tf.concat(new_points, axis=1)
+
+
     def input_settings_from_points(self, points):
 
         if tf.rank(points) == 1:
@@ -133,6 +213,8 @@ class Grid(abc.ABC):
         # Dictionary of input specifications
         input_specs = nx.get_node_attributes(self.dep_graph, "spec")
 
+        points = self.one_hot_to_categorical(points)
+
         # Generate setting for every point
         for point in points:
 
@@ -143,13 +225,20 @@ class Grid(abc.ABC):
             for spec_name in self._dim_generation_order:
 
                 spec = input_specs[spec_name]
-                sig = inspect.signature(spec.formula)
-                formula_deps = tuple(sig.parameters)[1:]
+                
+                # Convert the input to its type
+                if spec.input_type == str:
+                    domain_index = tf.cast(base_values[spec_name], tf.int32).numpy()
+                    input_settings[spec_name] = f'"{spec.domain[domain_index]}"'
 
-                value = spec.formula(base_values[spec_name],
+                else:
+                    sig = inspect.signature(spec.formula)
+                    formula_deps = tuple(sig.parameters)[1:]
+
+                    value = spec.formula(base_values[spec_name],
                                      *[base_values[name] for name in formula_deps])
 
-                input_settings[spec_name] = int(value.numpy())
+                    input_settings[spec_name] = spec.input_type(value.numpy())
 
             input_settings_list.append(input_settings)
 

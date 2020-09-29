@@ -16,7 +16,7 @@
 #! Number of tasks. By default SLURM assumes 1 task per node and 1 CPU per task. (for single core jobs always leave this at 1)
 #SBATCH --ntasks=1
 #! How many many cores will be allocated per task? (for single core jobs always leave this at 1)
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=${num_cores}
 #! Estimated runtime: hh:mm:ss (job is force-stopped after if exceeded):
 #SBATCH --time=12:00:00
 #! Estimated maximum memory needed (job is force-stopped if exceeded):

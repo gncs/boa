@@ -74,27 +74,41 @@ class SobolGrid(Grid):
             indices = cube_points[:, dim] * len(spec.domain)
             indices = np.floor(indices).astype(np.int32)
 
-            points[:, dim] = spec.domain[indices]
+            # Handle categorical case
+            if spec.input_type == str:
+                points[:, dim] = indices
+            else:
+                points[:, dim] = spec.domain[indices]
 
         # Eliminate duplicate grid points
         points = np.unique(points, axis=0)
 
         return points
 
-    def sample(self, num_grid_points, seed=None):
+    def sample(self, num_grid_points, categorical_as_one_hot=True):
         if num_grid_points > self.max_grid_points:
             raise ValueError(f"num_grid_points ({num_grid_points}) cannot exceed the maximum number "
                              f"of grid points ({self.max_grid_points})!")
 
-        tf.random.set_seed(seed)
-        samples = tf.random.shuffle(self.points, seed=seed)[:num_grid_points, :]
+        samples = tf.random.shuffle(self.points)[:num_grid_points, :]
+
+        if categorical_as_one_hot:
+            samples = self.index_to_one_hot(samples)
 
         return samples
 
-    def sample_grid_around_point(self, point, num_samples, scale=0.3, seed=None, add_to_grid=False):
+    def sample_grid_around_point(self, 
+                                point, 
+                                num_samples, 
+                                scale=0.3, 
+                                seed=None, 
+                                add_to_grid=False,
+                                categorical_as_one_hot=True):
         # Note: a scale (std dev) of 0.3 corresponds to approximately a 90% of not changing for a single dimension
         if len(point.shape) != 1:
             raise ValueError(f"Passed point must be rank-1, but had shape: {point.shape}")
+
+        point = self.one_hot_to_categorical(point)[0]
 
         # Build bounds on what the indices can be
         high_bounds = np.empty_like(point)
@@ -103,7 +117,19 @@ class SobolGrid(Grid):
         # Indices of the point's values in their domain
         point_indices = np.empty_like(point)
 
+        print(point.shape)
+
         for dim, spec in enumerate(self.dim_spec):
+
+            # Do not perturb categorical dimensions
+            if spec.input_type == str:
+                high_bounds[dim] = 0
+                low_bounds[dim] = 0
+
+                point_indices[dim] = point[dim]
+
+                continue
+
             # How many items in the domain are larger than the current points dimension
             high_bounds[dim] = np.sum(spec.domain > point[dim]).astype(high_bounds.dtype)
 
@@ -112,6 +138,7 @@ class SobolGrid(Grid):
 
             # spec.domain should contain one and only one match
             point_index = np.where(spec.domain == point[dim])[0]
+            print(point_index.shape, spec.name, dim, point[dim])
             assert point_index.shape[0] == 1
 
             point_indices[dim] = point_index[0]
@@ -134,7 +161,12 @@ class SobolGrid(Grid):
 
         # Convert these points to valid settings
         for dim, spec in enumerate(self.dim_spec):
-            samples[:, dim] = spec.domain[new_indices[:, dim]]
+            
+            # For categoricals, it's just the index
+            if spec.input_type == str:
+                samples[:, dim] = new_indices[:, dim]
+            else:
+                samples[:, dim] = spec.domain[new_indices[:, dim]]
 
         samples = tf.convert_to_tensor(samples, point.dtype)
 
@@ -143,6 +175,8 @@ class SobolGrid(Grid):
             new_points = np.unique(new_points, axis=0)
             self.points = tf.convert_to_tensor(new_points, dtype=tf.float64)
 
+        if categorical_as_one_hot:
+            samples = self.index_to_one_hot(samples)
         return samples
 
     def num_points(self):

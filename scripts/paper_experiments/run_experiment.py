@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import time 
 
+from string import Template
+
 import json
 import numpy as np
 import tensorflow as tf
@@ -15,7 +17,12 @@ from boa.models.bnn.multi_output_bnn import BasicBNN
 from boa.acquisition.smsego import SMSEGO
 from boa.grid import SobolGrid
 from boa.objective.gem5_aladdin.util import create_gem5_sweep_config, get_output_vector_from_dict
-from boa.objective.gem5_aladdin.process import parse_file, output_regexps
+from boa.objective.gem5_aladdin.process import parse_file, output_regexps, parse_stats_txt
+
+"""
+TODO: handle string categorical grids
+TODO: show Miguel graphs
+"""
 
 # Note: run_experiment.py should always be run in a directory that contains a valid MachSuite or SMAUG config.py file.
 try:
@@ -77,6 +84,21 @@ def pareto_frontier(points):
 
     return tf.convert_to_tensor(is_pareto)
 
+def create_smaug_sweep_config(template_file_path: str,
+                              input_settings: Dict):
+
+    # Creates the commands describing what inputs to try next
+    eval_settings = [f'"{inp}": [{val}]' for inp, val in input_settings.items()]
+    eval_settings = ',\n    '.join(eval_settings)
+
+    template_file = open(template_file_path)
+
+    template = Template(template_file.read())
+
+    sweep_config = template.substitute({"evaluation_settings": eval_settings})
+
+    return sweep_config
+
 
 def run_machsuite_simulation_with_configuration(task: str,
                                                 simulation_dir: str,
@@ -88,7 +110,6 @@ def run_machsuite_simulation_with_configuration(task: str,
                                                 template_generation_out_file_name: str = "template_generation_output.txt",
                                                 generate_design_sweeps_py_path: str = "/workspace/gem5-aladdin/sweeps/generate_design_sweeps.py",
                                                 simulation_output_file_name: str = "simulation_output.txt",
-                                                lockfile_path: str = "/rds/user/gf332/hpc-work/BayesOpt/experiments/singularity.lock",
                                                 stdout_path: str = "outputs/stdout",
                                                 stderr_path: str = "outputs/stderr",
                                                 results_file_name: str = "results.json",
@@ -105,28 +126,12 @@ def run_machsuite_simulation_with_configuration(task: str,
 
     # Generate design sweep
 
-    # # Make sure this process is the only one trying to use the write access to singularity
-    # wait_start_time = time.monotonic()
-
-    # lockfile = open(lockfile_path, "w")
-    # fcntl.lockf(lockfile, fcntl.LOCK_EX)
-    # lockfile.write(str(os.getpid()))
-    # lockfile.flush()
-
-    # wait_time = time.monotonic() - wait_start_time
-    # readable_wait_time = time.strftime("%H hours %M minutes %S seconds", time.gmtime(wait_time))
-
-    # print(f"Lock obtained by PID {os.getpid()}. Waited {readable_wait_time} for design generation.")
-
-    print(f"Generating template file in {simulation_dir}!")
+    print(f"Generating design in {simulation_dir}!")
     with open(os.path.join(simulation_dir, template_generation_out_file_name), "w") as log_file:
 
         result = subprocess.run([
             "singularity",
             "exec",
-            # "-B",
-            # "/rds:/rds",
-            # "-w",
             "--pwd",  # Changes the working directory to the appropriate one
             simulation_dir,
             singularity_image,
@@ -136,40 +141,6 @@ def run_machsuite_simulation_with_configuration(task: str,
             stderr=log_file,
             check=True,
         )
-
-        # nonaccel_actual_path = os.readlink(nonaccel_file_path)
-        # accel_actual_path = os.readlink(accel_file_path)
-
-        # os.unlink(nonaccel_file_path)
-        # os.unlink(accel_file_path)
-
-    #     # Copy the compiled binaries
-    #     result = subprocess.run([
-    #         "singularity",
-    #         "exec",
-    #         singularity_image,
-    #         "cp",
-    #         nonaccel_actual_path,
-    #         nonaccel_file_path],
-    #         stdout=log_file,
-    #         stderr=log_file,
-    #         check=True,
-    #     )
-
-    #     result = subprocess.run([
-    #         "singularity",
-    #         "exec",
-    #         singularity_image,
-    #         "cp",
-    #         accel_actual_path,
-    #         accel_file_path],
-    #         stdout=log_file,
-    #         stderr=log_file,
-    #         check=True,
-    #     )
-
-    # # Release lock by closeing the lockfile
-    # lockfile.close()
 
     print(f"Running simulation in {run_script_dir}!")
 
@@ -217,6 +188,121 @@ def run_machsuite_simulation_with_configuration(task: str,
     return result_vec
 
 
+def run_smaug_simulation_with_configuration(task: str,
+                                            simulation_dir: str,
+                                            run_sh_subdir: str,
+                                            simulation_config: str,
+                                            output_order: List[str],
+                                            singularity_image: str,
+                                            template_name: str = "template.json",
+                                            template_generation_out_file_name: str = "template_generation_output.txt",
+                                            main_py_path: str = "/workspace/smaug/experiments/sweeps/main.py",
+                                            simulation_output_file_name: str = "simulation_output.txt",
+                                            stdout_path: str = "stdout",
+                                            stderr_path: str = "stderr",
+                                            results_file_name: str = "results.json",
+                                            ):
+                                            
+    os.makedirs(simulation_dir, exist_ok=True)
+
+    run_script_dir = os.path.join(simulation_dir, run_sh_subdir)
+
+    # Write template
+    with open(os.path.join(simulation_dir, template_name), "w") as template_file:
+        template_file.write(simulation_config)
+
+    # Generate design sweep
+
+    print(f"Generating design file in {simulation_dir}!")
+    with open(os.path.join(simulation_dir, template_generation_out_file_name), "w") as log_file:
+
+        os.makedirs(os.path.join(simulation_dir, task), exist_ok=True)
+
+        result = subprocess.run([
+            "singularity",
+            "exec",
+            "--pwd",  # Changes the working directory to the appropriate one
+            simulation_dir,
+            singularity_image,
+            main_py_path,
+            "--model", task,
+            "--params", template_name,
+            # This is a bit silly, but this way it's compatible with the structure of MachSuite tasks
+            "--output-dir", os.path.join(simulation_dir, task, task)
+            ],
+            stdout=log_file,
+            stderr=log_file,
+            check=True,
+        )
+
+    print(f"Running simulation in {run_script_dir}!")
+
+    with open(os.path.join(simulation_dir, simulation_output_file_name), "w") as log_file:
+        try:
+            result = subprocess.run([
+                "singularity",
+                "exec",
+                "--pwd",
+                run_script_dir,
+                singularity_image,
+                "bash",
+                "run.sh"
+            ],
+                stdout=log_file,
+                stderr=log_file,
+                check=True,
+            )
+
+        except subprocess.CalledProcessError as e:
+            stderr_path = os.path.join(simulation_dir, run_sh_subdir, stderr_path)
+            log_file.writelines(["========================\n",
+                                 f"Copied from {stderr_path}\n"
+                                 "========================\n", ])
+
+            with open(stderr_path) as stderr_log_file:
+                stderr_log = stderr_log_file.read()
+
+                log_file.write(stderr_log)
+
+            print(str(e))
+            raise ValueError(stderr_log)
+
+    print(os.path.join(simulation_dir, run_sh_subdir, stdout_path))
+    results = parse_file(os.path.join(simulation_dir, run_sh_subdir, stdout_path),
+                         output_regexps)
+
+    if task in smaug_tasks:
+        results["total_time"] = parse_stats_txt(os.path.join(simulation_dir, run_sh_subdir, "outputs", "stats.txt"))
+
+    with open(os.path.join(simulation_dir, results_file_name), "w") as results_file:
+        json.dump(results, results_file)
+
+    result_vec = get_output_vector_from_dict(results, output_order=output_order)
+
+    return result_vec
+
+
+def input_length():
+
+    input_length = 0
+
+    for spec in config["inputs"]:
+
+        if spec.input_type == str:
+
+            if len(spec.domain) == 2:
+                input_length += 1
+            
+            else:
+                input_length += len(spec.domain)
+
+        else:
+
+            input_length += 1
+
+    return input_length
+
+
 def run_experiment():
     # -------------------------------------------------------------------------
     # Setup
@@ -230,6 +316,7 @@ def run_experiment():
     num_warmup_points = config['run']['num_warmup_points']
 
     machsuite_template_path = os.path.join(experiment_dir, "machsuite_template.xe")
+    smaug_template_path = os.path.join(experiment_dir, "smaug_template.json")
 
     tf.random.set_seed(seed)
 
@@ -252,6 +339,7 @@ def run_experiment():
         print("Necessary warmup points don't exist yet, creating them now...")
 
         warmup_xs = grid.sample(num_warmup_points)
+
         warmup_ys = tf.zeros((0, len(config["outputs"])), dtype=tf.float64)
 
         # Create warmup sweep configs
@@ -271,20 +359,37 @@ def run_experiment():
                 warmup_ys = tf.convert_to_tensor(np.load(current_warmup_ys_path))
                 continue
 
-            warmup_config = create_gem5_sweep_config(task=task,
-                                                     template_file_path=machsuite_template_path,
-                                                     output_dir=os.path.join(current_warmup_dir, task),
-                                                     input_settings=input_settings,
-                                                     generation_commands=("configs", "trace"))
+            if task in machsuite_tasks:
+                warmup_config = create_gem5_sweep_config(task=task,
+                                                         template_file_path=machsuite_template_path,
+                                                         output_dir=os.path.join(current_warmup_dir, task),
+                                                         input_settings=input_settings,
+                                                         generation_commands=("configs", "trace"))
 
-            result_vec = run_machsuite_simulation_with_configuration(
-                task=task,
-                simulation_dir=current_warmup_dir,
-                run_sh_subdir=run_sh_subdir,
-                simulation_config=warmup_config,
-                output_order=config["outputs"],
-                singularity_image=config["run"]["singularity_image"],
-            )
+                result_vec = run_machsuite_simulation_with_configuration(
+                    task=task,
+                    simulation_dir=current_warmup_dir,
+                    run_sh_subdir=run_sh_subdir,
+                    simulation_config=warmup_config,
+                    output_order=config["outputs"],
+                    singularity_image=config["run"]["singularity_image"],
+                )
+            
+            elif task in smaug_tasks:
+                warmup_config = create_smaug_sweep_config(template_file_path=smaug_template_path,
+                                                          input_settings=input_settings)
+
+                result_vec = run_smaug_simulation_with_configuration(
+                    task=task,
+                    simulation_dir=current_warmup_dir,
+                    run_sh_subdir=run_sh_subdir,
+                    simulation_config=warmup_config,
+                    output_order=config["outputs"],
+                    singularity_image=config["run"]["singularity_image"],
+                )
+
+            else:
+                raise NotImplementedError
 
             warmup_ys = tf.concat([warmup_ys, result_vec[None, :]], axis=0)
 
@@ -303,6 +408,7 @@ def run_experiment():
 
     # -------------------------------------------------------------------------
     # Setup for BO
+    # TODO: Potential bug: if the target is a categorical. Disallow this with a check.
     # -------------------------------------------------------------------------
 
     # Reset the random seed, because depending on whether warmup points were generated or not,
@@ -315,32 +421,34 @@ def run_experiment():
 
     model_config = config["models"][model]
 
+    input_dim = input_length()
+
     if model == "sgs":
-        surrogate_model = RandomModel(input_dim=len(config["inputs"]),
+        surrogate_model = RandomModel(input_dim=input_dim,
                                       output_dim=len(config["outputs"]),
                                       seed=seed,
                                       num_samples=10,
                                       verbose=True)
     elif model == "gpar-targets":
         surrogate_model = GPARModel(kernel=model_config["kernel"],
-                                    input_dim=len(config["inputs"]),
+                                    input_dim=input_dim,
                                     output_dim=config["num_targets"],
                                     verbose=True)
 
     elif model == "gpar-full":
         surrogate_model = GPARModel(kernel=model_config["kernel"],
-                                    input_dim=len(config["inputs"]),
+                                    input_dim=input_dim,
                                     output_dim=len(config["outputs"]),
                                     verbose=True)
 
     elif model == "ff-gp":
         surrogate_model = FullyFactorizedGPModel(kernel=model_config["kernel"],
-                                                 input_dim=len(config["inputs"]),
+                                                 input_dim=input_dim,
                                                  output_dim=config["num_targets"],
                                                  verbose=True)
 
     elif model == "bnn":
-        surrogate_model = BasicBNN(input_dim=len(config["inputs"]),
+        surrogate_model = BasicBNN(input_dim=input_dim,
                                    output_dim=len(config["outputs"]))
 
     else:
@@ -394,11 +502,15 @@ def run_experiment():
         # ---------------------------------------------------------------------
         # Step 1: Evaluate acquisition function on every grid point
         # ---------------------------------------------------------------------
+        grid_points = grid.index_to_one_hot(grid.points)
+
+        print("1", grid.points.shape)
+
         acquisition_values, y_preds = acq_fun.evaluate(model=surrogate_model,
                                                        xs=surrogate_model.xs.numpy(),
                                                        ys=surrogate_model.ys.numpy(),
-                                                       candidate_xs=grid.points.numpy())
-
+                                                       candidate_xs=grid_points.numpy())
+        print("2", grid.points.shape)
         # ---------------------------------------------------------------------
         # Step 2: Find maximum of acquisition function
         # ---------------------------------------------------------------------
@@ -410,14 +522,18 @@ def run_experiment():
         if grid.num_points() < 10**5:
             num_extra_samples_per_point = 1000 // num_pareto_points + 1
 
-            pareto_xs = grid.points[pf_indices]
+            pareto_xs = grid_points[pf_indices]
 
             # Try some extra points around the best solutions
             for pareto_x in pareto_xs:
-                grid.sample_grid_around_point(pareto_x, num_samples=num_extra_samples_per_point, add_to_grid=True)
+                grid.sample_grid_around_point(pareto_x, 
+                                              num_samples=num_extra_samples_per_point, 
+                                              add_to_grid=True)
 
         else:
             num_extra_samples_per_point = 0
+
+        print("3", grid.points.shape)
 
         print(
             f"{num_pareto_points} Pareto optimal points in grid, adding {num_extra_samples_per_point} samples around each.")
@@ -426,16 +542,18 @@ def run_experiment():
         acquisition_values_, y_preds_ = acq_fun.evaluate(model=surrogate_model,
                                                          xs=surrogate_model.xs.numpy(),
                                                          ys=surrogate_model.ys.numpy(),
-                                                         candidate_xs=grid.points.numpy())
+                                                         candidate_xs=grid_points.numpy())
 
         max_acquisition_index_ = np.argmax(acquisition_values_)
-        eval_x = grid.points[max_acquisition_index_]
-
+        eval_x = grid_points[max_acquisition_index_]
+        print("4", grid.points.shape)
         # ---------------------------------------------------------------------
         # Step 3: Run simulation at selected location
         # ---------------------------------------------------------------------
+        eval_input_settings = grid.input_settings_from_points(eval_x)[0]
+
         if task in machsuite_tasks:
-            eval_input_settings = grid.input_settings_from_points(eval_x)[0]
+            
             eval_config = create_gem5_sweep_config(task=task,
                                                    template_file_path=machsuite_template_path,
                                                    output_dir=task,
@@ -451,14 +569,25 @@ def run_experiment():
                 singularity_image=config["run"]["singularity_image"],
             )
 
-            if model in ["ff-gp", "gpar-targets"]:
-                eval_y = eval_y[-config["num_targets"]:]
-
         elif task in smaug_tasks:
-            raise NotImplementedError
+            eval_config = create_smaug_sweep_config(template_file_path=smaug_template_path,
+                                                    input_settings=eval_input_settings)
+
+            eval_y = run_smaug_simulation_with_configuration(
+                task=task,
+                simulation_dir=eval_dir,
+                run_sh_subdir=run_sh_subdir,
+                simulation_config=eval_config,
+                output_order=config["outputs"],
+                singularity_image=config["run"]["singularity_image"],
+            )
 
         else:
             raise NotImplementedError
+
+        # Chop off the first couple of dimensions for targets-only models
+        if model in ["ff-gp", "gpar-targets"]:
+            eval_y = eval_y[-config["num_targets"]:]
 
         # ---------------------------------------------------------------------
         # Step 4: Fit surrogate model to dataset augmented by the new datapoint
@@ -467,6 +596,8 @@ def run_experiment():
 
         tf.random.set_seed(seed + eval_index + 1)
         train_surrogate_model(surrogate_model, model_config, config["run"]["model"])
+
+        print("5", grid.points.shape)
 
         np.save(grid_save_path, grid.points.numpy())
         np.save(xs_save_path, surrogate_model.xs.numpy())
