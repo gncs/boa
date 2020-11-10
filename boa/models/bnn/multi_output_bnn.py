@@ -237,18 +237,31 @@ class BNN(tf.keras.Model, abc.ABC):
             return loss, data_log_prob, weight_log_prob, hyper_log_prob
 
         # We start at 1, so that the hyperparameters are not resampled at the start
-        step_bar = trange(1, num_epochs + 1)
-        for step in step_bar:
+        # step_bar = trange(1, num_epochs + 1)
+        # for step in step_bar:
+
+        #     if step > burnin and step % keep_every == 0:
+        #         self.model_samples.append(self.get_weights())
+
+        #     loss, data_log_prob, weight_log_prob, hyper_log_prob = train_step(tf.convert_to_tensor(step))
+
+        #     step_bar.set_description(f"Loss: {loss.numpy():.3f}, "
+        #                              f"Data log prob: {data_log_prob.numpy():.3f}, "
+        #                              f"Weight log prob: {weight_log_prob.numpy():.3f}, "
+        #                              f"Hyper log prob: {hyper_log_prob.numpy():.3f}")
+
+
+        for step in range(1, num_epochs + 1):
 
             if step > burnin and step % keep_every == 0:
                 self.model_samples.append(self.get_weights())
 
             loss, data_log_prob, weight_log_prob, hyper_log_prob = train_step(tf.convert_to_tensor(step))
 
-            step_bar.set_description(f"Loss: {loss.numpy():.3f}, "
-                                     f"Data log prob: {data_log_prob.numpy():.3f}, "
-                                     f"Weight log prob: {weight_log_prob.numpy():.3f}, "
-                                     f"Hyper log prob: {hyper_log_prob.numpy():.3f}")
+        print(f"Optimization finised with:\nLoss: {loss.numpy():.3f}, "
+                f"Data log prob: {data_log_prob.numpy():.3f}, "
+                f"Weight log prob: {weight_log_prob.numpy():.3f}, "
+                f"Hyper log prob: {hyper_log_prob.numpy():.3f}")
 
         self.trained.assign(True)
 

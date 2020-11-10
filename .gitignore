@@ -1,4 +1,5 @@
 # Logs folder
+venv/
 models/
 logs/
 logs-old/
