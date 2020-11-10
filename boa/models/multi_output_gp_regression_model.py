@@ -359,14 +359,14 @@ class MultiOutputGPRegressionModel(tf.keras.Model, abc.ABC):
 
             # Calculate new statistics
             l2_percentiles = calculate_euclidean_distance_percentiles(gp_input, percentiles)
-            marginal_percentiles = calculate_per_dimension_distance_percentiles(gp_input, percentiles)
+            #marginal_percentiles = calculate_per_dimension_distance_percentiles(gp_input, percentiles)
 
             # Cast them to the data type of the model
             l2_percentiles = tf.cast(tf.convert_to_tensor(l2_percentiles), self.dtype)
-            marginal_percentiles = tf.cast(tf.convert_to_tensor(marginal_percentiles), self.dtype)
+            #marginal_percentiles = tf.cast(tf.convert_to_tensor(marginal_percentiles), self.dtype)
 
             # Set the new statistics
-            self._gp_input_statistics[index] = {"l2": l2_percentiles, "marginal": marginal_percentiles}
+            self._gp_input_statistics[index] = {"l2": l2_percentiles, "marginal": None}
 
         # ---------------------------------------------------------------------
         # Random initialization

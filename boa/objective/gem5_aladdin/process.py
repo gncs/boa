@@ -56,12 +56,29 @@ def parse_file(file_path: str, regexps: dict) -> Dict[str, float]:
 
     results = {}
     for key, regexp in regexps.items():
-        match = regexp.search(contents).group(1)
+        match = regexp.search(contents)
 
         if match:
-            results[key] = float(match)
+            results[key] = float(match.group(1))
 
         else:
-            raise ValueError(f"No match found for {key}!")
+            print(f"No match found for {key}!")
 
     return results
+
+def parse_stats_txt(file_path: str):
+    with open(file_path) as f:
+        contents = f.read()
+
+    # Note: explanation for [2:-1]. The 0th index is just going to be '-----', the rest are valid segments
+    # 1 and -1 are discarded, because they are the initialization and wrapping-up phase, not simulation
+    sim_segments = contents.split("Begin Simulation Statistics")[2:-1]
+
+    tick_regexp = re.compile(r'sim_ticks\s+(\d*)')
+
+    sim_tick_list = [int(tick_regexp.search(sim_segment).group(1))
+                     for sim_segment in sim_segments]
+
+    sim_ticks = sum(sim_tick_list) // 1000
+
+    return sim_ticks

@@ -1,0 +1,69 @@
+#!/bin/bash
+#! This line is a comment
+#! Make sure you only have comments and #SBATCH directives between here and the end of the #SBATCH directives, or things will break
+#! Name of the job:
+#SBATCH -J ${method}_${task}_experiment
+#! Account name for group, use SL2 for paying queue:
+#SBATCH -A HERNANDEZ-LOBATO-SL3-CPU
+#! Output filename:
+#! %A means slurm job ID and %a means array index
+#SBATCH --output=/dev/null
+#! Errors filename:
+#SBATCH --error=/dev/null
+
+#! Number of nodes to be allocated for the job (for single core jobs always leave this at 1)
+#SBATCH --nodes=1
+#! Number of tasks. By default SLURM assumes 1 task per node and 1 CPU per task. (for single core jobs always leave this at 1)
+#SBATCH --ntasks=1
+#! How many many cores will be allocated per task? (for single core jobs always leave this at 1)
+#SBATCH --cpus-per-task=${num_cores}
+#! Estimated runtime: hh:mm:ss (job is force-stopped after if exceeded):
+#SBATCH --time=12:00:00
+#! Estimated maximum memory needed (job is force-stopped if exceeded):
+#! RAM is allocated in ~5980mb blocks, you are charged per block used,
+#! and unused fractions of blocks will not be usable by others.
+#SBATCH --mem=5980mb
+#! Submit a job array with index values between 0 and 31
+#! NOTE: This must be a range, not a single number (i.e. specifying '32' here would only run one job, with index 32)
+#SBATCH --array=0-49
+
+#! This is the partition name.
+#SBATCH -p skylake
+
+#! mail alert at start, end and abortion of execution
+#! emails will default to going to your email address
+#! you can specify a different email address manually if needed.
+##SBATCH --mail-type=ALL
+
+#! Don't put any #SBATCH directives below this line
+
+#! Modify the environment seen by the application. For this example we need the default modules.
+. /etc/profile.d/modules.sh                # This line enables the module command
+module purge                               # Removes all modules still loaded
+module load rhel7/default-peta4            # REQUIRED - loads the basic environment
+module load slurm
+module load singularity/current
+module load python/3.6
+
+#! Hack to create separate log folders
+#! Taken from https://stackoverflow.com/questions/54370203/create-directory-for-log-file-before-calling-slurm-sbatch
+now=$$(date +"%y%m%d-%H%M")
+logpath="/rds/user/gf332/hpc-work/BayesOpt/experiments/${task}/log/${method}/$$now"
+mkdir -p $$logpath
+logfile="$$logpath/$${SLURM_ARRAY_TASK_ID}.out"
+errfile="$$logpath/$${SLURM_ARRAY_TASK_ID}.err"
+
+echo "Writing to $${logfile}"
+scontrol show -dd job $$SLURM_JOB_ID
+printenv
+
+export PYTHONPATH=.
+
+echo "This is job" $$SLURM_ARRAY_TASK_ID
+
+#! Command line that we want to run:
+cd ${method}/experiment_$$SLURM_ARRAY_TASK_ID
+source /rds/user/gf332/hpc-work/boa/venv/bin/activate
+
+#! The -u flag runs python in "unbuered" mode, meaning that print() will immediately write to stdout and stderr.
+python -u /rds/user/gf332/hpc-work/boa/scripts/paper_experiments/run_experiment.py > $${logfile} 2> $${errfile}

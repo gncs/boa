@@ -1,0 +1,135 @@
+import tensorflow as tf
+from boa.core.utils import InputSpec
+
+gp_model_config = {
+    "optimizer": "l-bfgs-b",
+    "optimizer_restarts": 3,
+    "iters": 1000,
+    "fit_joint": False,
+    "length_scale_init": "l2_median",
+    "kernel": "matern52",
+}
+
+config = {
+    "run": {
+        "singularity_image": "/rds/user/gf332/hpc-work/BayesOpt/smaug_sandbox",
+        "task": "$task",
+        "experiment_dir": "$experiment_dir",
+        "warmup_base_dir": "$warmup_base_dir",
+        "model": "$model",
+        "seed": $seed,
+        "num_grid_points": 20000,
+        "num_warmup_points": $num_warmup_points,
+        "max_num_evaluations": $max_num_evaluations,
+        "acq_config": {
+            "gain": 1.,
+            "epsilon": 0.01,
+            "output_slice": (-3, None)
+        },
+    },
+
+    "models": {
+        "sgs": {},
+
+        "ff-gp": gp_model_config,
+
+        "gpar-targets": gp_model_config,
+
+        "gpar-full": gp_model_config,
+
+        "bnn": {
+            "num_samples": 50,
+            "burnin": 2000,
+            "keep_every": 100,
+        },
+    },
+
+    "inputs": [
+        # Number of accelerators. Can be any positive integer, realistically at most 16
+        InputSpec(name="num_accels", domain=tf.range(1, 9)),
+
+        # SoC interface: DMA or ACP
+        InputSpec(name="soc_interface", domain=["dma", "acp"], input_type=str),
+
+        # Memory type
+        InputSpec(name="mem_type", 
+                  domain=["LPDDR3_1600_1x32", 
+                        "LPDDR2_S4_1066_1x32", 
+                        "HBM_1000_4H_1x128", 
+                        "HBM_1000_4H_1x64", 
+                        "DDR4_2400_8x8", 
+                        "DDR4_2400_4x16", 
+                        "DDR4_2400_16x4", 
+                        "DDR3_1600_8x8", 
+                        "DDR3_2133_8x8"], 
+                  input_type=str),
+
+        # L2 Cache size form 64kB to 1MB
+        InputSpec(name="l2_size", domain=2 ** tf.range(16, 21)),
+
+        # L2 Cache associativity
+        InputSpec(name="l2_assoc", domain=2 ** tf.range(1, 9)),
+
+        # Accelerator Clock Time
+        InputSpec(name="acc_clock", domain=tf.range(1, 11)),
+
+        # CPU Clock Time. Values represent 4GHz, 3.3GHz, 2.5GHz, 2GHz, 1.25GHz and 1GHz respectively.
+        InputSpec(name="cpu_clock", domain=[0.25, 0.3, 0.4, 0.5, 0.8, 1.], input_type=float),
+
+        # Use pipelined DMA optimization
+        InputSpec(name="pipelined_dma", domain=[0, 1]),
+
+        # Whether to ignore the DMA induced cache flush overhead
+        InputSpec(name="ignore_cache_flush", domain=[0, 1]),
+
+        # -----
+        # Note: The settings below MAINLY affect ACP mode.
+        # -----
+
+        # L1 data cache size. A power of 2 value. Recommend range: [16KB, 32KB, 64KB, 128KB]
+        InputSpec(name="l1d_size", domain=2 ** tf.range(14, 18)),
+
+        # L1 data cache associativity. A power of 2 value. Recommend range: [2, 4, 8, 16].
+        InputSpec(name="l1d_assoc", domain=[2, 4, 8, 16]),
+
+        # L1 data cache hit latency. A positive integer. Recommend range: range(1, 5).
+        InputSpec(name="l1d_hit_latency", domain=tf.range(1, 5)),
+
+        # L2 cache hit latency. A positive integer. Recommend range: range(5, 20).
+        InputSpec(name="l2_hit_latency", domain=tf.range(5, 20)),
+
+        # -----
+        # Note: The settings below only affect DMA mode.
+        # -----
+
+        # Invalidate on DMA store
+        InputSpec(name="invalidate_on_dma_store", domain=[0, 1]),
+
+        # Maximum number of outstanding DMA requests
+        InputSpec(name="max_dma_requests", domain=[16, 32, 64, 128]),
+
+        # Number of DMA channels in DMA controller
+        InputSpec(name="num_dma_channels", domain=[1, 2, 4, 8]),
+
+        # DMA chunk size
+        InputSpec(name="dma_chunk_size", domain=[32, 64, 128]),
+    ],
+
+    "outputs": [
+        'idle_fu_cycles',
+        'avg_fu_cycles',
+        'avg_fu_dynamic_power',
+        'avg_fu_leakage_power',
+        'avg_mem_power',
+        'avg_mem_dynamic_power',
+        'avg_mem_leakage_power',
+        'fu_area',
+        'mem_area',
+        "cycle",
+        "avg_power",
+        "total_area",
+        "total_time",
+    ],
+
+    "num_targets": 4,
+}
