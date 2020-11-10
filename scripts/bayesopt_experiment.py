@@ -42,13 +42,13 @@ def bayesopt_config(dataset):
     verbose = True
 
     if model == "gpar":
-        denoising = True
+        denoising = False
 
     # Number of experiments to perform
     rounds = 5
 
     # BayesOpt iterations
-    max_num_iterations = 120
+    max_num_iterations = 70
     warmup_dataset_size = 10
     batch_size = 1
 
@@ -148,7 +148,7 @@ class Objective(AbstractObjective):
             mask = mask & (self.data[k].values == v)
 
         if mask.sum() != 1:
-            raise Exception(f"sum was {mask.sum()}, value was {value}")
+            raise ValueError(f"sum was {mask.sum()}, value was {value}")
         return self.data.loc[mask, self.output_labels].values
 
 
@@ -216,9 +216,8 @@ def optimize(model,
 
 
 def get_default_acq_config(df: pd.DataFrame, objective_labels) -> dict:
-    max_values = df[objective_labels].apply(max).values
 
-    return {'gain': 1., 'epsilon': 0.01, 'reference': max_values, 'output_slice': (-3, None)}
+    return {'gain': 1., 'epsilon': 0.01, 'output_slice': (-3, None)}
 
 
 @ex.automain
@@ -240,6 +239,9 @@ def main(dataset,
     input_labels = dataset["input_labels"]
     output_labels = dataset["output_labels"]
     output_labels = np.array(output_labels)[output_permutation].tolist()
+
+    if model in ["random", "ff-gp"]:
+        output_labels = output_labels[-len(dataset["targets"]):]
 
     # Use the permuted labels
     ds = load_dataset(output_labels=output_labels)

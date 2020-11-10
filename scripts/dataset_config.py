@@ -409,20 +409,17 @@ def data_config():
             'num_register': "log"
         }
 
-    elif name == "intel_dataset_1":
+    elif name == "intel_dataset":
         targets = ('objective_0', 'objective_1',)
-        dataset_path = f"{dataset_base_path}/smaug_dataset.csv"
+        dataset_path = f"{dataset_base_path}/intel_dataset_1001_unique_points.csv"
 
         separator = ","
 
         input_labels = [f"knob_{i}" for i in range(12)]
 
-        output_labels = [f"metric_{i}" for i in range(24)]
+        # 14 and 18 are non-informative dimensions
+        output_labels = [f"metric_{i}" for i in range(24) if i not in [14, 18]]
         output_labels = output_labels + list(targets)
-
-        # These ones are non-informative dimensions
-        output_labels.remove("metric_14")
-        output_labels.remove("metric_18")
 
         input_transforms = {}
         output_transforms = {}

@@ -20,11 +20,11 @@ tf.config.experimental.set_visible_devices([], 'GPU')
 
 config = {
     "run": {
-        "experiment_dir": "test_bnn_out_std",
+        "experiment_dir": "intel_ffgp",
         "seed": 42,
         "num_grid_points": 20000,
         "num_warmup_points": 10,
-        "max_num_iterations": 50,
+        "max_num_iterations": 60,
     },
 
     "boa": {

@@ -68,9 +68,6 @@ class Optimizer:
                     break
 
                 acquisition_values, y_preds = acq_fun.evaluate(model=eval_model,
-                                                               denoising=denoising,
-                                                               marginalize_hyperparameters=marginalize_hyperparameters,
-                                                               mcmc_kwargs=mcmc_kwargs,
                                                                xs=xs,
                                                                ys=ys,
                                                                candidate_xs=candidate_xs)
